@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
 # deploy/rollback.sh – Roll back the gateway service to the previously active
-#                      deployment colour.
+#                      deployment color.
 #
 # WHAT IT DOES
-#   1. Reads the currently active colour from the state file.
-#   2. Determines the alternate colour (the one to roll back to).
+#   1. Reads the currently active color from the state file.
+#   2. Determines the alternate color (the one to roll back to).
 #   3. Checks that the alternate instance is already running; if not, starts it.
 #   4. Verifies the alternate instance is healthy via /health.
 #   5. Switches the nginx upstream back to the alternate instance.
@@ -94,7 +94,7 @@ read_active_color() {
     fi
     die "State file contains invalid value: '${color}'."
   fi
-  die "State file '${STATE_FILE}' not found. Cannot determine current active colour."
+  die "State file '${STATE_FILE}' not found. Cannot determine current active color."
 }
 
 write_active_color() {
@@ -173,7 +173,7 @@ switch_nginx_upstream() {
   local new_conf
   new_conf="$(cat <<EOF
 # Managed by deploy/rollback.sh – do not edit manually.
-# Active deployment colour: ${color}
+# Active deployment color: ${color}
 # Generated: $(date '+%Y-%m-%d %H:%M:%S')
 upstream gateway_active {
     server 127.0.0.1:${port};

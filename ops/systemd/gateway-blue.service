@@ -31,6 +31,9 @@ WorkingDirectory=/opt/home-automation-scripts
 
 # Use gunicorn for a production-grade WSGI server.
 # Workers=1 is intentional for a single-process, low-traffic home server.
+# Ensure the logs directory exists before starting (install.sh creates it,
+# but this guard prevents a startup failure if it was removed).
+ExecStartPre=/bin/mkdir -p /opt/home-automation-scripts/logs
 ExecStart=/opt/home-automation-scripts/.venv/bin/gunicorn \
     --workers 1 \
     --bind 127.0.0.1:${GATEWAY_PORT} \
