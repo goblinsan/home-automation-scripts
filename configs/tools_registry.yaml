@@ -20,3 +20,18 @@ tools:
     description: "List open GitHub issues and project board items for a repository"
     script: scripts/github_helper.py
     enabled: true
+
+  - name: health-check
+    description: "Monitor disk usage, CPU load, and memory utilization"
+    script: scripts/health_check.py
+    enabled: true
+
+  - name: log-rotation
+    description: "Automatically prune old log files"
+    script: scripts/log_rotation.py
+    enabled: true
+
+  - name: package-update-notifier
+    description: "Notify when system package updates are available"
+    script: scripts/package_update_notifier.py
+    enabled: true
