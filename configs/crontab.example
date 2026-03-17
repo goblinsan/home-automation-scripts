@@ -63,3 +63,13 @@
 
 # Validate required environment variables at every system boot.
 @reboot $PYTHON $REPO_ROOT/tools/env_loader.py >> $REPO_ROOT/logs/env_check.log 2>&1
+
+# ---------------------------------------------------------------------------
+# Strava sync – fetch recent activities once per day at 06:00.
+# ---------------------------------------------------------------------------
+
+# Run via the automation CLI (recommended):
+0 6 * * * $PYTHON $REPO_ROOT/tools/automation.py run strava-sync >> $REPO_ROOT/logs/strava.log 2>&1
+
+# Alternatively, run via the bash wrapper (logs timestamp prefix from the shell):
+# 0 6 * * * /usr/bin/env bash -c 'cd $REPO_ROOT && ./run_strava_sync.sh >> $REPO_ROOT/logs/strava.log 2>&1'
