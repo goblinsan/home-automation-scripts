@@ -35,3 +35,8 @@ tools:
     description: "Notify when system package updates are available"
     script: scripts/package_update_notifier.py
     enabled: true
+
+  - name: strava-sync
+    description: "Fetch recent Strava activities and store them locally as normalized JSON"
+    script: scripts/strava_sync.py
+    enabled: true
