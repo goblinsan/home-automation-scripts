@@ -29,6 +29,12 @@ The goal of this project is to centralise all home-automation logic in one versi
 
 ```
 home-automation-scripts/
+├── gateway/      # Gateway service (Flask proxy + /health endpoint)
+├── deploy/       # Blue-green deployment and rollback scripts
+├── ops/          # Operational config: systemd units, nginx, state
+│   ├── nginx/    # nginx virtual-host and upstream configs
+│   ├── systemd/  # systemd service units and env templates
+│   └── state/    # Documents runtime state directory
 ├── scripts/      # Automation and maintenance scripts
 ├── configs/      # Configuration templates and non-secret settings
 ├── tools/        # Helper utilities and development tooling
@@ -36,6 +42,33 @@ home-automation-scripts/
 ├── secrets/      # Local secrets – NEVER committed (gitignored)
 └── logs/         # Runtime logs – NEVER committed (gitignored)
 ```
+
+### `gateway/`
+The home-automation gateway service: a lightweight Flask reverse-proxy that
+forwards requests to Home Assistant and exposes a `/health` endpoint.  Two
+instances run on different ports (blue = 8081, green = 8082) to support
+blue-green deployments.
+
+### `deploy/`
+Deployment automation.
+
+| Script | Purpose |
+|--------|---------|
+| `deploy/deploy.sh` | Blue-green deploy: starts new instance, waits for health, switches nginx |
+| `deploy/rollback.sh` | Roll back to the previously active instance |
+
+### `ops/`
+Operational configuration files.
+
+| Path | Purpose |
+|------|---------|
+| `ops/nginx/gateway-site.conf` | nginx virtual-host (install to `/etc/nginx/sites-available/`) |
+| `ops/nginx/gateway-blue-upstream.conf` | Upstream definition for blue (port 8081) |
+| `ops/nginx/gateway-green-upstream.conf` | Upstream definition for green (port 8082) |
+| `ops/systemd/gateway-blue.service` | systemd unit for the blue gateway instance |
+| `ops/systemd/gateway-green.service` | systemd unit for the green gateway instance |
+| `ops/systemd/gateway-blue.env.example` | Secret template for blue (copy to `/etc/home-automation/`) |
+| `ops/systemd/gateway-green.env.example` | Secret template for green |
 
 ### `scripts/`
 Shell, Python, or other executable scripts that perform automation tasks (backups, service restarts, notifications, etc.).
@@ -51,6 +84,7 @@ Runbooks, architecture notes, and any additional documentation that does not bel
 
 | Document | Description |
 |----------|-------------|
+| [docs/blue_green.md](docs/blue_green.md) | Blue-green gateway deployment: architecture, setup, deploy, rollback |
 | [docs/usage.md](docs/usage.md) | How to run automation tasks manually |
 | [docs/adding_tools.md](docs/adding_tools.md) | Step-by-step guide for adding new tools |
 | [docs/architecture.md](docs/architecture.md) | How scripts, registry, cron, and secrets interact |
@@ -166,6 +200,7 @@ See [docs/cron_jobs.md](docs/cron_jobs.md) for the full scheduling guide, includ
 
 | Document | Description |
 |----------|-------------|
+| [docs/blue_green.md](docs/blue_green.md) | Blue-green gateway deployment: architecture, setup, deploy, rollback |
 | [docs/usage.md](docs/usage.md) | How to run automation tasks manually |
 | [docs/adding_tools.md](docs/adding_tools.md) | Step-by-step guide for adding new tools |
 | [docs/architecture.md](docs/architecture.md) | How scripts, registry, cron, and secrets interact |
