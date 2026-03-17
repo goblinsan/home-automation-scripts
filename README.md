@@ -62,8 +62,8 @@ Runtime output from scripts. Also permanently gitignored.
 ### Prerequisites
 
 - Git
-- Bash 4+ (macOS users: `brew install bash`)
-- Python 3.9+ (optional, required only for Python scripts)
+- Bash 4+
+- A supported Linux distro (Debian/Ubuntu, Fedora/RHEL, or Arch Linux)
 
 ### 1 – Clone the repository
 
@@ -72,21 +72,33 @@ git clone https://github.com/goblinsan/home-automation-scripts.git
 cd home-automation-scripts
 ```
 
-### 2 – Set up your secrets directory
+### 2 – Run the bootstrap installer
 
 ```bash
-mkdir -p secrets logs
-# Copy any .example config templates from configs/ to secrets/ and fill them in:
-# cp configs/my-service.conf.example secrets/my-service.conf
+bash install.sh
 ```
 
-### 3 – Run a script
+This installs all system dependencies, creates the `secrets/` and `logs/` directories, sets up a Python virtual environment at `.venv/`, and installs Python packages from `requirements.txt`.
+
+> Run `bash install.sh --dry-run` to preview the steps without making any changes.
+
+### 3 – Configure your secrets
 
 ```bash
+# Copy any .example config templates from configs/ to secrets/ and fill them in:
+cp configs/*.example secrets/   # run only if templates exist
+```
+
+### 4 – Run a script
+
+```bash
+source .venv/bin/activate
 bash scripts/<script-name>.sh
 ```
 
 Each script includes a usage comment at the top. Run `bash scripts/<script-name>.sh --help` (where supported) for options.
+
+For a full step-by-step guide, including cron scheduling and troubleshooting, see [docs/installation.md](docs/installation.md).
 
 ---
 
