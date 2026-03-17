@@ -98,6 +98,33 @@ bash scripts/<script-name>.sh
 
 Each script includes a usage comment at the top. Run `bash scripts/<script-name>.sh --help` (where supported) for options.
 
+### 5 – Use the automation runner (Python tasks)
+
+The central runner discovers Python scripts in `scripts/` that expose a `run()` function and executes them with consistent logging and error handling.
+
+```bash
+source .venv/bin/activate
+
+# List all available tasks
+python3 tools/runner.py list
+
+# Run one or more tasks
+python3 tools/runner.py run <task-name>
+python3 tools/runner.py run <task1> <task2>
+```
+
+**Writing a new task** — create `scripts/my_task.py`:
+
+```python
+DESCRIPTION = "Short description shown in the task list."
+
+def run():
+    # automation logic here
+    print("Task executed!")
+```
+
+Each run produces a timestamped log file in `logs/` (e.g. `logs/runner_20260101_120000.log`). Failures are captured with full tracebacks and logged clearly; the runner exits with code `1` if any task fails.
+
 For a full step-by-step guide, including cron scheduling and troubleshooting, see [docs/installation.md](docs/installation.md).
 
 ---
