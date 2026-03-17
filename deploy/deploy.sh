@@ -3,16 +3,16 @@
 # deploy/deploy.sh – Blue-green deployment script for the gateway service.
 #
 # WHAT IT DOES
-#   1. Reads the currently active deployment colour (blue or green) from the
+#   1. Reads the currently active deployment color (blue or green) from the
 #      state file.
-#   2. Identifies the *inactive* colour as the deployment target.
+#   2. Identifies the *inactive* color as the deployment target.
 #   3. Pulls the latest code from git (or uses the working tree – see flags).
 #   4. Installs/updates Python dependencies in the shared virtual environment.
-#   5. Starts (or restarts) the systemd service for the inactive colour.
+#   5. Starts (or restarts) the systemd service for the inactive color.
 #   6. Waits for the inactive instance's /health endpoint to return HTTP 200.
 #   7. Rewrites the nginx upstream config to point to the newly healthy instance.
 #   8. Reloads nginx gracefully (zero-drop reload).
-#   9. Writes the new active colour to the state file.
+#   9. Writes the new active color to the state file.
 #  10. Optionally stops the previously active instance after a drain delay.
 #
 # USAGE
@@ -256,7 +256,7 @@ switch_nginx_upstream() {
   local new_conf
   new_conf="$(cat <<EOF
 # Managed by deploy/deploy.sh – do not edit manually.
-# Active deployment colour: ${color}
+# Active deployment color: ${color}
 # Generated: $(date '+%Y-%m-%d %H:%M:%S')
 upstream gateway_active {
     server 127.0.0.1:${port};
@@ -321,7 +321,7 @@ main() {
   # Step 4 – Switch nginx traffic to the new instance.
   switch_nginx_upstream "${target_color}"
 
-  # Step 5 – Record the new active colour.
+  # Step 5 – Record the new active color.
   write_active_color "${target_color}"
 
   # Step 6 – Optionally drain and stop the previously active instance.

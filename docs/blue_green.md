@@ -102,7 +102,7 @@ Runtime files **outside** the repository (never committed):
 └── gateway-green.env      # Secrets + config for green (mode 600)
 
 /var/lib/home-automation/
-└── active_color           # Current active colour: "blue" or "green"
+└── active_color           # Current active color: "blue" or "green"
 
 /etc/nginx/conf.d/
 └── gateway-active-upstream.conf   # Managed by deploy.sh / rollback.sh
@@ -255,8 +255,8 @@ bash deploy/deploy.sh --dry-run
 ### What the script does
 
 1. Checks prerequisites (curl, nginx, systemctl, service units).
-2. Reads the current active colour from `/var/lib/home-automation/active_color`.
-3. Determines the inactive colour (the deployment target).
+2. Reads the current active color from `/var/lib/home-automation/active_color`.
+3. Determines the inactive color (the deployment target).
 4. Runs `git pull --ff-only` to update the repo.
 5. Installs/upgrades pip dependencies.
 6. Runs `systemctl restart gateway-<target>.service`.
@@ -297,7 +297,7 @@ Expected healthy response:
 }
 ```
 
-Check which colour is active:
+Check which color is active:
 
 ```bash
 cat /var/lib/home-automation/active_color
@@ -329,7 +329,7 @@ bash deploy/rollback.sh
 
 The rollback script:
 
-1. Reads the current active colour.
+1. Reads the current active color.
 2. Starts the alternate instance if it is not already running.
 3. Waits for health checks to pass.
 4. Switches nginx back.
@@ -370,7 +370,7 @@ sudo systemctl stop gateway-green.service
 | Secret templates (no real values) | `ops/systemd/gateway-*.env.example` | standard | ✅ Committed |
 | nginx config (no secrets) | `ops/nginx/gateway-site.conf` | standard | ✅ Committed |
 | systemd units (no secrets) | `ops/systemd/gateway-*.service` | standard | ✅ Committed |
-| Active colour state | `/var/lib/home-automation/active_color` | standard | ❌ Runtime only |
+| Active color state | `/var/lib/home-automation/active_color` | standard | ❌ Runtime only |
 
 Rules enforced by `.gitignore`:
 
@@ -461,7 +461,7 @@ bash deploy/deploy.sh --no-stop-old
 # Rollback
 bash deploy/rollback.sh
 
-# Check active colour
+# Check active color
 cat /var/lib/home-automation/active_color
 
 # Direct health checks

@@ -27,6 +27,8 @@ EnvironmentFile=/etc/home-automation/gateway-green.env
 
 WorkingDirectory=/opt/home-automation-scripts
 
+# Ensure the logs directory exists before starting.
+ExecStartPre=/bin/mkdir -p /opt/home-automation-scripts/logs
 ExecStart=/opt/home-automation-scripts/.venv/bin/gunicorn \
     --workers 1 \
     --bind 127.0.0.1:${GATEWAY_PORT} \
