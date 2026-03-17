@@ -127,6 +127,28 @@ Each run produces a timestamped log file in `logs/` (e.g. `logs/runner_20260101_
 
 For a full step-by-step guide, including cron scheduling and troubleshooting, see [docs/installation.md](docs/installation.md).
 
+### 6 – Schedule tasks with cron
+
+A cron job template (`configs/crontab.example`) and a helper installer are included. To install predefined scheduled tasks:
+
+```bash
+source .venv/bin/activate
+
+# Preview what will be installed
+python3 tools/cron_installer.py list
+
+# Dry-run to confirm the crontab changes
+python3 tools/cron_installer.py install --dry-run
+
+# Install the cron jobs
+python3 tools/cron_installer.py install
+
+# Remove the managed entries at any time
+python3 tools/cron_installer.py uninstall
+```
+
+See [docs/cron_jobs.md](docs/cron_jobs.md) for the full scheduling guide, including manual crontab editing, safety guidelines, and systemd timer instructions.
+
 ---
 
 ## Contributing
