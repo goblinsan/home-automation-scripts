@@ -107,15 +107,23 @@ install_system_deps() {
 # ---------------------------------------------------------------------------
 
 create_local_dirs() {
-  local dirs=("${REPO_ROOT}/secrets" "${REPO_ROOT}/logs")
-  for dir in "${dirs[@]}"; do
-    if [[ ! -d "${dir}" ]]; then
-      log "Creating directory: ${dir}"
-      run mkdir -p "${dir}"
-    else
-      log "Directory already exists, skipping: ${dir}"
-    fi
-  done
+  # secrets/ is owner-readable only (mode 700) so that other local users on
+  # the same host cannot read credential files stored there.
+  if [[ ! -d "${REPO_ROOT}/secrets" ]]; then
+    log "Creating directory: ${REPO_ROOT}/secrets"
+    run mkdir -p "${REPO_ROOT}/secrets"
+    run chmod 700 "${REPO_ROOT}/secrets"
+  else
+    log "Directory already exists, ensuring permissions: ${REPO_ROOT}/secrets"
+    run chmod 700 "${REPO_ROOT}/secrets"
+  fi
+
+  if [[ ! -d "${REPO_ROOT}/logs" ]]; then
+    log "Creating directory: ${REPO_ROOT}/logs"
+    run mkdir -p "${REPO_ROOT}/logs"
+  else
+    log "Directory already exists, skipping: ${REPO_ROOT}/logs"
+  fi
 }
 
 # ---------------------------------------------------------------------------
