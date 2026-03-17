@@ -1,0 +1,7 @@
+# Python development / testing dependencies for home-automation-scripts
+#
+# Install in addition to requirements.txt when working on the project:
+#   source .venv/bin/activate
+#   pip install -r requirements-dev.txt
+
+pytest>=7.0
