@@ -1,0 +1,17 @@
+# Python dependencies for the gateway service.
+#
+# Install into the project virtual environment with:
+#   source .venv/bin/activate
+#   pip install -r gateway/requirements.txt
+#
+# These are in addition to the top-level requirements.txt.
+
+# HTTP requests – proxy and health-check calls to Home Assistant
+requests>=2.31.0
+
+# Flask – lightweight WSGI framework for the gateway HTTP server
+Flask>=3.0.0
+
+# Gunicorn – production WSGI server (replaces Flask dev server in systemd)
+# The systemd units use gunicorn to run the gateway.
+gunicorn>=21.0.0

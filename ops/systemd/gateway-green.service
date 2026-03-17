@@ -1,0 +1,51 @@
+# =============================================================================
+# ops/systemd/gateway-green.service – systemd unit for the green gateway instance
+#
+# INSTALLATION
+#   sudo cp ops/systemd/gateway-green.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable gateway-green.service
+#
+# The unit reads secrets from the environment file at:
+#   /etc/home-automation/gateway-green.env
+# Copy ops/systemd/gateway-green.env.example to that path and fill in values.
+# =============================================================================
+
+[Unit]
+Description=Home Automation Gateway – Green instance
+Documentation=file:///opt/home-automation-scripts/docs/blue_green.md
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=home-automation
+Group=home-automation
+
+# Load instance-specific secrets and config.
+EnvironmentFile=/etc/home-automation/gateway-green.env
+
+WorkingDirectory=/opt/home-automation-scripts
+
+# Ensure the logs directory exists before starting.
+ExecStartPre=/bin/mkdir -p /opt/home-automation-scripts/logs
+ExecStart=/opt/home-automation-scripts/.venv/bin/gunicorn \
+    --workers 1 \
+    --bind 127.0.0.1:${GATEWAY_PORT} \
+    --access-logfile - \
+    --error-logfile - \
+    --capture-output \
+    gateway.app:app
+
+Restart=on-failure
+RestartSec=5s
+
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/home-automation-scripts/logs
+
+[Install]
+WantedBy=multi-user.target
