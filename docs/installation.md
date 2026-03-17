@@ -123,18 +123,30 @@ deactivate
 
 ### 7 – (Optional) Schedule scripts with cron
 
-Open the crontab editor:
+A ready-to-use template and a helper installer are included.  Run the
+installer to preview and apply the predefined cron jobs:
 
 ```bash
-crontab -e
+source .venv/bin/activate
+
+# Preview entries (no changes made)
+python3 tools/cron_installer.py list
+
+# Dry-run to confirm the resulting crontab
+python3 tools/cron_installer.py install --dry-run
+
+# Apply the cron jobs
+python3 tools/cron_installer.py install
 ```
 
-Add an entry for any script you want to run on a schedule, for example:
+To remove the managed entries later:
 
-```cron
-# Run the backup script every day at 02:00
-0 2 * * * /bin/bash /path/to/home-automation-scripts/scripts/backup.sh >> /path/to/home-automation-scripts/logs/backup.log 2>&1
+```bash
+python3 tools/cron_installer.py uninstall
 ```
+
+For advanced options (custom template paths, manual crontab editing, and
+systemd timer instructions) see [docs/cron_jobs.md](cron_jobs.md).
 
 ---
 
