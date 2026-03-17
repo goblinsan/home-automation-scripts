@@ -67,13 +67,13 @@ def get_disk_usage(path: str = "/") -> dict[str, float]:
 
 
 def get_cpu_percent() -> float:
-    """Return the current system-wide CPU utilisation as a percentage.
+    """Return the current system-wide CPU utilization as a percentage.
 
     Uses ``/proc/stat`` on Linux-like systems for a one-second average.
     Falls back to 0.0 if the file is unavailable (e.g. macOS without psutil).
 
     Returns:
-        CPU utilisation percentage (0.0 – 100.0).
+        CPU utilization percentage (0.0 – 100.0).
     """
     proc_stat = Path("/proc/stat")
     if not proc_stat.exists():
