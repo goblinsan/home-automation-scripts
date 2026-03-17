@@ -49,6 +49,15 @@ Development and operational utilities: linting helpers, deployment wrappers, one
 ### `docs/`
 Runbooks, architecture notes, and any additional documentation that does not belong in a script comment block.
 
+| Document | Description |
+|----------|-------------|
+| [docs/usage.md](docs/usage.md) | How to run automation tasks manually |
+| [docs/adding_tools.md](docs/adding_tools.md) | Step-by-step guide for adding new tools |
+| [docs/architecture.md](docs/architecture.md) | How scripts, registry, cron, and secrets interact |
+| [docs/installation.md](docs/installation.md) | Full installation walkthrough |
+| [docs/cron_jobs.md](docs/cron_jobs.md) | Cron scheduling and systemd timer guide |
+| [docs/credentials.md](docs/credentials.md) | Credential and secrets configuration |
+
 ### `secrets/` *(local only)*
 Filled-in config files, API keys, tokens, and any other sensitive material. This directory is permanently gitignored.
 
@@ -127,6 +136,8 @@ Each run produces a timestamped log file in `logs/` (e.g. `logs/runner_20260101_
 
 For a full step-by-step guide, including cron scheduling and troubleshooting, see [docs/installation.md](docs/installation.md).
 
+For the complete usage guide (all CLI options, log reading, and troubleshooting), see [docs/usage.md](docs/usage.md).
+
 ### 6 – Schedule tasks with cron
 
 A cron job template (`configs/crontab.example`) and a helper installer are included. To install predefined scheduled tasks:
@@ -148,6 +159,19 @@ python3 tools/cron_installer.py uninstall
 ```
 
 See [docs/cron_jobs.md](docs/cron_jobs.md) for the full scheduling guide, including manual crontab editing, safety guidelines, and systemd timer instructions.
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [docs/usage.md](docs/usage.md) | How to run automation tasks manually |
+| [docs/adding_tools.md](docs/adding_tools.md) | Step-by-step guide for adding new tools |
+| [docs/architecture.md](docs/architecture.md) | How scripts, registry, cron, and secrets interact |
+| [docs/installation.md](docs/installation.md) | Full installation walkthrough |
+| [docs/cron_jobs.md](docs/cron_jobs.md) | Cron scheduling and systemd timer guide |
+| [docs/credentials.md](docs/credentials.md) | Credential and secrets configuration |
 
 ---
 
