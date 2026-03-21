@@ -1,0 +1,22 @@
+name: Manual Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: App id
+        required: true
+        default: chat-router
+
+jobs:
+  rollback:
+    runs-on:
+      - self-hosted
+      - gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: deploy/bin/rollback-app.sh --config configs/gateway.config.json --app "${{ inputs.app }}"

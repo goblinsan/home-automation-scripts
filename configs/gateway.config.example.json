@@ -1,0 +1,52 @@
+{
+  "gateway": {
+    "serverNames": [
+      "gateway.example.test"
+    ],
+    "nginxSiteOutputPath": "/etc/nginx/sites-available/gateway",
+    "upstreamDirectory": "/etc/nginx/conf.d/upstreams",
+    "nginxReloadCommand": "sudo nginx -t && sudo systemctl reload nginx",
+    "systemdUnitDirectory": "/etc/systemd/system",
+    "systemdReloadCommand": "sudo systemctl daemon-reload",
+    "systemdEnableTimerCommand": "sudo systemctl enable --now"
+  },
+  "apps": [
+    {
+      "id": "chat-router",
+      "repoUrl": "git@github.com:example/chat-router.git",
+      "defaultRevision": "main",
+      "deployRoot": "/srv/apps/chat-router",
+      "routePath": "/chat/",
+      "healthPath": "/health",
+      "upstreamConfPath": "/etc/nginx/conf.d/upstreams/chat-router-active.conf",
+      "buildCommands": [
+        "npm ci",
+        "npm run build"
+      ],
+      "slots": {
+        "blue": {
+          "port": 3001,
+          "startCommand": "sudo systemctl restart chat-router-blue.service",
+          "stopCommand": "sudo systemctl stop chat-router-blue.service"
+        },
+        "green": {
+          "port": 3002,
+          "startCommand": "sudo systemctl restart chat-router-green.service",
+          "stopCommand": "sudo systemctl stop chat-router-green.service"
+        }
+      }
+    }
+  ],
+  "scheduledJobs": [
+    {
+      "id": "refresh-model-catalog",
+      "appId": "chat-router",
+      "description": "Refresh the model catalog cache",
+      "schedule": "*:0/15",
+      "workingDirectory": "__CURRENT__",
+      "execStart": "/usr/bin/bash __CURRENT__/scripts/jobs/refresh-model-catalog.sh",
+      "user": "deploy"
+    }
+  ]
+}
+

@@ -1,0 +1,18 @@
+{
+  "name": "gateway-control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript-first gateway control plane for routing, blue/green deployments, and scheduled jobs.",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "lint": "node src/cli.ts lint",
+    "typecheck": "node src/cli.ts typecheck",
+    "test": "node --test tests/*.test.ts",
+    "build": "node src/cli.ts build --config configs/gateway.config.example.json --out generated",
+    "validate": "node src/cli.ts validate --config configs/gateway.config.example.json"
+  }
+}
+
