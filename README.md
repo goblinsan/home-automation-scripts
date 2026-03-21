@@ -1,12 +1,12 @@
 # home-automation-scripts
 
-A curated collection of scripts, configurations, and tools for automating and managing a home lab or smart-home environment.
+A version-controlled gateway and automation repo for a home lab environment.
 
 ---
 
 ## Purpose
 
-The goal of this project is to centralise all home-automation logic in one version-controlled place so that it is easy to:
+The goal of this project is to centralise gateway operations and home-automation logic in one version-controlled place so that it is easy to:
 
 - Reproduce a setup on a new machine in minutes.
 - Review and audit every change through pull requests.
@@ -29,11 +29,11 @@ The goal of this project is to centralise all home-automation logic in one versi
 
 ```
 home-automation-scripts/
-├── gateway/      # Gateway service (Flask proxy + /health endpoint)
-├── deploy/       # Blue-green deployment and rollback scripts
+├── gateway/      # Gateway app and Docker image build assets
+├── deploy/       # Blue-green deployment, smoke-test, and rollback scripts
 ├── ops/          # Operational config: systemd units, nginx, state
 │   ├── nginx/    # nginx virtual-host and upstream configs
-│   ├── systemd/  # systemd service units and env templates
+│   ├── systemd/  # systemd service units, timers, and env templates
 │   └── state/    # Documents runtime state directory
 ├── scripts/      # Automation and maintenance scripts
 ├── configs/      # Configuration templates and non-secret settings
@@ -45,17 +45,19 @@ home-automation-scripts/
 
 ### `gateway/`
 The home-automation gateway service: a lightweight Flask reverse-proxy that
-forwards requests to Home Assistant and exposes a `/health` endpoint.  Two
-instances run on different ports (blue = 8081, green = 8082) to support
-blue-green deployments.
+forwards requests to Home Assistant and exposes a `/health` endpoint. The app
+is packaged as a Docker image and run in two systemd-managed deployment slots
+(`blue` on port `8081`, `green` on port `8082`) to support blue-green
+deployments with real release isolation.
 
 ### `deploy/`
 Deployment automation.
 
 | Script | Purpose |
 |--------|---------|
-| `deploy/deploy.sh` | Blue-green deploy: starts new instance, waits for health, switches nginx |
-| `deploy/rollback.sh` | Roll back to the previously active instance |
+| `deploy/deploy.sh` | Builds the inactive slot image, restarts its container, waits for health, switches nginx |
+| `deploy/rollback.sh` | Rolls traffic back to the other slot and optionally stops the current one |
+| `deploy/smoke_test.sh` | Verifies the `/health` endpoint directly or through nginx |
 
 ### `ops/`
 Operational configuration files.
@@ -65,10 +67,12 @@ Operational configuration files.
 | `ops/nginx/gateway-site.conf` | nginx virtual-host (install to `/etc/nginx/sites-available/`) |
 | `ops/nginx/gateway-blue-upstream.conf` | Upstream definition for blue (port 8081) |
 | `ops/nginx/gateway-green-upstream.conf` | Upstream definition for green (port 8082) |
-| `ops/systemd/gateway-blue.service` | systemd unit for the blue gateway instance |
-| `ops/systemd/gateway-green.service` | systemd unit for the green gateway instance |
-| `ops/systemd/gateway-blue.env.example` | Secret template for blue (copy to `/etc/home-automation/`) |
-| `ops/systemd/gateway-green.env.example` | Secret template for green |
+| `ops/systemd/gateway-blue.service` | systemd unit for the blue gateway container |
+| `ops/systemd/gateway-green.service` | systemd unit for the green gateway container |
+| `ops/systemd/timers/` | Source-controlled host timer units for recurring automation tasks |
+| `ops/systemd/gateway-blue.env.example` | Env template for blue, including secrets and slot image tag |
+| `ops/systemd/gateway-green.env.example` | Env template for green, including secrets and slot image tag |
+| `ops/systemd/automation.env.example` | Optional env template for scheduled automation tasks |
 
 ### `scripts/`
 Shell, Python, or other executable scripts that perform automation tasks (backups, service restarts, notifications, etc.).
@@ -107,6 +111,8 @@ Runtime output from scripts. Also permanently gitignored.
 - Git
 - Bash 4+
 - A supported Linux distro (Debian/Ubuntu, Fedora/RHEL, or Arch Linux)
+- Docker Engine
+- nginx for gateway ingress
 
 ### 1 – Clone the repository
 
@@ -121,7 +127,12 @@ cd home-automation-scripts
 bash install.sh
 ```
 
-This installs all system dependencies, creates the `secrets/` and `logs/` directories, sets up a Python virtual environment at `.venv/`, and installs Python packages from `requirements.txt`.
+This bootstraps the Python automation toolchain, creates the `secrets/` and
+`logs/` directories, sets up a Python virtual environment at `.venv/`, and
+installs Python packages from `requirements.txt`.
+
+For the gateway deployment path, you also need Docker Engine, systemd, and
+nginx on the host. See [docs/blue_green.md](docs/blue_green.md).
 
 > Run `bash install.sh --dry-run` to preview the steps without making any changes.
 
@@ -172,9 +183,23 @@ For a full step-by-step guide, including cron scheduling and troubleshooting, se
 
 For the complete usage guide (all CLI options, log reading, and troubleshooting), see [docs/usage.md](docs/usage.md).
 
-### 6 – Schedule tasks with cron
+### 6 – Schedule tasks with systemd timers
 
-A cron job template (`configs/crontab.example`) and a helper installer are included. To install predefined scheduled tasks:
+On the gateway host, the preferred scheduling model is source-controlled
+`systemd` timers:
+
+```bash
+cp ops/systemd/automation.env.example /etc/home-automation/automation.env
+bash deploy/install_scheduled_jobs.sh --dry-run
+bash deploy/install_scheduled_jobs.sh
+```
+
+This installs the managed timer units from `ops/systemd/timers/` and enables
+them immediately.
+
+### 7 – Schedule tasks with cron
+
+For non-gateway machines, the legacy cron helper is still available:
 
 ```bash
 source .venv/bin/activate
@@ -192,7 +217,9 @@ python3 tools/cron_installer.py install
 python3 tools/cron_installer.py uninstall
 ```
 
-See [docs/cron_jobs.md](docs/cron_jobs.md) for the full scheduling guide, including manual crontab editing, safety guidelines, and systemd timer instructions.
+See [docs/cron_jobs.md](docs/cron_jobs.md) for the cron-based guide. For the
+gateway deployment path, prefer the `systemd` timer flow described in
+[docs/blue_green.md](docs/blue_green.md).
 
 ---
 

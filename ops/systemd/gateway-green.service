@@ -14,28 +14,22 @@
 [Unit]
 Description=Home Automation Gateway – Green instance
 Documentation=file:///opt/home-automation-scripts/docs/blue_green.md
-After=network.target
+After=docker.service network.target
+Requires=docker.service
 Wants=network.target
 
 [Service]
 Type=simple
 User=home-automation
 Group=home-automation
+SupplementaryGroups=docker
 
 # Load instance-specific secrets and config.
 EnvironmentFile=/etc/home-automation/gateway-green.env
 
-WorkingDirectory=/opt/home-automation-scripts
-
-# Ensure the logs directory exists before starting.
-ExecStartPre=/bin/mkdir -p /opt/home-automation-scripts/logs
-ExecStart=/opt/home-automation-scripts/.venv/bin/gunicorn \
-    --workers 1 \
-    --bind 127.0.0.1:${GATEWAY_PORT} \
-    --access-logfile - \
-    --error-logfile - \
-    --capture-output \
-    gateway.app:app
+ExecStartPre=-/usr/bin/docker rm -f gateway-green
+ExecStart=/bin/sh -lc '/usr/bin/docker run --rm --name gateway-green --env-file /etc/home-automation/gateway-green.env --publish 127.0.0.1:${GATEWAY_PORT}:${GATEWAY_PORT} "${GATEWAY_IMAGE}"'
+ExecStop=-/usr/bin/docker stop gateway-green
 
 Restart=on-failure
 RestartSec=5s
@@ -45,7 +39,7 @@ TimeoutStopSec=30
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/opt/home-automation-scripts/logs
+ReadWritePaths=/var/run/docker.sock
 
 [Install]
 WantedBy=multi-user.target

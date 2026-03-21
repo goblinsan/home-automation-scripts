@@ -5,6 +5,10 @@ and provides instructions for the `tools/cron_installer.py` helper utility.
 
 For an alternative based on systemd, see [Systemd Timer Alternative](#systemd-timer-alternative).
 
+If this repo is being used as the gateway host control plane, prefer the
+source-controlled timer units in `ops/systemd/timers/` together with
+`deploy/install_scheduled_jobs.sh`.
+
 ---
 
 ## Table of Contents

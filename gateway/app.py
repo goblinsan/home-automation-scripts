@@ -3,9 +3,10 @@
 gateway/app.py – Home-automation gateway service.
 
 Acts as a thin reverse-proxy and authentication layer in front of Home
-Assistant (or another local API).  Two instances run simultaneously on
-different ports (blue = GATEWAY_PORT 8081, green = GATEWAY_PORT 8082);
-nginx routes live traffic to whichever instance is currently "active".
+Assistant (or another local API). Two instances run as separate Docker-
+backed deployment slots on different ports (blue = GATEWAY_PORT 8081,
+green = GATEWAY_PORT 8082); nginx routes live traffic to whichever
+instance is currently active.
 
 Environment variables (all required unless marked optional):
     GATEWAY_PORT       TCP port this instance listens on.  Default: 8081.

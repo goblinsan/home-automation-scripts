@@ -14,7 +14,8 @@
 [Unit]
 Description=Home Automation Gateway – Blue instance
 Documentation=file:///opt/home-automation-scripts/docs/blue_green.md
-After=network.target
+After=docker.service network.target
+Requires=docker.service
 # Allow the green instance to start independently.
 Wants=network.target
 
@@ -22,25 +23,16 @@ Wants=network.target
 Type=simple
 User=home-automation
 Group=home-automation
+SupplementaryGroups=docker
 
 # Load instance-specific secrets and config.
 # This file must exist before starting the service; see *.env.example.
+# It also declares the Docker image tag for this slot.
 EnvironmentFile=/etc/home-automation/gateway-blue.env
 
-WorkingDirectory=/opt/home-automation-scripts
-
-# Use gunicorn for a production-grade WSGI server.
-# Workers=1 is intentional for a single-process, low-traffic home server.
-# Ensure the logs directory exists before starting (install.sh creates it,
-# but this guard prevents a startup failure if it was removed).
-ExecStartPre=/bin/mkdir -p /opt/home-automation-scripts/logs
-ExecStart=/opt/home-automation-scripts/.venv/bin/gunicorn \
-    --workers 1 \
-    --bind 127.0.0.1:${GATEWAY_PORT} \
-    --access-logfile - \
-    --error-logfile - \
-    --capture-output \
-    gateway.app:app
+ExecStartPre=-/usr/bin/docker rm -f gateway-blue
+ExecStart=/bin/sh -lc '/usr/bin/docker run --rm --name gateway-blue --env-file /etc/home-automation/gateway-blue.env --publish 127.0.0.1:${GATEWAY_PORT}:${GATEWAY_PORT} "${GATEWAY_IMAGE}"'
+ExecStop=-/usr/bin/docker stop gateway-blue
 
 # Restart on failure but not on clean exit.
 Restart=on-failure
@@ -53,7 +45,7 @@ TimeoutStopSec=30
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/opt/home-automation-scripts/logs
+ReadWritePaths=/var/run/docker.sock
 
 [Install]
 WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Strava sync daily
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=home-automation-strava-sync.service
+
+[Install]
+WantedBy=timers.target

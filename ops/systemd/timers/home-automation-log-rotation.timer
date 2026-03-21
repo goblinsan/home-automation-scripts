@@ -1,0 +1,11 @@
+[Unit]
+Description=Run home automation log rotation daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Unit=home-automation-log-rotation.service
+
+[Install]
+WantedBy=timers.target
+

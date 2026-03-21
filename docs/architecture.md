@@ -1,9 +1,10 @@
 # System Architecture
 
 This document describes how the **home-automation-scripts** components fit
-together — how scripts are discovered and executed, how the registry drives the
-automation CLI, how secrets are kept out of the repository, how cron jobs are
-managed, and how all log output is collected.
+together across two layers:
+
+- the gateway runtime layer (`nginx` + `systemd` + Dockerized app slots)
+- the automation tooling layer (`scripts/`, `tools/`, registry-driven tasks)
 
 ---
 
@@ -11,61 +12,33 @@ managed, and how all log output is collected.
 
 1. [High-Level Overview](#high-level-overview)
 2. [Directory Layout](#directory-layout)
-3. [Component Descriptions](#component-descriptions)
-   - [scripts/](#scripts)
-   - [configs/](#configs)
-   - [tools/runner.py](#toolsrunnerpy)
-   - [tools/automation.py](#toolsautomationpy)
-   - [tools/registry.py](#toolsregistrypy)
-   - [tools/env_loader.py](#toolsenv_loaderpy)
-   - [tools/cron_installer.py](#toolscron_installerpy)
-   - [tools/logger.py](#toolsloggerpy)
-4. [Data Flow](#data-flow)
-   - [Running a Task via the Automation CLI](#running-a-task-via-the-automation-cli)
-   - [Running a Task via the Runner CLI](#running-a-task-via-the-runner-cli)
-   - [Credential Loading](#credential-loading)
-   - [Cron Job Installation](#cron-job-installation)
-5. [Secrets Strategy](#secrets-strategy)
-6. [Logging Strategy](#logging-strategy)
-7. [Extension Points](#extension-points)
+3. [Gateway Runtime Layer](#gateway-runtime-layer)
+4. [Automation Tooling Layer](#automation-tooling-layer)
+5. [Data Flow](#data-flow)
+6. [Secrets Strategy](#secrets-strategy)
+7. [Logging Strategy](#logging-strategy)
+8. [Extension Points](#extension-points)
 
 ---
 
 ## High-Level Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        home-automation-scripts                      │
-│                                                                     │
-│  ┌──────────────┐   reads    ┌──────────────────────┐              │
-│  │ automation   │──────────► │ tools/registry.py    │              │
-│  │ (CLI entry)  │            │ configs/tools_registry│              │
-│  └──────┬───────┘            │ .yaml                │              │
-│         │ delegates          └──────────────────────┘              │
-│         ▼                                                           │
-│  ┌──────────────┐  imports   ┌─────────────────────┐               │
-│  │ tools/runner │──────────► │ scripts/*.py         │               │
-│  │ .py          │            │ (each exposes run()) │               │
-│  └──────┬───────┘            └──────────┬──────────┘               │
-│         │ logs via                      │ loads secrets via         │
-│         ▼                               ▼                           │
-│  ┌──────────────┐            ┌─────────────────────┐               │
-│  │ tools/logger │            │ tools/env_loader.py │               │
-│  │ .py          │            │ .env (gitignored)   │               │
-│  └──────┬───────┘            └─────────────────────┘               │
-│         │ writes to                                                 │
-│         ▼                                                           │
-│  ┌──────────────┐                                                   │
-│  │ logs/*.log   │                                                   │
-│  │ (gitignored) │                                                   │
-│  └──────────────┘                                                   │
-│                                                                     │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │ cron / systemd timer                                        │   │
-│  │   invokes automation CLI or runner CLI on a schedule        │   │
-│  │   managed by tools/cron_installer.py + configs/crontab.example│ │
-│  └─────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────┘
+```text
+                Public / LAN traffic
+                        |
+                        v
+                 nginx on the host
+                        |
+                        v
+            active upstream: blue or green
+                 /                     \
+                v                       v
+  gateway-blue.service          gateway-green.service
+        docker run                     docker run
+  home-automation-gateway:blue  home-automation-gateway:green
+
+    Host-side automation CLI / runner / registry / scripts / cron installer
+    remain in the repo as operational tooling alongside the gateway runtime
 ```
 
 ---
@@ -74,6 +47,21 @@ managed, and how all log output is collected.
 
 ```
 home-automation-scripts/
+├── gateway/               # Gateway app and Docker image build assets
+│   ├── app.py
+│   ├── Dockerfile
+│   └── requirements.txt
+│
+├── deploy/                # Blue-green deployment helpers for the gateway
+│   ├── deploy.sh
+│   ├── rollback.sh
+│   └── smoke_test.sh
+│
+├── ops/                   # Host-level nginx and systemd assets
+│   ├── nginx/
+│   ├── state/
+│   └── systemd/
+│
 ├── scripts/               # Automation task scripts
 │   ├── github_helper.py
 │   ├── health_check.py
@@ -108,12 +96,35 @@ home-automation-scripts/
 
 ---
 
-## Component Descriptions
+## Gateway Runtime Layer
+
+The gateway deployment model is:
+
+- `nginx` on the host handles ingress and active-slot switching.
+- `systemd` manages two long-lived slot services.
+- Each slot service runs a different Docker image tag.
+- `deploy/deploy.sh` rebuilds only the inactive slot tag and cuts traffic over
+  after health checks.
+
+Key files:
+
+| Path | Purpose |
+|------|---------|
+| `gateway/Dockerfile` | Immutable app image build |
+| `ops/systemd/gateway-blue.service` | Blue slot container unit |
+| `ops/systemd/gateway-green.service` | Green slot container unit |
+| `ops/systemd/timers/` | Source-controlled host timer units |
+| `deploy/deploy.sh` | Build, restart, health-check, and cut over |
+| `deploy/rollback.sh` | Restore traffic to the other slot |
+| `deploy/smoke_test.sh` | Direct and proxied `/health` checks |
+| `deploy/install_scheduled_jobs.sh` | Render, install, and enable managed timers |
+
+## Automation Tooling Layer
 
 ### `scripts/`
 
 Each file in `scripts/` is an independent Python module that implements one
-automation task.  The only contract required by the runner is:
+automation task. The only contract required by the runner is:
 
 1. The file must expose a module-level `run()` callable.
 2. Optionally, a `DESCRIPTION` string is used for task listings.

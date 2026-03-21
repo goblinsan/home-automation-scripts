@@ -9,8 +9,8 @@ This guide walks you through setting up the **home-automation-scripts** suite on
 | Requirement | Minimum version | Notes |
 |-------------|----------------|-------|
 | Operating system | Debian 11 / Ubuntu 22.04 or equivalent | Other distros work; see [Package manager support](#package-manager-support) |
-| CPU / RAM | 1 vCPU / 512 MB | Sufficient for cron-based scripts |
-| Disk | 1 GB free | Logs and Python packages |
+| CPU / RAM | 1 vCPU / 512 MB | More is recommended if the gateway app runs on the same host |
+| Disk | 1 GB free | More is recommended once Docker images are stored locally |
 | Git | 2.x | `git --version` |
 | Python | 3.9+ | `python3 --version` |
 | Bash | 4+ | `bash --version` |
@@ -31,6 +31,14 @@ The following packages must be present on the host. `install.sh` handles this au
 | `jq` | Parse JSON in shell scripts |
 | `curl` | Make HTTP requests from shell scripts |
 | `wget` | Download files from shell scripts |
+
+Gateway deployment also requires:
+
+| Package | Purpose |
+|---------|---------|
+| Docker Engine | Runs the blue and green gateway slots |
+| nginx | Stable ingress and traffic switching |
+| systemd | Supervises the slot services |
 
 ### Package manager support
 
@@ -121,7 +129,20 @@ pip list                   # should show the installed packages
 deactivate
 ```
 
-### 7 – (Optional) Schedule scripts with cron
+### 7 – (Optional) Configure the gateway runtime
+
+If this machine is also the gateway host, complete the Docker/nginx setup
+described in [docs/blue_green.md](blue_green.md). `install.sh` does not
+install or configure Docker or nginx for you.
+
+If you also want source-controlled scheduled tasks on the gateway host:
+
+```bash
+sudo cp ops/systemd/automation.env.example /etc/home-automation/automation.env
+bash deploy/install_scheduled_jobs.sh
+```
+
+### 8 – (Optional) Schedule scripts with cron
 
 A ready-to-use template and a helper installer are included.  Run the
 installer to preview and apply the predefined cron jobs:

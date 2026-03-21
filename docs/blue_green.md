@@ -1,154 +1,132 @@
 # Blue-Green Deployment for the Gateway Service
 
-This document describes how the **home-automation gateway** is deployed and
-updated with minimal downtime using a blue-green deployment strategy.
+This document describes how the gateway is deployed with host-level `nginx`
+and `systemd`, while the app itself runs as Docker containers in blue/green
+slots.
 
 ---
 
-## Table of Contents
+## Overview
 
-1. [Architecture Overview](#architecture-overview)
-2. [Directory Structure](#directory-structure)
-3. [How Blue-Green Deployment Works](#how-blue-green-deployment-works)
-4. [Initial Setup](#initial-setup)
-5. [Deploying a New Version](#deploying-a-new-version)
-6. [Verifying Health](#verifying-health)
-7. [Rolling Back](#rolling-back)
-8. [Credentials and Config Storage](#credentials-and-config-storage)
-9. [Recovering from Partial Failure](#recovering-from-partial-failure)
-10. [Operational Reference](#operational-reference)
+```text
+                         +---------------------------------------+
+ External / LAN traffic  | nginx                                 |
+ ----------------------> | port 80                               |
+                         | includes active upstream config       |
+                         +-------------------+-------------------+
+                                             |
+                                             v
+                                 +-----------+-----------+
+                                 | gateway_active        |
+                                 | 127.0.0.1:<slot-port> |
+                                 +-----------+-----------+
+                                             |
+                    +------------------------+------------------------+
+                    |                                                 |
+                    v                                                 v
+         +----------+----------+                           +----------+----------+
+         | gateway-blue.service|                           | gateway-green.service|
+         | docker run image    |                           | docker run image     |
+         | home-automation-    |                           | home-automation-     |
+         | gateway:blue        |                           | gateway:green        |
+         | port 8081           |                           | port 8082            |
+         +----------+----------+                           +----------+----------+
+                    |                                                 |
+                    +------------------------+------------------------+
+                                             |
+                                             v
+                                Home Assistant / local APIs
+```
+
+The host owns ingress and service supervision. Each slot runs its own Docker
+image tag, so blue and green can hold different releases at the same time.
 
 ---
 
-## Architecture Overview
-
-```
-                         ┌──────────────────────────────────────┐
-  External / LAN  ──────▶│        nginx  (port 80)              │
-  requests               │  gateway-site.conf                   │
-                         │  → includes active-upstream.conf     │
-                         └──────────────┬───────────────────────┘
-                                        │  proxy_pass
-                              ┌─────────▼──────────┐
-                              │  gateway_active     │  (upstream block)
-                              │  127.0.0.1:<port>   │
-                              └──────────┬──────────┘
-                        ┌───────────────┴───────────────┐
-                        │                               │
-             ┌──────────▼──────────┐         ┌──────────▼──────────┐
-             │   gateway-blue      │         │   gateway-green     │
-             │   port 8081         │         │   port 8082         │
-             │   (Flask/gunicorn)  │         │   (Flask/gunicorn)  │
-             └──────────┬──────────┘         └──────────┬──────────┘
-                        │                               │
-                        └───────────────┬───────────────┘
-                                        │  proxy_pass
-                             ┌──────────▼──────────┐
-                             │   Home Assistant     │
-                             │   port 8123          │
-                             └─────────────────────┘
-```
-
-At any given time **only one** gateway instance is live.  nginx routes all
-traffic to it via the `gateway_active` upstream.  The other instance is either
-stopped or idling—ready to become active at any moment.
-
-### Components
+## Components
 
 | Component | Role |
-|-----------|------|
-| `gateway/app.py` | Flask app: proxies requests to Home Assistant, exposes `/health` |
-| `ops/nginx/gateway-site.conf` | nginx virtual-host; forwards to `gateway_active` upstream |
-| `/etc/nginx/conf.d/gateway-active-upstream.conf` | Active upstream pointer (managed by deploy script) |
-| `ops/systemd/gateway-blue.service` | systemd unit for the blue instance (port 8081) |
-| `ops/systemd/gateway-green.service` | systemd unit for the green instance (port 8082) |
-| `/var/lib/home-automation/active_color` | State file: contains `blue` or `green` |
-| `deploy/deploy.sh` | Blue-green deployment automation |
-| `deploy/rollback.sh` | One-command rollback |
+|----------|------|
+| `gateway/app.py` | Flask gateway app and `/health` endpoint |
+| `gateway/Dockerfile` | Immutable runtime image for the gateway app |
+| `ops/systemd/gateway-blue.service` | Runs the blue slot container |
+| `ops/systemd/gateway-green.service` | Runs the green slot container |
+| `ops/systemd/gateway-*.env.example` | Per-slot env templates, including slot image tags |
+| `ops/systemd/timers/` | Source-controlled host timer units for recurring automation |
+| `ops/systemd/automation.env.example` | Optional env file for timer task secrets and overrides |
+| `deploy/deploy.sh` | Build inactive slot image, restart slot, switch nginx |
+| `deploy/rollback.sh` | Switch nginx back to the other slot |
+| `deploy/smoke_test.sh` | Health smoke tests before and after cutover |
+| `deploy/install_scheduled_jobs.sh` | Install and enable managed systemd timers |
+| `/etc/nginx/conf.d/gateway-active-upstream.conf` | Active upstream pointer managed by deploy scripts |
+| `/var/lib/home-automation/active_color` | Runtime state file tracking the live slot |
 
 ---
 
-## Directory Structure
+## Why Docker Here
 
-```
-home-automation-scripts/
-├── gateway/
-│   ├── app.py                        # Gateway Flask application
-│   └── requirements.txt              # Gateway Python dependencies
-├── deploy/
-│   ├── deploy.sh                     # Blue-green deployment script
-│   └── rollback.sh                   # Rollback script
-├── ops/
-│   ├── nginx/
-│   │   ├── gateway-site.conf         # nginx virtual-host config
-│   │   ├── gateway-blue-upstream.conf   # Upstream def for blue (port 8081)
-│   │   └── gateway-green-upstream.conf  # Upstream def for green (port 8082)
-│   ├── systemd/
-│   │   ├── gateway-blue.service      # systemd unit – blue instance
-│   │   ├── gateway-green.service     # systemd unit – green instance
-│   │   ├── gateway-blue.env.example  # Secret template for blue
-│   │   └── gateway-green.env.example # Secret template for green
-│   └── state/
-│       └── README.md                 # Documents the runtime state file
-└── docs/
-    └── blue_green.md                 # This file
-```
+The repo previously restarted two services from the same checkout. That gave
+two ports, but not two isolated releases. Containerizing only the app layer
+fixes that without moving ingress or service supervision into Docker.
 
-Runtime files **outside** the repository (never committed):
+Benefits:
 
-```
+- Blue and green hold different immutable releases.
+- Rollback is a traffic switch, not a `git` operation.
+- Host `nginx` and `systemd` stay simple and explicit.
+- The gateway can still use normal host timers and operational tooling.
+
+---
+
+## Runtime Files
+
+Files outside the repo:
+
+```text
 /etc/home-automation/
-├── gateway-blue.env       # Secrets + config for blue (mode 600)
-└── gateway-green.env      # Secrets + config for green (mode 600)
-
-/var/lib/home-automation/
-└── active_color           # Current active color: "blue" or "green"
+  gateway-blue.env
+  gateway-green.env
 
 /etc/nginx/conf.d/
-└── gateway-active-upstream.conf   # Managed by deploy.sh / rollback.sh
+  gateway-active-upstream.conf
+
+/var/lib/home-automation/
+  active_color
 ```
 
----
+The env files contain both runtime config and the slot image tag:
 
-## How Blue-Green Deployment Works
-
-```
-Before deployment:
-
-  ACTIVE: blue (port 8081)   → nginx → traffic
-  IDLE:   green (port 8082)  → not running
-
-Deploy steps:
-
-  1. Pull latest code.
-  2. Start gateway-green.
-  3. Poll GET http://127.0.0.1:8082/health until HTTP 200.
-  4. Write gateway-green upstream to /etc/nginx/conf.d/gateway-active-upstream.conf.
-  5. Run `nginx -s reload` (graceful, zero-drop).
-  6. Update /var/lib/home-automation/active_color → "green".
-  7. (Optional) Wait DRAIN_SECONDS, then stop gateway-blue.
-
-After deployment:
-
-  ACTIVE: green (port 8082)  → nginx → traffic
-  IDLE:   blue (port 8081)   → stopped (or still running if --no-stop-old used)
+```dotenv
+GATEWAY_PORT=8081
+GATEWAY_COLOR=blue
+GATEWAY_IMAGE=home-automation-gateway:blue
+HA_URL=http://homeassistant.local:8123
+HA_TOKEN=replace_me
+GATEWAY_SECRET=
 ```
 
-The key safety property: **nginx is only reloaded after the new instance
-passes health checks**.  If health checks never pass, the script exits with
-code 1 and nginx continues routing to the old instance.
+Optional host-side automation env file:
+
+```text
+/etc/home-automation/automation.env
+```
+
+This is used by the managed `systemd` timers for task-specific values such as
+Strava credentials or health-check thresholds.
 
 ---
 
 ## Initial Setup
 
-### 1. Create a system user
+### 1. Install host dependencies
 
-```bash
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin home-automation
-```
+- Docker Engine
+- nginx
+- systemd
+- curl
+- git
 
-### 2. Clone the repo to the server
+### 2. Clone the repo
 
 ```bash
 sudo git clone https://github.com/goblinsan/home-automation-scripts.git \
@@ -156,344 +134,134 @@ sudo git clone https://github.com/goblinsan/home-automation-scripts.git \
 sudo chown -R home-automation:home-automation /opt/home-automation-scripts
 ```
 
-### 3. Run the bootstrap installer
-
-```bash
-cd /opt/home-automation-scripts
-sudo bash install.sh
-```
-
-### 4. Install gateway Python dependencies
-
-```bash
-sudo -u home-automation /opt/home-automation-scripts/.venv/bin/pip install \
-    -r /opt/home-automation-scripts/gateway/requirements.txt
-```
-
-### 5. Create environment files (secrets)
+### 3. Create the slot env files
 
 ```bash
 sudo mkdir -p /etc/home-automation
-
-sudo cp ops/systemd/gateway-blue.env.example  /etc/home-automation/gateway-blue.env
-sudo cp ops/systemd/gateway-green.env.example /etc/home-automation/gateway-green.env
-
-# Fill in HA_URL, HA_TOKEN, and optionally GATEWAY_SECRET:
-sudo nano /etc/home-automation/gateway-blue.env
-sudo nano /etc/home-automation/gateway-green.env
-
-# Restrict permissions so only root and the service user can read them:
-sudo chmod 640 /etc/home-automation/gateway-blue.env \
-                /etc/home-automation/gateway-green.env
-sudo chown root:home-automation /etc/home-automation/gateway-blue.env \
-                                 /etc/home-automation/gateway-green.env
+sudo cp /opt/home-automation-scripts/ops/systemd/gateway-blue.env.example \
+    /etc/home-automation/gateway-blue.env
+sudo cp /opt/home-automation-scripts/ops/systemd/gateway-green.env.example \
+    /etc/home-automation/gateway-green.env
 ```
 
-### 6. Install systemd units
+Fill in the real `HA_URL`, `HA_TOKEN`, and optional `GATEWAY_SECRET`.
+
+### 4. Install the systemd units
 
 ```bash
-sudo cp ops/systemd/gateway-blue.service  /etc/systemd/system/
-sudo cp ops/systemd/gateway-green.service /etc/systemd/system/
+sudo cp /opt/home-automation-scripts/ops/systemd/gateway-blue.service /etc/systemd/system/
+sudo cp /opt/home-automation-scripts/ops/systemd/gateway-green.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable gateway-blue.service gateway-green.service
 ```
 
-### 7. Configure nginx
+### 5. Configure timer task environment
 
 ```bash
-# Install the site config:
-sudo cp ops/nginx/gateway-site.conf /etc/nginx/sites-available/gateway
+sudo cp /opt/home-automation-scripts/ops/systemd/automation.env.example \
+    /etc/home-automation/automation.env
+```
+
+### 6. Configure nginx
+
+```bash
+sudo cp /opt/home-automation-scripts/ops/nginx/gateway-site.conf /etc/nginx/sites-available/gateway
 sudo ln -s /etc/nginx/sites-available/gateway /etc/nginx/sites-enabled/gateway
-
-# Install the initial upstream config (blue is active by default):
-sudo mkdir -p /etc/nginx/conf.d
-sudo cp ops/nginx/gateway-blue-upstream.conf \
+sudo cp /opt/home-automation-scripts/ops/nginx/gateway-blue-upstream.conf \
     /etc/nginx/conf.d/gateway-active-upstream.conf
-
-# Test and reload:
 sudo nginx -t && sudo nginx -s reload
 ```
 
-### 8. Start the initial instance and create the state file
+### 7. Build and start the initial slot
 
 ```bash
+cd /opt/home-automation-scripts
+docker build -t home-automation-gateway:blue -f gateway/Dockerfile .
 sudo systemctl start gateway-blue.service
-sudo mkdir -p /var/lib/home-automation
 echo "blue" | sudo tee /var/lib/home-automation/active_color
 ```
 
-### 9. Verify
+### 8. Install the managed timers
 
 ```bash
-curl http://127.0.0.1:8081/health   # direct check
-curl http://gateway.home.local/health  # through nginx
+cd /opt/home-automation-scripts
+bash deploy/install_scheduled_jobs.sh
 ```
 
 ---
 
-## Deploying a New Version
+## Deploying
 
-Standard deployment (switches to inactive environment after health checks):
+Standard deployment:
 
 ```bash
 cd /opt/home-automation-scripts
 bash deploy/deploy.sh
 ```
 
-Keep the old instance running for fast rollback:
+Keep the old slot running for fast rollback:
 
 ```bash
 bash deploy/deploy.sh --no-stop-old
 ```
 
-Preview what would happen without making changes:
+Dry-run:
 
 ```bash
 bash deploy/deploy.sh --dry-run
 ```
 
-### What the script does
+The deploy script:
 
-1. Checks prerequisites (curl, nginx, systemctl, service units).
-2. Reads the current active color from `/var/lib/home-automation/active_color`.
-3. Determines the inactive color (the deployment target).
-4. Runs `git pull --ff-only` to update the repo.
-5. Installs/upgrades pip dependencies.
-6. Runs `systemctl restart gateway-<target>.service`.
-7. Polls `http://127.0.0.1:<port>/health` up to 30 times (60 s total).
-8. Writes the new upstream config and reloads nginx.
+1. Optionally pulls the latest repo state.
+2. Determines the inactive slot.
+3. Builds `home-automation-gateway:<slot>`.
+4. Restarts `gateway-<slot>.service`.
+5. Waits for `http://127.0.0.1:<slot-port>/health`.
+6. Switches nginx.
+7. Verifies `/health` through nginx.
+8. Installs or refreshes managed `systemd` timers from source control.
 9. Updates the state file.
-10. Waits `DRAIN_SECONDS` (default 10) then stops the old instance.
-
-If any step fails the script exits immediately with code 1.  nginx is **not**
-switched until the health check passes.
-
----
-
-## Verifying Health
-
-Direct instance check (bypasses nginx):
-
-```bash
-curl -s http://127.0.0.1:8081/health | python3 -m json.tool   # blue
-curl -s http://127.0.0.1:8082/health | python3 -m json.tool   # green
-```
-
-Through nginx:
-
-```bash
-curl -s http://gateway.home.local/health | python3 -m json.tool
-```
-
-Expected healthy response:
-
-```json
-{
-  "color": "blue",
-  "detail": "ha_status=200",
-  "ha_reachable": true,
-  "port": 8081,
-  "status": "ok"
-}
-```
-
-Check which color is active:
-
-```bash
-cat /var/lib/home-automation/active_color
-```
-
-Check service status:
-
-```bash
-systemctl status gateway-blue.service
-systemctl status gateway-green.service
-```
-
-Check nginx upstream:
-
-```bash
-cat /etc/nginx/conf.d/gateway-active-upstream.conf
-```
+10. Optionally stops the previous slot.
 
 ---
 
 ## Rolling Back
-
-If a deployment causes problems, roll back to the other instance:
 
 ```bash
 cd /opt/home-automation-scripts
 bash deploy/rollback.sh
 ```
 
-The rollback script:
+Rollback works because the other slot keeps its previous image tag and
+container state until it is reused for a later deployment.
 
-1. Reads the current active color.
-2. Starts the alternate instance if it is not already running.
-3. Waits for health checks to pass.
-4. Switches nginx back.
-5. Updates the state file.
-6. Stops the now-inactive instance.
+---
 
-**Rollback requires the old instance code to still be present** (i.e. git
-has not been reset past that commit, and the `.venv` still has the old
-dependencies installed).  For the fastest rollback, use `--no-stop-old`
-during deployment.
+## Smoke Tests
 
-Manual rollback (if scripts are unavailable):
+Direct slot:
 
 ```bash
-# 1. Switch nginx upstream manually:
-sudo cp ops/nginx/gateway-blue-upstream.conf \
-    /etc/nginx/conf.d/gateway-active-upstream.conf
-sudo nginx -s reload
+bash deploy/smoke_test.sh --url http://127.0.0.1:8081/health --expect-color blue
+```
 
-# 2. Update state file:
-echo "blue" | sudo tee /var/lib/home-automation/active_color
+Through nginx:
 
-# 3. Ensure blue is running:
-sudo systemctl start gateway-blue.service
-
-# 4. Stop green if desired:
-sudo systemctl stop gateway-green.service
+```bash
+bash deploy/smoke_test.sh --url http://127.0.0.1/health --expect-color blue
 ```
 
 ---
 
-## Credentials and Config Storage
+## Operational Notes
 
-| What | Where | Mode | In git? |
-|------|-------|------|---------|
-| HA URL, token, gateway secret | `/etc/home-automation/gateway-blue.env` | `640 root:home-automation` | ❌ Never |
-| HA URL, token, gateway secret | `/etc/home-automation/gateway-green.env` | `640 root:home-automation` | ❌ Never |
-| Secret templates (no real values) | `ops/systemd/gateway-*.env.example` | standard | ✅ Committed |
-| nginx config (no secrets) | `ops/nginx/gateway-site.conf` | standard | ✅ Committed |
-| systemd units (no secrets) | `ops/systemd/gateway-*.service` | standard | ✅ Committed |
-| Active color state | `/var/lib/home-automation/active_color` | standard | ❌ Runtime only |
-
-Rules enforced by `.gitignore`:
-
-```
-secrets/
-.env
-.env.*
-!.env.example
-*.secret
-```
-
-The env files under `/etc/home-automation/` are outside the repository and
-are never accidentally added to git.
-
----
-
-## Recovering from Partial Failure
-
-### nginx reload failed but health check passed
-
-The new instance is running but traffic was not switched.  Fix nginx
-manually then reload:
-
-```bash
-sudo nginx -t
-sudo nginx -s reload
-# If nginx -t fails, investigate /var/log/nginx/error.log
-```
-
-### Health check timed out, old instance still active
-
-The deployment script aborted safely.  Investigate the new instance:
-
-```bash
-systemctl status gateway-green.service
-journalctl -u gateway-green.service -n 50
-curl -s http://127.0.0.1:8082/health
-```
-
-Common causes:
-- Missing or incorrect `/etc/home-automation/gateway-green.env`.
-- Home Assistant is not reachable (check `HA_URL`).
-- Port conflict (another process on 8082).
-
-After fixing, re-run the deploy:
-
-```bash
-bash deploy/deploy.sh
-```
-
-### State file is missing or corrupt
-
-Determine which instance is actually live by checking nginx:
-
-```bash
-cat /etc/nginx/conf.d/gateway-active-upstream.conf
-# Look for the port: 8081 = blue, 8082 = green
-echo "blue" | sudo tee /var/lib/home-automation/active_color  # adjust accordingly
-```
-
-### Both instances are stopped
-
-Start the known-good instance manually:
-
-```bash
-sudo systemctl start gateway-blue.service
-curl http://127.0.0.1:8081/health
-# If healthy, ensure nginx points to it:
-sudo cp ops/nginx/gateway-blue-upstream.conf \
-    /etc/nginx/conf.d/gateway-active-upstream.conf
-sudo nginx -s reload
-echo "blue" | sudo tee /var/lib/home-automation/active_color
-```
-
----
-
-## Operational Reference
-
-### Useful commands
-
-```bash
-# Deploy
-bash deploy/deploy.sh
-
-# Deploy, keep old running
-bash deploy/deploy.sh --no-stop-old
-
-# Rollback
-bash deploy/rollback.sh
-
-# Check active color
-cat /var/lib/home-automation/active_color
-
-# Direct health checks
-curl http://127.0.0.1:8081/health   # blue
-curl http://127.0.0.1:8082/health   # green
-
-# Service logs
-journalctl -u gateway-blue.service -f
-journalctl -u gateway-green.service -f
-
-# nginx logs
-sudo tail -f /var/log/nginx/access.log
-sudo tail -f /var/log/nginx/error.log
-
-# Reload nginx after manual config change
-sudo nginx -t && sudo nginx -s reload
-```
-
-### Port reference
-
-| Instance | Port |
-|----------|------|
-| gateway-blue  | 8081 |
-| gateway-green | 8082 |
-| nginx (public) | 80 |
-
-### Environment variable reference
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `GATEWAY_PORT` | Yes | `8081` | TCP port for this instance |
-| `GATEWAY_COLOR` | Yes | `blue` | Deployment slot name |
-| `HA_URL` | Yes | – | Home Assistant base URL |
-| `HA_TOKEN` | Yes | – | Home Assistant long-lived access token |
-| `GATEWAY_SECRET` | No | `""` | Shared secret for `X-Gateway-Secret` header |
+- `gateway-blue.service` and `gateway-green.service` run as `home-automation`
+  and require access to the Docker socket.
+- Container logs go to `journald` via `systemd`, not the repo `logs/`
+  directory.
+- `nginx` remains on the host because it is the stable ingress layer.
+- Recurring automation on the gateway should use the units in
+  `ops/systemd/timers/`, not per-user crontab edits.
+- This repo still contains Python automation scripts; only the gateway app
+  layer has been containerized.
