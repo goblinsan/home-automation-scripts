@@ -95,6 +95,13 @@ from `serviceProfiles.gatewayChatPlatform.tts`, rendered as:
 - `TTS_VOICES_PATH`
 - `TTS_HEALTH_PATH`
 
+The admin UI also lets you:
+
+- browse voices from the live TTS service
+- create new voices by uploading reference audio
+- delete obsolete voices
+- map a voice to an agent via `endpointConfig.modelParams.ttsVoiceId`
+
 You can also exercise a synced agent directly through the control plane:
 
 ```bash

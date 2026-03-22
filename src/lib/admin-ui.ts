@@ -76,6 +76,13 @@ interface TtsStatusSnapshot {
   voices: unknown;
 }
 
+interface TtsVoiceRecord {
+  id: string;
+  name?: string;
+  description?: string;
+  source?: string;
+}
+
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
   response.statusCode = statusCode;
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -109,6 +116,24 @@ function readBody(request: IncomingMessage): Promise<string> {
       }
     });
     request.on('end', () => resolve(body));
+    request.on('error', reject);
+  });
+}
+
+function readBodyBuffer(request: IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    request.on('data', (chunk) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > 25_000_000) {
+        reject(new Error('Request body too large'));
+        return;
+      }
+      chunks.push(buffer);
+    });
+    request.on('end', () => resolve(Buffer.concat(chunks)));
     request.on('error', reject);
   });
 }
@@ -490,7 +515,10 @@ function htmlPage(basePath: string): string {
                 <span class="pill">TTS</span>
                 <h4>Local TTS Service</h4>
               </div>
-              <button id="checkTtsButton">Check TTS</button>
+              <div class="toolbar">
+                <button id="checkTtsButton">Check TTS</button>
+                <button id="reloadTtsVoicesButton">Reload Voices</button>
+              </div>
             </div>
             <div class="row">
               <label class="check"><input id="gatewayChatTtsEnabled" type="checkbox" /> Enabled</label>
@@ -514,6 +542,35 @@ function htmlPage(basePath: string): string {
               </label>
             </div>
             <div id="ttsStatus" class="meta-list"></div>
+            <div class="split-actions">
+              <div>
+                <p>Voices</p>
+              </div>
+            </div>
+            <div id="ttsVoicesContainer" class="section-list"></div>
+            <div class="card">
+              <div class="split-actions">
+                <div>
+                  <span class="pill">Create Voice</span>
+                  <h4>New Voice</h4>
+                </div>
+                <button id="createTtsVoiceButton" class="primary">Create Voice</button>
+              </div>
+              <div class="row">
+                <label>Name
+                  <input id="ttsCreateVoiceName" />
+                </label>
+                <label>Description
+                  <input id="ttsCreateVoiceDescription" />
+                </label>
+                <label>Source
+                  <input id="ttsCreateVoiceSource" value="recorded" />
+                </label>
+                <label>Reference Audio
+                  <input id="ttsCreateVoiceFile" type="file" accept="audio/*,.wav,.mp3,.m4a" />
+                </label>
+              </div>
+            </div>
           </div>
           <div>
             <p>Agents</p>
@@ -650,6 +707,7 @@ function htmlPage(basePath: string): string {
       runtime: null,
       workflows: [],
       ttsStatus: null,
+      ttsVoices: [],
       agentRun: {
         agentId: '',
         prompt: 'Give me a short readiness check in character, then confirm the local model route is working.',
@@ -775,6 +833,10 @@ function htmlPage(basePath: string): string {
       return state.config.serviceProfiles.gatewayChatPlatform.agents || [];
     }
 
+    function normalizedTtsVoices() {
+      return Array.isArray(state.ttsVoices) ? state.ttsVoices.map((voice) => normalizeTtsVoice(voice)) : [];
+    }
+
     function ensureAgentRunDefaults() {
       const agents = configuredAgents();
       if (agents.length === 0) {
@@ -784,6 +846,29 @@ function htmlPage(basePath: string): string {
       if (!agents.some((agent) => agent.id === state.agentRun.agentId)) {
         state.agentRun.agentId = (agents.find((agent) => agent.enabled) || agents[0]).id;
       }
+    }
+
+    function getAgentVoiceId(agent) {
+      return agent.endpointConfig?.modelParams?.ttsVoiceId || state.config.serviceProfiles.gatewayChatPlatform.tts.defaultVoice || '';
+    }
+
+    function setAgentVoiceId(agent, voiceId) {
+      if (!voiceId) {
+        if (agent.endpointConfig?.modelParams && typeof agent.endpointConfig.modelParams === 'object') {
+          delete agent.endpointConfig.modelParams.ttsVoiceId;
+          if (Object.keys(agent.endpointConfig.modelParams).length === 0) {
+            delete agent.endpointConfig.modelParams;
+          }
+        }
+        if (agent.endpointConfig && Object.keys(agent.endpointConfig).length === 0) {
+          delete agent.endpointConfig;
+        }
+        return;
+      }
+
+      agent.endpointConfig = agent.endpointConfig || {};
+      agent.endpointConfig.modelParams = agent.endpointConfig.modelParams || {};
+      agent.endpointConfig.modelParams.ttsVoiceId = voiceId;
     }
 
     function renderGatewayApiProfile() {
@@ -839,9 +924,51 @@ function htmlPage(basePath: string): string {
         ].join('');
       }
 
+      const ttsVoicesContainer = document.getElementById('ttsVoicesContainer');
+      const voices = normalizedTtsVoices();
+      if (voices.length === 0) {
+        ttsVoicesContainer.innerHTML = '<div>No voices loaded yet.</div>';
+      } else {
+        ttsVoicesContainer.innerHTML = '';
+        voices.forEach((voice) => {
+          const element = document.createElement('div');
+          element.className = 'card';
+          element.innerHTML = \`
+            <div class="split-actions">
+              <div><strong>\${voice.name || voice.id}</strong></div>
+              <button class="danger" data-action="delete-voice">Delete</button>
+            </div>
+            <div class="meta-list">
+              <div><strong>ID:</strong> \${voice.id}</div>
+              <div><strong>Description:</strong> \${voice.description || 'none'}</div>
+              <div><strong>Source:</strong> \${voice.source || 'unknown'}</div>
+            </div>
+          \`;
+          element.querySelector('[data-action="delete-voice"]').addEventListener('click', async () => {
+            try {
+              await requestJson('DELETE', \`/api/tts/voices/\${encodeURIComponent(voice.id)}\`);
+              await fetchTtsVoices();
+              setStatus(\`Deleted voice \${voice.id}\`);
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
+          ttsVoicesContainer.appendChild(element);
+        });
+      }
+
       const agentsContainer = document.getElementById('gatewayChatAgentsContainer');
       agentsContainer.innerHTML = '';
+      const voiceOptions = normalizedTtsVoices();
       profile.agents.forEach((agent, index) => {
+        const currentVoiceId = getAgentVoiceId(agent);
+        const knownVoices = [...voiceOptions];
+        if (currentVoiceId && !knownVoices.some((voice) => voice.id === currentVoiceId)) {
+          knownVoices.unshift({ id: currentVoiceId, name: currentVoiceId });
+        }
+        const voiceSelectOptions = knownVoices
+          .map((voice) => \`<option value="\${voice.id}" \${voice.id === currentVoiceId ? 'selected' : ''}>\${voice.name || voice.id}</option>\`)
+          .join('');
         const element = document.createElement('div');
         element.className = 'card';
         element.innerHTML = \`
@@ -857,6 +984,12 @@ function htmlPage(basePath: string): string {
             <label>Color<input data-field="color" value="\${agent.color}" /></label>
             <label>Provider<input data-field="providerName" value="\${agent.providerName}" /></label>
             <label>Model<input data-field="model" value="\${agent.model}" /></label>
+            <label>Voice
+              <select data-field="ttsVoiceId">
+                <option value="">(use default)</option>
+                \${voiceSelectOptions}
+              </select>
+            </label>
             <label>Cost Class
               <select data-field="costClass">
                 <option value="free" \${agent.costClass === 'free' ? 'selected' : ''}>free</option>
@@ -908,6 +1041,8 @@ function htmlPage(basePath: string): string {
               if (!agent.endpointConfig) delete agent.endpointConfig;
             } else if (field === 'contextSources') {
               agent.contextSources = parseJsonField(input.value, []);
+            } else if (field === 'ttsVoiceId') {
+              setAgentVoiceId(agent, input.value);
             } else if (field === 'systemPrompt') {
               agent.systemPrompt = input.value || undefined;
               if (!input.value) delete agent.systemPrompt;
@@ -1391,6 +1526,17 @@ function htmlPage(basePath: string): string {
       renderWorkflows();
     }
 
+    async function fetchTtsVoices() {
+      if (!state.config || !state.config.serviceProfiles.gatewayChatPlatform.tts.enabled) {
+        state.ttsVoices = [];
+        renderGatewayChatPlatformProfile();
+        return;
+      }
+      const data = await requestJson('GET', '/api/tts/voices');
+      state.ttsVoices = Array.isArray(data?.voices) ? data.voices : [];
+      renderGatewayChatPlatformProfile();
+    }
+
     async function requestJson(method, url, body) {
       const response = await fetch(joinBase(url), {
         method,
@@ -1661,8 +1807,49 @@ function htmlPage(basePath: string): string {
     document.getElementById('checkTtsButton').addEventListener('click', async () => {
       try {
         state.ttsStatus = await requestJson('GET', '/api/tts/status');
+        await fetchTtsVoices();
         renderGatewayChatPlatformProfile();
         setStatus('TTS status refreshed');
+      } catch (error) {
+        setStatus(error.message, 'error');
+      }
+    });
+    document.getElementById('reloadTtsVoicesButton').addEventListener('click', async () => {
+      try {
+        await fetchTtsVoices();
+        setStatus('TTS voices reloaded');
+      } catch (error) {
+        setStatus(error.message, 'error');
+      }
+    });
+    document.getElementById('createTtsVoiceButton').addEventListener('click', async () => {
+      try {
+        const fileInput = document.getElementById('ttsCreateVoiceFile');
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          throw new Error('Choose a reference audio file first');
+        }
+
+        const formData = new FormData();
+        formData.append('reference_audio', file);
+        formData.append('name', document.getElementById('ttsCreateVoiceName').value);
+        formData.append('description', document.getElementById('ttsCreateVoiceDescription').value);
+        formData.append('source', document.getElementById('ttsCreateVoiceSource').value || 'recorded');
+
+        const response = await fetch(joinBase('/api/tts/voices'), {
+          method: 'POST',
+          body: formData
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result?.error || 'Failed to create voice');
+        }
+        document.getElementById('ttsCreateVoiceName').value = '';
+        document.getElementById('ttsCreateVoiceDescription').value = '';
+        document.getElementById('ttsCreateVoiceSource').value = 'recorded';
+        fileInput.value = '';
+        await fetchTtsVoices();
+        setStatus(result.message || 'Voice created');
       } catch (error) {
         setStatus(error.message, 'error');
       }
@@ -1698,7 +1885,7 @@ function htmlPage(basePath: string): string {
     });
 
     fetchConfig()
-      .then(() => Promise.all([fetchWorkflows(), fetchRuntime()]))
+      .then(() => Promise.all([fetchWorkflows(), fetchRuntime(), fetchTtsVoices()]))
       .catch((error) => setStatus(error.message, 'error'));
     setInterval(() => {
       fetchRuntime().catch(() => undefined);
@@ -1778,6 +1965,79 @@ async function requestJsonUrl(
   });
 }
 
+async function requestBinaryUrl(
+  requestUrl: string,
+  method: 'POST' | 'DELETE',
+  headers: Record<string, string | number | undefined>,
+  body?: Buffer
+): Promise<{ status: number; payload: unknown }> {
+  const requestImpl = requestUrl.startsWith('https://') ? (await import('node:https')).request : (await import('node:http')).request;
+
+  return new Promise((resolve, reject) => {
+    const request = requestImpl(
+      requestUrl,
+      {
+        method,
+        timeout: 20_000,
+        headers
+      },
+      (apiResponse) => {
+        const chunks: Buffer[] = [];
+        apiResponse.on('data', (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+        });
+        apiResponse.on('end', () => {
+          const responseText = Buffer.concat(chunks).toString('utf8');
+          let payload: unknown = null;
+          if (responseText.length > 0) {
+            try {
+              payload = JSON.parse(responseText) as unknown;
+            } catch {
+              payload = responseText;
+            }
+          }
+          resolve({
+            status: apiResponse.statusCode ?? 0,
+            payload
+          });
+        });
+      }
+    );
+
+    request.on('error', reject);
+    request.on('timeout', () => request.destroy(new Error(`Timed out: ${requestUrl}`)));
+    if (body) {
+      request.write(body);
+    }
+    request.end();
+  });
+}
+
+function normalizeTtsVoice(value: unknown): TtsVoiceRecord {
+  if (typeof value === 'string') {
+    return { id: value };
+  }
+
+  if (value && typeof value === 'object') {
+    const candidate = value as Record<string, unknown>;
+    const id = typeof candidate.id === 'string'
+      ? candidate.id
+      : typeof candidate.voice === 'string'
+        ? candidate.voice
+        : typeof candidate.name === 'string'
+          ? candidate.name
+          : JSON.stringify(candidate);
+    return {
+      id,
+      name: typeof candidate.name === 'string' ? candidate.name : undefined,
+      description: typeof candidate.description === 'string' ? candidate.description : undefined,
+      source: typeof candidate.source === 'string' ? candidate.source : undefined
+    };
+  }
+
+  return { id: String(value) };
+}
+
 async function probeTtsRuntime(config: GatewayConfig): Promise<TtsStatusSnapshot> {
   const tts = config.serviceProfiles.gatewayChatPlatform.tts;
   if (!tts.enabled) {
@@ -1795,6 +2055,58 @@ async function probeTtsRuntime(config: GatewayConfig): Promise<TtsStatusSnapshot
     healthStatus: healthResponse.status,
     voices: voicesResponse.payload
   };
+}
+
+async function listTtsVoices(config: GatewayConfig): Promise<TtsVoiceRecord[]> {
+  const tts = config.serviceProfiles.gatewayChatPlatform.tts;
+  if (!tts.enabled) {
+    return [];
+  }
+
+  const baseUrl = normalizeBaseUrl(tts.baseUrl);
+  const voicesResponse = await requestJsonUrl(`${baseUrl}${tts.voicesPath}`, 'GET');
+  if (voicesResponse.status < 200 || voicesResponse.status >= 300) {
+    throw new Error(`TTS voices request failed: ${voicesResponse.status}`);
+  }
+
+  const rawVoices = Array.isArray(voicesResponse.payload)
+    ? voicesResponse.payload
+    : Array.isArray((voicesResponse.payload as { voices?: unknown[] } | null)?.voices)
+      ? (voicesResponse.payload as { voices: unknown[] }).voices
+      : [];
+  return rawVoices.map((voice) => normalizeTtsVoice(voice));
+}
+
+async function createTtsVoice(
+  config: GatewayConfig,
+  request: IncomingMessage
+): Promise<{ status: number; payload: unknown }> {
+  const tts = config.serviceProfiles.gatewayChatPlatform.tts;
+  if (!tts.enabled) {
+    throw new Error('TTS service is disabled');
+  }
+
+  const body = await readBodyBuffer(request);
+  const contentType = request.headers['content-type'];
+  if (typeof contentType !== 'string' || !contentType.includes('multipart/form-data')) {
+    throw new Error('Expected multipart/form-data for voice creation');
+  }
+
+  const baseUrl = normalizeBaseUrl(tts.baseUrl);
+  return requestBinaryUrl(`${baseUrl}${tts.voicesPath}`, 'POST', {
+    'Content-Type': contentType,
+    'Content-Length': body.length
+  }, body);
+}
+
+async function deleteTtsVoice(config: GatewayConfig, voiceId: string): Promise<{ status: number; payload: unknown }> {
+  const tts = config.serviceProfiles.gatewayChatPlatform.tts;
+  if (!tts.enabled) {
+    throw new Error('TTS service is disabled');
+  }
+
+  const baseUrl = normalizeBaseUrl(tts.baseUrl);
+  return requestBinaryUrl(`${baseUrl}${tts.voicesPath}/${encodeURIComponent(voiceId)}`, 'DELETE', {});
 }
 
 export async function startAdminServer(options: AdminServerOptions): Promise<void> {
@@ -1833,6 +2145,36 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         const config = await loadGatewayConfig(options.configPath);
         const status = await probeTtsRuntime(config);
         sendJson(response, 200, status);
+        return;
+      }
+
+      if (request.method === 'GET' && path === '/api/tts/voices') {
+        const config = await loadGatewayConfig(options.configPath);
+        const voices = await listTtsVoices(config);
+        sendJson(response, 200, { voices });
+        return;
+      }
+
+      if (request.method === 'POST' && path === '/api/tts/voices') {
+        const config = await loadGatewayConfig(options.configPath);
+        const result = await createTtsVoice(config, request);
+        sendJson(response, result.status, {
+          message: 'Created TTS voice',
+          result: result.payload
+        });
+        return;
+      }
+
+      const ttsVoiceDeleteMatch = path.match(/^\/api\/tts\/voices\/([^/]+)$/);
+      if (ttsVoiceDeleteMatch && request.method === 'DELETE') {
+        const config = await loadGatewayConfig(options.configPath);
+        const result = await deleteTtsVoice(config, decodeURIComponent(ttsVoiceDeleteMatch[1]));
+        if (result.status === 204 || result.payload === null) {
+          response.statusCode = result.status;
+          response.end();
+          return;
+        }
+        sendJson(response, result.status, result.payload);
         return;
       }
 

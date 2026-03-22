@@ -210,7 +210,8 @@
           "endpointConfig": {
             "baseUrl": "http://198.51.100.172:1234",
             "modelParams": {
-              "top_p": 0.9
+              "top_p": 0.9,
+              "ttsVoiceId": "assistant_v1"
             }
           },
           "contextSources": []
