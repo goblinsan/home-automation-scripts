@@ -13,6 +13,7 @@
   "apps": [
     {
       "id": "chat-router",
+      "enabled": true,
       "repoUrl": "git@github.com:example/chat-router.git",
       "defaultRevision": "main",
       "deployRoot": "/srv/apps/chat-router",
@@ -41,12 +42,24 @@
     {
       "id": "refresh-model-catalog",
       "appId": "chat-router",
+      "enabled": true,
       "description": "Refresh the model catalog cache",
       "schedule": "*:0/15",
       "workingDirectory": "__CURRENT__",
       "execStart": "/usr/bin/bash __CURRENT__/scripts/jobs/refresh-model-catalog.sh",
       "user": "deploy"
     }
+  ],
+  "features": [
+    {
+      "id": "chat-router-public-route",
+      "enabled": true,
+      "description": "Expose the chat router publicly through the gateway"
+    },
+    {
+      "id": "scheduled-job-refresh-model-catalog",
+      "enabled": true,
+      "description": "Enable the refresh-model-catalog scheduled job"
+    }
   ]
 }
-

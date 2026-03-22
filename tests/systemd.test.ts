@@ -16,6 +16,7 @@ const config: GatewayConfig = {
   apps: [
     {
       id: 'chat-router',
+      enabled: true,
       repoUrl: 'git@example/chat-router.git',
       defaultRevision: 'main',
       deployRoot: '/srv/apps/chat-router',
@@ -33,13 +34,15 @@ const config: GatewayConfig = {
     {
       id: 'refresh-model-catalog',
       appId: 'chat-router',
+      enabled: true,
       description: 'Refresh model catalog',
       schedule: '*:0/15',
       workingDirectory: '__CURRENT__',
       execStart: '/usr/bin/bash __CURRENT__/scripts/jobs/refresh-model-catalog.sh',
       user: 'deploy'
     }
-  ]
+  ],
+  features: []
 };
 
 test('renderJobService resolves __CURRENT__', () => {
@@ -53,4 +56,3 @@ test('renderJobTimer includes schedule and unit name', () => {
   assert.match(output, /OnCalendar=\*:0\/15/);
   assert.match(output, /Unit=refresh-model-catalog\.service/);
 });
-

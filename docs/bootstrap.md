@@ -51,5 +51,12 @@ npm run validate
 npm run build
 ```
 
-The generated output is then available for installation or further customization.
+For interactive config editing, you can also run:
 
+```bash
+npm run ui
+```
+
+and browse to `http://127.0.0.1:4173`.
+
+The generated output is then available for installation or further customization.

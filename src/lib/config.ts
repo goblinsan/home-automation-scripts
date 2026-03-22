@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 export type Slot = 'blue' | 'green';
@@ -21,6 +21,7 @@ export interface AppSlotConfig {
 
 export interface AppConfig {
   id: string;
+  enabled: boolean;
   repoUrl: string;
   defaultRevision: string;
   deployRoot: string;
@@ -34,6 +35,7 @@ export interface AppConfig {
 export interface ScheduledJobConfig {
   id: string;
   appId: string;
+  enabled: boolean;
   description: string;
   schedule: string;
   workingDirectory: string;
@@ -43,10 +45,17 @@ export interface ScheduledJobConfig {
   environmentFile?: string;
 }
 
+export interface FeatureFlagConfig {
+  id: string;
+  enabled: boolean;
+  description: string;
+}
+
 export interface GatewayConfig {
   gateway: GatewaySettings;
   apps: AppConfig[];
   scheduledJobs: ScheduledJobConfig[];
+  features: FeatureFlagConfig[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -63,6 +72,13 @@ function assertString(value: unknown, field: string): string {
 function assertStringArray(value: unknown, field: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.length === 0)) {
     throw new Error(`Expected string[] for ${field}`);
+  }
+  return value;
+}
+
+function assertBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new Error(`Expected boolean for ${field}`);
   }
   return value;
 }
@@ -95,6 +111,7 @@ function parseAppConfig(value: unknown, index: number): AppConfig {
 
   return {
     id: assertString(value.id, `apps[${index}].id`),
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
     repoUrl: assertString(value.repoUrl, `apps[${index}].repoUrl`),
     defaultRevision: assertString(value.defaultRevision, `apps[${index}].defaultRevision`),
     deployRoot: assertString(value.deployRoot, `apps[${index}].deployRoot`),
@@ -117,6 +134,7 @@ function parseScheduledJobConfig(value: unknown, index: number): ScheduledJobCon
   return {
     id: assertString(value.id, `scheduledJobs[${index}].id`),
     appId: assertString(value.appId, `scheduledJobs[${index}].appId`),
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
     description: assertString(value.description, `scheduledJobs[${index}].description`),
     schedule: assertString(value.schedule, `scheduledJobs[${index}].schedule`),
     workingDirectory: assertString(value.workingDirectory, `scheduledJobs[${index}].workingDirectory`),
@@ -124,6 +142,18 @@ function parseScheduledJobConfig(value: unknown, index: number): ScheduledJobCon
     user: assertString(value.user, `scheduledJobs[${index}].user`),
     group: typeof value.group === 'string' ? value.group : undefined,
     environmentFile: typeof value.environmentFile === 'string' ? value.environmentFile : undefined
+  };
+}
+
+function parseFeatureFlagConfig(value: unknown, index: number): FeatureFlagConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for features[${index}]`);
+  }
+
+  return {
+    id: assertString(value.id, `features[${index}].id`),
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
+    description: assertString(value.description, `features[${index}].description`)
   };
 }
 
@@ -144,6 +174,10 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
     throw new Error('scheduledJobs must be an array');
   }
 
+  if (raw.features !== undefined && !Array.isArray(raw.features)) {
+    throw new Error('features must be an array');
+  }
+
   const gateway: GatewaySettings = {
     serverNames: assertStringArray(raw.gateway.serverNames, 'gateway.serverNames'),
     nginxSiteOutputPath: assertString(raw.gateway.nginxSiteOutputPath, 'gateway.nginxSiteOutputPath'),
@@ -156,6 +190,7 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
 
   const apps = raw.apps.map(parseAppConfig);
   const scheduledJobs = raw.scheduledJobs.map(parseScheduledJobConfig);
+  const features = Array.isArray(raw.features) ? raw.features.map(parseFeatureFlagConfig) : [];
 
   for (const job of scheduledJobs) {
     if (!apps.find((app) => app.id === job.appId)) {
@@ -163,7 +198,7 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
     }
   }
 
-  return { gateway, apps, scheduledJobs };
+  return { gateway, apps, scheduledJobs, features };
 }
 
 export async function loadGatewayConfig(configPath: string): Promise<GatewayConfig> {
@@ -173,15 +208,23 @@ export async function loadGatewayConfig(configPath: string): Promise<GatewayConf
   return parseGatewayConfig(parsed);
 }
 
+export async function saveGatewayConfig(configPath: string, config: GatewayConfig): Promise<void> {
+  const absolutePath = resolve(configPath);
+  const serialized = `${JSON.stringify(config, null, 2)}\n`;
+  await writeFile(absolutePath, serialized, 'utf8');
+}
+
 export function getApp(config: GatewayConfig, appId: string): AppConfig {
   const app = config.apps.find((candidate) => candidate.id === appId);
   if (!app) {
     throw new Error(`Unknown app id: ${appId}`);
   }
+  if (!app.enabled) {
+    throw new Error(`App is disabled: ${appId}`);
+  }
   return app;
 }
 
 export function getJobsForApp(config: GatewayConfig, appId: string): ScheduledJobConfig[] {
-  return config.scheduledJobs.filter((job) => job.appId === appId);
+  return config.scheduledJobs.filter((job) => job.appId === appId && job.enabled);
 }
-

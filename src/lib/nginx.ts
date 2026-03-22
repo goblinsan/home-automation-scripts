@@ -8,11 +8,12 @@ function normalizeRoutePath(routePath: string): string {
 }
 
 export function renderGatewaySite(config: GatewayConfig): string {
-  const includes = config.apps
+  const enabledApps = config.apps.filter((app) => app.enabled);
+  const includes = enabledApps
     .map((app) => `include ${app.upstreamConfPath};`)
     .join('\n');
 
-  const locations = config.apps
+  const locations = enabledApps
     .map((app) => {
       const routePath = normalizeRoutePath(app.routePath);
       return `
@@ -53,4 +54,3 @@ upstream ${app.id}_active {
 }
 `;
 }
-

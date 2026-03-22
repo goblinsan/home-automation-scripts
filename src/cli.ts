@@ -1,10 +1,10 @@
 import { readdir, readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { buildArtifacts } from './lib/build.ts';
 import { deployApp, installJobs, rollbackApp, smokeTest } from './lib/deploy.ts';
-import { getApp, getJobsForApp, loadGatewayConfig } from './lib/config.ts';
+import { getApp, loadGatewayConfig } from './lib/config.ts';
 import { renderActiveUpstream, renderGatewaySite } from './lib/nginx.ts';
-import { renderJobService, renderJobTimer } from './lib/systemd.ts';
-
+import { startAdminServer } from './lib/admin-ui.ts';
 function parseArgs(argv: string[]): Record<string, string | boolean> {
   const result: Record<string, string | boolean> = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -67,29 +67,6 @@ async function typecheckRepo(): Promise<void> {
   }
 }
 
-async function buildArtifacts(configPath: string, outDir: string): Promise<void> {
-  const config = await loadGatewayConfig(configPath);
-  const nginxDir = join(outDir, 'nginx');
-  const upstreamDir = join(nginxDir, 'upstreams');
-  const jobsDir = join(outDir, 'systemd', 'jobs');
-  await mkdir(upstreamDir, { recursive: true });
-  await mkdir(jobsDir, { recursive: true });
-
-  await writeFile(join(nginxDir, 'gateway-site.conf'), renderGatewaySite(config), 'utf8');
-
-  for (const app of config.apps) {
-    await writeFile(join(upstreamDir, `${app.id}-blue.conf`), renderActiveUpstream(app, 'blue'), 'utf8');
-    await writeFile(join(upstreamDir, `${app.id}-green.conf`), renderActiveUpstream(app, 'green'), 'utf8');
-  }
-
-  for (const app of config.apps) {
-    for (const job of getJobsForApp(config, app.id)) {
-      await writeFile(join(jobsDir, `${job.id}.service`), renderJobService(config, app, job), 'utf8');
-      await writeFile(join(jobsDir, `${job.id}.timer`), renderJobTimer(job), 'utf8');
-    }
-  }
-}
-
 function requireStringArg(args: Record<string, string | boolean>, key: string): string {
   const value = args[key];
   if (typeof value !== 'string' || value.length === 0) {
@@ -121,7 +98,8 @@ async function main(): Promise<void> {
     }
     case 'build': {
       const outDir = typeof args.out === 'string' ? args.out : 'generated';
-      await buildArtifacts(configPath, outDir);
+      const config = await loadGatewayConfig(configPath);
+      await buildArtifacts(config, outDir);
       console.log(`Rendered artifacts into ${outDir}`);
       return;
     }
@@ -173,12 +151,23 @@ async function main(): Promise<void> {
       console.log(`Smoke test OK: ${url}`);
       return;
     }
+    case 'serve-ui': {
+      const host = typeof args.host === 'string' ? args.host : '127.0.0.1';
+      const portValue = typeof args.port === 'string' ? Number(args.port) : 4173;
+      if (!Number.isInteger(portValue) || portValue <= 0) {
+        throw new Error(`Invalid port: ${String(args.port)}`);
+      }
+      const outDir = typeof args.out === 'string' ? args.out : 'generated';
+      await startAdminServer({ configPath, host, port: portValue, buildOutDir: outDir });
+      return;
+    }
     default:
       console.log(`Available commands:
   validate --config <path>
   lint
   typecheck
   build --config <path> --out <dir>
+  serve-ui --config <path> [--host 127.0.0.1] [--port 4173] [--out generated]
   deploy-app --config <path> --app <id> [--revision <sha>] [--skip-fetch] [--dry-run]
   rollback-app --config <path> --app <id> [--dry-run]
   install-jobs --config <path> --app <id> [--dry-run]

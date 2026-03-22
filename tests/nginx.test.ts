@@ -16,6 +16,7 @@ const config: GatewayConfig = {
   apps: [
     {
       id: 'chat-router',
+      enabled: true,
       repoUrl: 'git@example/chat-router.git',
       defaultRevision: 'main',
       deployRoot: '/srv/apps/chat-router',
@@ -29,7 +30,8 @@ const config: GatewayConfig = {
       }
     }
   ],
-  scheduledJobs: []
+  scheduledJobs: [],
+  features: []
 };
 
 test('renderGatewaySite includes active upstream and route path', () => {
@@ -43,3 +45,30 @@ test('renderActiveUpstream renders selected slot port', () => {
   assert.match(output, /127\.0\.0\.1:3002/);
 });
 
+test('renderGatewaySite skips disabled apps', () => {
+  const disabledConfig: GatewayConfig = {
+    ...config,
+    apps: [
+      ...config.apps,
+      {
+        id: 'disabled-app',
+        enabled: false,
+        repoUrl: 'git@example/disabled-app.git',
+        defaultRevision: 'main',
+        deployRoot: '/srv/apps/disabled-app',
+        routePath: '/disabled/',
+        healthPath: '/health',
+        upstreamConfPath: '/etc/nginx/conf.d/upstreams/disabled-app-active.conf',
+        buildCommands: ['npm ci'],
+        slots: {
+          blue: { port: 3101, startCommand: 'start-blue', stopCommand: 'stop-blue' },
+          green: { port: 3102, startCommand: 'start-green', stopCommand: 'stop-green' }
+        }
+      }
+    ]
+  };
+
+  const output = renderGatewaySite(disabledConfig);
+  assert.doesNotMatch(output, /disabled-app_active/);
+  assert.doesNotMatch(output, /location \/disabled\//);
+});

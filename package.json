@@ -12,7 +12,7 @@
     "typecheck": "node src/cli.ts typecheck",
     "test": "node --test tests/*.test.ts",
     "build": "node src/cli.ts build --config configs/gateway.config.example.json --out generated",
-    "validate": "node src/cli.ts validate --config configs/gateway.config.example.json"
+    "validate": "node src/cli.ts validate --config configs/gateway.config.example.json",
+    "ui": "node src/cli.ts serve-ui --config configs/gateway.config.example.json --host 127.0.0.1 --port 4173 --out generated"
   }
 }
-

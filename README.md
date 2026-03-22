@@ -62,6 +62,7 @@ npm run typecheck
 npm test
 npm run build
 npm run validate
+npm run ui
 ```
 
 ## What The Build Produces
@@ -76,9 +77,26 @@ npm run validate
 
 These are generated from `configs/gateway.config.example.json`.
 
+## Admin UI
+
+This repo also includes a built-in admin UI for editing the gateway config file.
+It exposes the same config shape used by the CLI, including:
+
+- gateway settings
+- apps and blue/green slot commands
+- scheduled job timings
+- feature enable/disable flags
+
+Run it with:
+
+```bash
+npm run ui
+```
+
+Then open `http://127.0.0.1:4173`.
+
 ## Next Host Setup
 
 If you already tried the previous Python/HA-oriented setup on the server, do not
 continue with it. Use the cleanup notes in [docs/bootstrap.md](docs/bootstrap.md)
 before provisioning the clean-slate gateway host layout.
-

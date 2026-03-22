@@ -57,3 +57,14 @@ Each job references:
 The CLI resolves `__CURRENT__` placeholders to `/srv/apps/<app>/current`, so
 rollback changes both traffic routing and scheduled job code paths together.
 
+## Admin Surface
+
+The control plane also includes a built-in web UI that edits the same JSON
+config file consumed by the CLI.
+
+It is intended for:
+
+- updating route and app definitions
+- adjusting job schedules
+- enabling or disabling apps, jobs, and feature flags
+- saving and rebuilding generated artifacts without hand-editing JSON
