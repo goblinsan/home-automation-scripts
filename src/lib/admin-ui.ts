@@ -3,6 +3,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { join } from 'node:path';
 import { buildArtifacts } from './build.ts';
 import { loadGatewayConfig, parseGatewayConfig, saveGatewayConfig, type GatewayConfig } from './config.ts';
+import { runServiceProfileAgent, syncServiceProfileRuntime, type AgentRunPayload, type AgentRunResult } from './deploy.ts';
+import { DEFAULT_WORKFLOW_SEED_PATH, importWorkflowSeed } from './workflows.ts';
 
 export interface AdminServerOptions {
   configPath: string;
@@ -58,6 +60,15 @@ interface WorkflowRecord {
   lastError: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface AgentRunUiState {
+  agentId: string;
+  prompt: string;
+  contextJson: string;
+  deliveryJson: string;
+  workflowSeedPath: string;
+  result: AgentRunResult | null;
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
@@ -489,6 +500,42 @@ function htmlPage(basePath: string): string {
         <div id="workflowsContainer" class="section-list"></div>
       </div>
 
+      <div class="card">
+        <div class="split-actions">
+          <div>
+            <span class="pill">Automation</span>
+            <h3>Bruvie-D + Workflow Migration</h3>
+          </div>
+          <div class="toolbar">
+            <button id="syncGatewayChatAgentsButton">Sync Agents</button>
+            <button id="importWorkflowSeedButton">Import Workflow Seed</button>
+          </div>
+        </div>
+        <div class="row">
+          <label>Workflow Seed File
+            <input id="workflowSeedPath" />
+          </label>
+          <label>Agent
+            <select id="agentRunAgentId"></select>
+          </label>
+        </div>
+        <label>Prompt
+          <textarea id="agentRunPrompt">Give me a short readiness check in character, then confirm the local model route is working.</textarea>
+        </label>
+        <div class="row">
+          <label>Context JSON
+            <textarea id="agentRunContext">{}</textarea>
+          </label>
+          <label>Delivery JSON
+            <textarea id="agentRunDelivery">{}</textarea>
+          </label>
+        </div>
+        <div class="toolbar">
+          <button id="runAgentButton" class="primary">Run Agent</button>
+        </div>
+        <div id="agentRunResult" class="meta-list"></div>
+      </div>
+
       <div class="section-list">
         <div class="card">
           <div class="split-actions">
@@ -555,12 +602,25 @@ function htmlPage(basePath: string): string {
           <p>The control-plane systemd unit is generated into <code>generated/systemd/control-plane/</code>.</p>
           <p>Service profiles generate env files and chat-agent sync payloads for the real gateway-managed apps.</p>
           <p>Workflow CRUD in this UI is backed by the live <code>gateway-api</code> workflow endpoints, not the local config file.</p>
+          <p>The Automation panel can import the OpenClaw workflow seed, sync live chat agents, and run Bruvie-D through <code>gateway-chat-platform</code>.</p>
         </div>
       </section>
     </aside>
   </main>
   <script>
-    const state = { config: null, runtime: null, workflows: [] };
+    const state = {
+      config: null,
+      runtime: null,
+      workflows: [],
+      agentRun: {
+        agentId: '',
+        prompt: 'Give me a short readiness check in character, then confirm the local model route is working.',
+        contextJson: '{}',
+        deliveryJson: '{}',
+        workflowSeedPath: '${DEFAULT_WORKFLOW_SEED_PATH}',
+        result: null
+      }
+    };
     const basePath = document.querySelector('meta[name="gateway-base-path"]').content || '/';
 
     function setStatus(message, kind = 'ok') {
@@ -660,6 +720,32 @@ function htmlPage(basePath: string): string {
         updatedAt: '',
         __draft: true
       };
+    }
+
+    function parseOptionalJsonText(value) {
+      const trimmed = value.trim();
+      if (!trimmed || trimmed === '{}' || trimmed === 'null') {
+        return undefined;
+      }
+      return JSON.parse(trimmed);
+    }
+
+    function configuredAgents() {
+      if (!state.config) {
+        return [];
+      }
+      return state.config.serviceProfiles.gatewayChatPlatform.agents || [];
+    }
+
+    function ensureAgentRunDefaults() {
+      const agents = configuredAgents();
+      if (agents.length === 0) {
+        state.agentRun.agentId = '';
+        return;
+      }
+      if (!agents.some((agent) => agent.id === state.agentRun.agentId)) {
+        state.agentRun.agentId = (agents.find((agent) => agent.enabled) || agents[0]).id;
+      }
     }
 
     function renderGatewayApiProfile() {
@@ -954,6 +1040,36 @@ function htmlPage(basePath: string): string {
       });
     }
 
+    function renderAutomation() {
+      ensureAgentRunDefaults();
+      const agentOptions = configuredAgents()
+        .map((agent) => \`<option value="\${agent.id}" \${agent.id === state.agentRun.agentId ? 'selected' : ''}>\${agent.name || agent.id}</option>\`)
+        .join('');
+      document.getElementById('workflowSeedPath').value = state.agentRun.workflowSeedPath;
+      document.getElementById('agentRunAgentId').innerHTML = agentOptions || '<option value="">No agents configured</option>';
+      document.getElementById('agentRunPrompt').value = state.agentRun.prompt;
+      document.getElementById('agentRunContext').value = state.agentRun.contextJson;
+      document.getElementById('agentRunDelivery').value = state.agentRun.deliveryJson;
+
+      const resultContainer = document.getElementById('agentRunResult');
+      if (!state.agentRun.result) {
+        resultContainer.innerHTML = '<div>No agent run yet.</div>';
+        return;
+      }
+
+      const result = state.agentRun.result;
+      resultContainer.innerHTML = [
+        \`<div><strong>Agent:</strong> \${result.agentId}</div>\`,
+        \`<div><strong>Provider:</strong> \${result.usedProvider}</div>\`,
+        \`<div><strong>Model:</strong> \${result.model}</div>\`,
+        \`<div><strong>Latency:</strong> \${result.latencyMs}ms</div>\`,
+        result.usage
+          ? \`<div><strong>Tokens:</strong> \${result.usage.promptTokens} prompt / \${result.usage.completionTokens} completion / \${result.usage.totalTokens} total</div>\`
+          : '<div><strong>Tokens:</strong> not reported</div>',
+        \`<div><strong>Content:</strong><br />\${result.content.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')}</div>\`
+      ].join('');
+    }
+
     function renderRuntime() {
       const runtimeSummary = document.getElementById('runtimeSummary');
       const runtimeMeta = document.getElementById('runtimeMeta');
@@ -1167,6 +1283,7 @@ function htmlPage(basePath: string): string {
       renderGatewayApiProfile();
       renderGatewayChatPlatformProfile();
       renderWorkflows();
+      renderAutomation();
       renderApps();
       renderJobs();
       renderFeatures();
@@ -1436,6 +1553,58 @@ function htmlPage(basePath: string): string {
       state.workflows.unshift(createWorkflowDraft());
       renderWorkflows();
     });
+    document.getElementById('workflowSeedPath').addEventListener('input', (event) => {
+      state.agentRun.workflowSeedPath = event.target.value;
+    });
+    document.getElementById('agentRunAgentId').addEventListener('input', (event) => {
+      state.agentRun.agentId = event.target.value;
+    });
+    document.getElementById('agentRunPrompt').addEventListener('input', (event) => {
+      state.agentRun.prompt = event.target.value;
+    });
+    document.getElementById('agentRunContext').addEventListener('input', (event) => {
+      state.agentRun.contextJson = event.target.value;
+    });
+    document.getElementById('agentRunDelivery').addEventListener('input', (event) => {
+      state.agentRun.deliveryJson = event.target.value;
+    });
+    document.getElementById('syncGatewayChatAgentsButton').addEventListener('click', async () => {
+      try {
+        await requestJson('POST', '/api/service-profiles/gateway-chat-platform/sync');
+        setStatus('Chat agents synced to gateway-chat-platform');
+      } catch (error) {
+        setStatus(error.message, 'error');
+      }
+    });
+    document.getElementById('importWorkflowSeedButton').addEventListener('click', async () => {
+      try {
+        const result = await requestJson('POST', '/api/workflow-seeds/import', {
+          filePath: state.agentRun.workflowSeedPath
+        });
+        await fetchWorkflows();
+        setStatus(result.message || 'Workflow seed imported');
+      } catch (error) {
+        setStatus(error.message, 'error');
+      }
+    });
+    document.getElementById('runAgentButton').addEventListener('click', async () => {
+      try {
+        if (!state.agentRun.agentId) {
+          throw new Error('Choose an agent first');
+        }
+        const context = parseOptionalJsonText(state.agentRun.contextJson);
+        const delivery = parseOptionalJsonText(state.agentRun.deliveryJson);
+        state.agentRun.result = await requestJson('POST', \`/api/chat-platform/agents/\${encodeURIComponent(state.agentRun.agentId)}/run\`, {
+          prompt: state.agentRun.prompt,
+          ...(context ? { context } : {}),
+          ...(delivery ? { delivery } : {})
+        });
+        renderAutomation();
+        setStatus(\`Agent run completed for \${state.agentRun.agentId}\`);
+      } catch (error) {
+        setStatus(error.message, 'error');
+      }
+    });
 
     fetchConfig()
       .then(() => Promise.all([fetchWorkflows(), fetchRuntime()]))
@@ -1519,6 +1688,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       const basePath = getForwardedBasePath(request);
       const workflowIdMatch = path.match(/^\/api\/workflows\/([^/]+)$/);
       const workflowActionMatch = path.match(/^\/api\/workflows\/([^/]+)\/(enable|disable|sleep|resume|run)$/);
+      const agentRunMatch = path.match(/^\/api\/chat-platform\/agents\/([^/]+)\/run$/);
 
       if (request.method === 'GET' && path === '/') {
         sendHtml(response, htmlPage(basePath));
@@ -1591,6 +1761,48 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           : undefined;
         const result = await proxyWorkflowRequest(config, path, 'POST', body);
         sendJson(response, result.status, result.payload);
+        return;
+      }
+
+      if (request.method === 'POST' && path === '/api/service-profiles/gateway-chat-platform/sync') {
+        const config = await loadGatewayConfig(options.configPath);
+        await syncServiceProfileRuntime(
+          config,
+          config.serviceProfiles.gatewayChatPlatform.appId,
+          { dryRun: false, log: () => undefined },
+          config.serviceProfiles.gatewayChatPlatform.apiBaseUrl
+        );
+        sendJson(response, 200, { message: 'Synced gateway-chat-platform agents' });
+        return;
+      }
+
+      if (agentRunMatch && request.method === 'POST') {
+        const config = await loadGatewayConfig(options.configPath);
+        const body = JSON.parse(await readBody(request)) as AgentRunPayload;
+        const result = await runServiceProfileAgent(
+          config,
+          config.serviceProfiles.gatewayChatPlatform.appId,
+          decodeURIComponent(agentRunMatch[1]),
+          body,
+          { dryRun: false, log: () => undefined },
+          config.serviceProfiles.gatewayChatPlatform.apiBaseUrl
+        );
+        sendJson(response, 200, result);
+        return;
+      }
+
+      if (request.method === 'POST' && path === '/api/workflow-seeds/import') {
+        const config = await loadGatewayConfig(options.configPath);
+        const body = JSON.parse(await readBody(request)) as { filePath?: string };
+        const result = await importWorkflowSeed(
+          config.serviceProfiles.gatewayApi.apiBaseUrl,
+          body.filePath || DEFAULT_WORKFLOW_SEED_PATH,
+          { dryRun: false, log: () => undefined }
+        );
+        sendJson(response, 200, {
+          message: `Imported ${result.operations.length} workflow seed entries from ${result.filePath}`,
+          operations: result.operations
+        });
         return;
       }
 

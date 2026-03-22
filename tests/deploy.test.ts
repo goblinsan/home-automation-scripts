@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { installServiceProfileFiles, syncServiceProfileRuntime } from '../src/lib/deploy.ts';
+import { installServiceProfileFiles, runServiceProfileAgent, syncServiceProfileRuntime } from '../src/lib/deploy.ts';
 import type { GatewayConfig } from '../src/lib/config.ts';
 
 function createConfig(root: string): GatewayConfig {
@@ -115,4 +115,46 @@ test('syncServiceProfileRuntime accepts chat-platform app in dry-run mode', asyn
 
   await syncServiceProfileRuntime(config, 'gateway-chat-platform', context, 'http://127.0.0.1:3301');
   assert.equal(config.serviceProfiles.gatewayChatPlatform.agents[0]?.id, 'marvin');
+});
+
+test('runServiceProfileAgent posts to the chat-platform agent run endpoint', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'gateway-control-plane-'));
+  const config = createConfig(root);
+  let requestUrl = '';
+  let requestBody: unknown;
+
+  const result = await runServiceProfileAgent(
+    config,
+    'gateway-chat-platform',
+    'marvin',
+    { prompt: 'status check' },
+    { dryRun: false, log: () => undefined },
+    'http://127.0.0.1:3301',
+    async (url, method, body) => {
+      requestUrl = url;
+      requestBody = body;
+      assert.equal(method, 'POST');
+      return {
+        status: 200,
+        body: JSON.stringify({
+          agentId: 'marvin',
+          usedProvider: 'lm-studio-a',
+          model: 'qwen/qwen3-32b',
+          content: 'systems nominal',
+          latencyMs: 42,
+          usage: {
+            promptTokens: 10,
+            completionTokens: 5,
+            totalTokens: 15
+          }
+        })
+      };
+    }
+  );
+
+  assert.equal(requestUrl, 'http://127.0.0.1:3301/api/agents/marvin/run');
+  assert.deepEqual(requestBody, { prompt: 'status check' });
+  assert.equal(result.agentId, 'marvin');
+  assert.equal(result.usedProvider, 'lm-studio-a');
+  assert.equal(result.content, 'systems nominal');
 });

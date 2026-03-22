@@ -80,7 +80,8 @@ npm run validate
 npm run ui
 deploy/bin/install-control-plane-service.sh --config configs/gateway.config.json
 deploy/bin/apply-service-profiles.sh --config configs/gateway.config.json --app gateway-chat-platform
-deploy/bin/import-workflow-seed.sh --base-url http://127.0.0.1:3000 --file migration/openclaw/gateway-api-workflows.json
+deploy/bin/import-workflow-seed.sh --base-url http://127.0.0.1:3000
+node src/cli.ts run-agent --config configs/gateway.config.json --app gateway-chat-platform --agent bruvie-d --prompt "Give me a quick readiness check."
 ```
 
 ## What The Build Produces
@@ -112,6 +113,8 @@ It exposes the same config shape used by the CLI, including:
 - `gateway-api` env and secret values
 - `gateway-api` workflow management through the live workflow API
 - `gateway-chat-platform` env, provider keys, and agent definitions
+- live workflow-seed import into `gateway-api`
+- live agent sync and agent-run execution against `gateway-chat-platform`
 
 For ad hoc use:
 

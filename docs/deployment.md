@@ -84,11 +84,26 @@ deploy/bin/apply-service-profiles.sh --config configs/gateway.config.json --app 
 For `gateway-chat-platform`, that command both writes the configured chat API
 env file and pushes the configured agents to `/api/agents/manage/sync`.
 
+You can also exercise a synced agent directly through the control plane:
+
+```bash
+node src/cli.ts run-agent --config configs/gateway.config.json --app gateway-chat-platform --agent bruvie-d --prompt "Give me a quick readiness check."
+```
+
+That calls `gateway-chat-platform`'s `POST /api/agents/:id/run` endpoint using
+the configured `serviceProfiles.gatewayChatPlatform.apiBaseUrl`.
+
 For `gateway-api`, the admin UI also proxies live workflow CRUD to the
 configured `serviceProfiles.gatewayApi.apiBaseUrl`.
 
 To seed migrated workflows into `gateway-api`:
 
 ```bash
-deploy/bin/import-workflow-seed.sh --base-url http://127.0.0.1:3000 --file migration/openclaw/gateway-api-workflows.json
+deploy/bin/import-workflow-seed.sh --base-url http://127.0.0.1:3000
 ```
+
+The admin UI exposes the same live operations:
+
+- import the bundled OpenClaw workflow seed into `gateway-api`
+- sync configured chat agents into `gateway-chat-platform`
+- run Bruvie-D or any configured agent through `/api/agents/:id/run`

@@ -7,13 +7,14 @@ import {
   installJobs,
   installServiceProfileFiles,
   rollbackApp,
+  runServiceProfileAgent,
   smokeTest,
   syncServiceProfileRuntime
 } from './lib/deploy.ts';
 import { getApp, loadGatewayConfig } from './lib/config.ts';
 import { renderActiveUpstream, renderGatewaySite } from './lib/nginx.ts';
 import { startAdminServer } from './lib/admin-ui.ts';
-import { importWorkflowSeed } from './lib/workflows.ts';
+import { DEFAULT_WORKFLOW_SEED_PATH, importWorkflowSeed } from './lib/workflows.ts';
 function parseArgs(argv: string[]): Record<string, string | boolean> {
   const result: Record<string, string | boolean> = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -82,6 +83,14 @@ function requireStringArg(args: Record<string, string | boolean>, key: string): 
     throw new Error(`Missing required argument --${key}`);
   }
   return value;
+}
+
+function parseOptionalJsonArg(args: Record<string, string | boolean>, key: string): Record<string, unknown> | undefined {
+  const value = args[key];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return undefined;
+  }
+  return JSON.parse(value) as Record<string, unknown>;
 }
 
 async function main(): Promise<void> {
@@ -163,11 +172,36 @@ async function main(): Promise<void> {
       await syncServiceProfileRuntime(config, appId, { dryRun, log: console.log }, baseUrl);
       return;
     }
+    case 'run-agent': {
+      const appId = requireStringArg(args, 'app');
+      const agentId = requireStringArg(args, 'agent');
+      const prompt = requireStringArg(args, 'prompt');
+      const dryRun = args['dry-run'] === true;
+      const baseUrl = typeof args['base-url'] === 'string' ? args['base-url'] : undefined;
+      const contextJson = parseOptionalJsonArg(args, 'context');
+      const deliveryJson = parseOptionalJsonArg(args, 'delivery');
+      const config = await loadGatewayConfig(configPath);
+      const result = await runServiceProfileAgent(
+        config,
+        appId,
+        agentId,
+        {
+          prompt,
+          context: contextJson as { workflowId?: string; source?: string; metadata?: Record<string, unknown> } | undefined,
+          delivery: deliveryJson as { mode?: string; channel?: string; to?: string } | undefined
+        },
+        { dryRun, log: console.log },
+        baseUrl
+      );
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
     case 'import-workflow-seed': {
       const baseUrl = requireStringArg(args, 'base-url');
-      const filePath = requireStringArg(args, 'file');
+      const filePath = typeof args.file === 'string' ? args.file : DEFAULT_WORKFLOW_SEED_PATH;
       const dryRun = args['dry-run'] === true;
-      await importWorkflowSeed(baseUrl, filePath, { dryRun, log: console.log });
+      const result = await importWorkflowSeed(baseUrl, filePath, { dryRun, log: console.log });
+      console.log(`Imported workflow seed from ${result.filePath}`);
       return;
     }
     case 'install-control-plane-service': {
@@ -204,7 +238,8 @@ async function main(): Promise<void> {
   rollback-app --config <path> --app <id> [--dry-run]
   install-jobs --config <path> --app <id> [--dry-run]
   apply-service-profiles --config <path> --app <id> [--base-url <url>] [--dry-run]
-  import-workflow-seed --base-url <url> --file <path> [--dry-run]
+  run-agent --config <path> --app <id> --agent <id> --prompt <text> [--context <json>] [--delivery <json>] [--base-url <url>] [--dry-run]
+  import-workflow-seed --base-url <url> [--file <path>] [--dry-run]
   install-control-plane-service --config <path> [--dry-run]
   smoke-test --url <url>`);
   }

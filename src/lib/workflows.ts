@@ -36,6 +36,13 @@ export interface WorkflowImportOperation {
   body: WorkflowSeedRecord;
 }
 
+export interface WorkflowImportResult {
+  filePath: string;
+  operations: WorkflowImportOperation[];
+}
+
+export const DEFAULT_WORKFLOW_SEED_PATH = 'migration/openclaw/gateway-api-workflows.json';
+
 function normalizeBaseUrl(url: string): string {
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
@@ -86,6 +93,8 @@ async function requestWorkflowApi(
   });
 }
 
+type WorkflowApiRequest = typeof requestWorkflowApi;
+
 export function planWorkflowSeedImport(
   existing: WorkflowRecord[],
   seed: WorkflowSeedRecord[]
@@ -124,10 +133,11 @@ export async function loadWorkflowSeed(filePath: string): Promise<WorkflowSeedRe
 export async function importWorkflowSeed(
   baseUrl: string,
   filePath: string,
-  context: CommandContext
-): Promise<void> {
+  context: CommandContext,
+  requestApi: WorkflowApiRequest = requestWorkflowApi
+): Promise<WorkflowImportResult> {
   const seed = await loadWorkflowSeed(filePath);
-  const listResponse = await requestWorkflowApi(baseUrl, '/api/workflows', 'GET');
+  const listResponse = await requestApi(baseUrl, '/api/workflows', 'GET');
   if (listResponse.status !== 200 || !Array.isArray(listResponse.payload)) {
     throw new Error(`Failed to list existing workflows from ${baseUrl}`);
   }
@@ -141,11 +151,16 @@ export async function importWorkflowSeed(
     }
 
     const response = operation.type === 'create'
-      ? await requestWorkflowApi(baseUrl, '/api/workflows', 'POST', operation.body)
-      : await requestWorkflowApi(baseUrl, `/api/workflows/${operation.id}`, 'PUT', operation.body);
+      ? await requestApi(baseUrl, '/api/workflows', 'POST', operation.body)
+      : await requestApi(baseUrl, `/api/workflows/${operation.id}`, 'PUT', operation.body);
 
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`${description} failed: ${response.status} ${JSON.stringify(response.payload)}`);
     }
   }
+
+  return {
+    filePath: resolve(filePath),
+    operations
+  };
 }

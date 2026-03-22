@@ -13,6 +13,33 @@ export interface CommandContext {
   log: (message: string) => void;
 }
 
+export interface AgentRunPayload {
+  prompt: string;
+  context?: {
+    workflowId?: string;
+    source?: string;
+    metadata?: Record<string, unknown>;
+  };
+  delivery?: {
+    mode?: string;
+    channel?: string;
+    to?: string;
+  };
+}
+
+export interface AgentRunResult {
+  agentId: string;
+  usedProvider: string;
+  model: string;
+  content: string;
+  latencyMs: number;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+}
+
 async function runShell(command: string, cwd: string, context: CommandContext): Promise<void> {
   context.log(`${context.dryRun ? '[dry-run] ' : ''}${command}`);
   if (context.dryRun) {
@@ -151,6 +178,8 @@ function httpJsonRequest(url: string, method: 'POST', body: unknown): Promise<{ 
   });
 }
 
+type JsonPostRequest = typeof httpJsonRequest;
+
 export async function smokeTest(url: string, expectedStatus = 200): Promise<void> {
   const status = await httpGet(url);
   if (status !== expectedStatus) {
@@ -216,6 +245,50 @@ export async function syncServiceProfileRuntime(
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`Agent sync failed for ${syncUrl}: ${response.status} ${response.body}`);
   }
+}
+
+export async function runServiceProfileAgent(
+  config: GatewayConfig,
+  appId: string,
+  agentId: string,
+  payload: AgentRunPayload,
+  context: CommandContext,
+  baseUrlOverride?: string,
+  requestFn: JsonPostRequest = httpJsonRequest
+): Promise<AgentRunResult> {
+  if (
+    !(
+      config.serviceProfiles.gatewayChatPlatform.enabled &&
+      config.serviceProfiles.gatewayChatPlatform.appId === appId
+    )
+  ) {
+    throw new Error(`gatewayChatPlatform service profile does not manage app ${appId}`);
+  }
+
+  if (!payload.prompt || payload.prompt.trim().length === 0) {
+    throw new Error('Agent prompt is required');
+  }
+
+  const baseUrl = normalizeBaseUrl(baseUrlOverride ?? config.serviceProfiles.gatewayChatPlatform.apiBaseUrl);
+  const runUrl = `${baseUrl}/api/agents/${encodeURIComponent(agentId)}/run`;
+  context.log(`${context.dryRun ? '[dry-run] ' : ''}POST ${runUrl}`);
+
+  if (context.dryRun) {
+    return {
+      agentId,
+      usedProvider: 'dry-run',
+      model: 'dry-run',
+      content: '',
+      latencyMs: 0
+    };
+  }
+
+  const response = await requestFn(runUrl, 'POST', payload);
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Agent run failed for ${runUrl}: ${response.status} ${response.body}`);
+  }
+
+  return JSON.parse(response.body) as AgentRunResult;
 }
 
 export async function installJobs(config: GatewayConfig, appId: string, context: CommandContext): Promise<void> {
