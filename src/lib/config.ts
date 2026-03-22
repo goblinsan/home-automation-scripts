@@ -76,6 +76,7 @@ export interface EnvironmentVariableConfig {
 export interface GatewayApiServiceProfile {
   enabled: boolean;
   appId: string;
+  apiBaseUrl: string;
   envFilePath: string;
   environment: EnvironmentVariableConfig[];
 }
@@ -381,6 +382,7 @@ function parseGatewayApiServiceProfile(value: unknown): GatewayApiServiceProfile
     return {
       enabled: false,
       appId: 'gateway-api',
+      apiBaseUrl: 'http://127.0.0.1:3000',
       envFilePath: '/srv/apps/gateway-api/shared/gateway-api.env',
       environment: []
     };
@@ -393,6 +395,7 @@ function parseGatewayApiServiceProfile(value: unknown): GatewayApiServiceProfile
   return {
     enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
     appId: assertString(value.appId, 'serviceProfiles.gatewayApi.appId'),
+    apiBaseUrl: assertString(value.apiBaseUrl, 'serviceProfiles.gatewayApi.apiBaseUrl'),
     envFilePath: assertString(value.envFilePath, 'serviceProfiles.gatewayApi.envFilePath'),
     environment: Array.isArray(value.environment)
       ? value.environment.map((entry, index) => parseEnvironmentVariableConfig(entry, `serviceProfiles.gatewayApi.environment[${index}]`))

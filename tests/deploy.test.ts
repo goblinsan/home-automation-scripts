@@ -67,6 +67,7 @@ function createConfig(root: string): GatewayConfig {
       gatewayApi: {
         enabled: true,
         appId: 'gateway-api',
+        apiBaseUrl: 'http://127.0.0.1:3000',
         envFilePath: join(root, 'gateway-api.env'),
         environment: [{ key: 'PORT', value: '3000', secret: false }]
       },

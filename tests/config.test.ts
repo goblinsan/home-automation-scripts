@@ -65,6 +65,7 @@ test('parseGatewayConfig accepts the example shape', () => {
       gatewayApi: {
         enabled: true,
         appId: 'chat-router',
+        apiBaseUrl: 'http://127.0.0.1:3000',
         envFilePath: '/srv/apps/chat-router/shared/gateway-api.env',
         environment: [
           {
@@ -154,5 +155,6 @@ test('parseGatewayConfig defaults enabled flags when omitted', () => {
   assert.equal(config.gateway.adminUi.enabled, false);
   assert.equal(config.gateway.adminUi.port, 4173);
   assert.equal(config.serviceProfiles.gatewayApi.enabled, false);
+  assert.equal(config.serviceProfiles.gatewayApi.apiBaseUrl, 'http://127.0.0.1:3000');
   assert.deepEqual(config.serviceProfiles.gatewayChatPlatform.agents, []);
 });

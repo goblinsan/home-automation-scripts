@@ -32,6 +32,34 @@ interface RuntimeSnapshot {
   };
 }
 
+interface WorkflowTarget {
+  type: string;
+  ref: string;
+}
+
+interface WorkflowRetryPolicy {
+  maxAttempts?: number;
+  backoffSeconds?: number;
+}
+
+interface WorkflowRecord {
+  id: string;
+  name: string;
+  enabled: boolean;
+  schedule: string;
+  sleepUntil: string | null;
+  target: WorkflowTarget;
+  input?: Record<string, unknown>;
+  secrets?: string[];
+  timeoutSeconds?: number;
+  retryPolicy?: WorkflowRetryPolicy;
+  lastRunAt: string | null;
+  lastStatus: 'idle' | 'running' | 'success' | 'failed' | 'sleeping';
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
   response.statusCode = statusCode;
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -48,6 +76,10 @@ function sendText(response: ServerResponse, statusCode: number, text: string): v
   response.statusCode = statusCode;
   response.setHeader('Content-Type', 'text/plain; charset=utf-8');
   response.end(text);
+}
+
+function normalizeBaseUrl(url: string): string {
+  return url.endsWith('/') ? url.slice(0, -1) : url;
 }
 
 function readBody(request: IncomingMessage): Promise<string> {
@@ -398,6 +430,9 @@ function htmlPage(basePath: string): string {
           <label>Managed App
             <select id="gatewayApiProfileAppId"></select>
           </label>
+          <label>Workflow API Base URL
+            <input id="gatewayApiProfileApiBaseUrl" />
+          </label>
           <label>Env File Path
             <input id="gatewayApiProfileEnvFilePath" />
           </label>
@@ -438,6 +473,20 @@ function htmlPage(basePath: string): string {
             <div id="gatewayChatAgentsContainer" class="section-list"></div>
           </div>
         </div>
+      </div>
+
+      <div class="card">
+        <div class="split-actions">
+          <div>
+            <span class="pill">Workflows</span>
+            <h3>gateway-api Scheduled Workflows</h3>
+          </div>
+          <div class="toolbar">
+            <button id="reloadWorkflowsButton">Reload Workflows</button>
+            <button id="addWorkflowButton">Add Workflow</button>
+          </div>
+        </div>
+        <div id="workflowsContainer" class="section-list"></div>
       </div>
 
       <div class="section-list">
@@ -505,12 +554,13 @@ function htmlPage(basePath: string): string {
           <p>The admin UI route is rendered into nginx when Admin UI is enabled.</p>
           <p>The control-plane systemd unit is generated into <code>generated/systemd/control-plane/</code>.</p>
           <p>Service profiles generate env files and chat-agent sync payloads for the real gateway-managed apps.</p>
+          <p>Workflow CRUD in this UI is backed by the live <code>gateway-api</code> workflow endpoints, not the local config file.</p>
         </div>
       </section>
     </aside>
   </main>
   <script>
-    const state = { config: null, runtime: null };
+    const state = { config: null, runtime: null, workflows: [] };
     const basePath = document.querySelector('meta[name="gateway-base-path"]').content || '/';
 
     function setStatus(message, kind = 'ok') {
@@ -591,10 +641,32 @@ function htmlPage(basePath: string): string {
       return JSON.parse(value);
     }
 
+    function createWorkflowDraft() {
+      return {
+        id: '',
+        name: '',
+        enabled: true,
+        schedule: '*/15 * * * *',
+        sleepUntil: null,
+        target: { type: 'shell', ref: '' },
+        input: {},
+        secrets: [],
+        timeoutSeconds: undefined,
+        retryPolicy: {},
+        lastRunAt: null,
+        lastStatus: 'idle',
+        lastError: null,
+        createdAt: '',
+        updatedAt: '',
+        __draft: true
+      };
+    }
+
     function renderGatewayApiProfile() {
       const profile = state.config.serviceProfiles.gatewayApi;
       document.getElementById('gatewayApiProfileEnabled').checked = profile.enabled;
       document.getElementById('gatewayApiProfileAppId').innerHTML = appOptions(profile.appId);
+      document.getElementById('gatewayApiProfileApiBaseUrl').value = profile.apiBaseUrl;
       document.getElementById('gatewayApiProfileEnvFilePath').value = profile.envFilePath;
       renderEnvironmentList('gatewayApiEnvContainer', profile.environment, (index) => {
         profile.environment.splice(index, 1);
@@ -695,6 +767,190 @@ function htmlPage(basePath: string): string {
         });
 
         agentsContainer.appendChild(element);
+      });
+    }
+
+    function renderWorkflows() {
+      const container = document.getElementById('workflowsContainer');
+      container.innerHTML = '';
+      if (state.workflows.length === 0) {
+        container.innerHTML = '<p>No workflows yet.</p>';
+        return;
+      }
+
+      state.workflows.forEach((workflow, index) => {
+        const element = document.createElement('div');
+        element.className = 'card';
+        element.innerHTML = \`
+          <div class="split-actions">
+            <div>
+              <strong>\${workflow.name || 'new-workflow'}</strong>
+              <p>Status: \${workflow.lastStatus || 'idle'} | Enabled: \${workflow.enabled ? 'yes' : 'no'}</p>
+            </div>
+            <div class="toolbar">
+              <button data-action="save" class="primary">\${workflow.__draft ? 'Create' : 'Save'}</button>
+              <button data-action="run">Run</button>
+              <button data-action="toggle">\${workflow.enabled ? 'Disable' : 'Enable'}</button>
+              <button data-action="sleep">Sleep</button>
+              <button data-action="resume">Resume</button>
+              <button data-action="delete" class="danger">Delete</button>
+            </div>
+          </div>
+          <div class="row">
+            <label>Name<input data-field="name" value="\${workflow.name || ''}" /></label>
+            <label>Schedule<input data-field="schedule" value="\${workflow.schedule || ''}" /></label>
+            <label>Target Type<input data-field="target.type" value="\${workflow.target?.type || ''}" /></label>
+            <label>Target Ref<input data-field="target.ref" value="\${workflow.target?.ref || ''}" /></label>
+            <label>Timeout Seconds<input type="number" data-field="timeoutSeconds" value="\${workflow.timeoutSeconds ?? ''}" /></label>
+            <label>Sleep Until<input data-field="sleepUntil" value="\${workflow.sleepUntil || ''}" placeholder="2026-04-01T00:00:00Z" /></label>
+          </div>
+          <label>Secrets (comma separated)<input data-field="secrets" value="\${(workflow.secrets || []).join(', ')}" /></label>
+          <label>Input JSON<textarea data-field="input">\${JSON.stringify(workflow.input || {}, null, 2)}</textarea></label>
+          <label>Retry Policy JSON<textarea data-field="retryPolicy">\${JSON.stringify(workflow.retryPolicy || {}, null, 2)}</textarea></label>
+          <div class="meta-list">
+            <div><strong>ID:</strong> \${workflow.id || 'not created yet'}</div>
+            <div><strong>Last Run:</strong> \${workflow.lastRunAt || 'never'}</div>
+            <div><strong>Last Error:</strong> \${workflow.lastError || 'none'}</div>
+            <div><strong>Updated:</strong> \${workflow.updatedAt || 'not saved yet'}</div>
+          </div>
+        \`;
+
+        element.querySelectorAll('input, textarea').forEach((input) => {
+          input.addEventListener('input', () => {
+            const field = input.dataset.field;
+            if (!field) {
+              return;
+            }
+            if (field === 'target.type') {
+              workflow.target.type = input.value;
+            } else if (field === 'target.ref') {
+              workflow.target.ref = input.value;
+            } else if (field === 'timeoutSeconds') {
+              workflow.timeoutSeconds = input.value ? Number(input.value) : undefined;
+              if (!input.value) {
+                delete workflow.timeoutSeconds;
+              }
+            } else if (field === 'secrets') {
+              workflow.secrets = input.value.split(',').map((item) => item.trim()).filter(Boolean);
+            } else if (field === 'input') {
+              workflow.input = parseJsonField(input.value, {});
+            } else if (field === 'retryPolicy') {
+              const value = parseJsonField(input.value, {});
+              workflow.retryPolicy = Object.keys(value).length > 0 ? value : undefined;
+              if (!workflow.retryPolicy) {
+                delete workflow.retryPolicy;
+              }
+            } else if (field === 'sleepUntil') {
+              workflow.sleepUntil = input.value || null;
+            } else {
+              workflow[field] = input.value;
+            }
+          });
+        });
+
+        element.querySelector('[data-action="save"]').addEventListener('click', async () => {
+          try {
+            const body = {
+              name: workflow.name,
+              schedule: workflow.schedule,
+              target: workflow.target,
+              enabled: workflow.enabled,
+              input: workflow.input,
+              secrets: workflow.secrets,
+              timeoutSeconds: workflow.timeoutSeconds,
+              retryPolicy: workflow.retryPolicy
+            };
+            if (workflow.__draft) {
+              await requestJson('POST', '/api/workflows', body);
+            } else {
+              await requestJson('PUT', \`/api/workflows/\${workflow.id}\`, body);
+            }
+            await fetchWorkflows();
+            setStatus(\`Workflow \${workflow.__draft ? 'created' : 'saved'}\`);
+          } catch (error) {
+            setStatus(error.message, 'error');
+          }
+        });
+
+        element.querySelector('[data-action="run"]').addEventListener('click', async () => {
+          if (!workflow.id) {
+            setStatus('Create the workflow before running it', 'error');
+            return;
+          }
+          try {
+            await requestJson('POST', \`/api/workflows/\${workflow.id}/run\`);
+            await fetchWorkflows();
+            setStatus('Workflow run triggered');
+          } catch (error) {
+            setStatus(error.message, 'error');
+          }
+        });
+
+        element.querySelector('[data-action="toggle"]').addEventListener('click', async () => {
+          if (!workflow.id) {
+            workflow.enabled = !workflow.enabled;
+            renderWorkflows();
+            return;
+          }
+          try {
+            await requestJson('POST', \`/api/workflows/\${workflow.id}/\${workflow.enabled ? 'disable' : 'enable'}\`);
+            await fetchWorkflows();
+            setStatus(\`Workflow \${workflow.enabled ? 'disabled' : 'enabled'}\`);
+          } catch (error) {
+            setStatus(error.message, 'error');
+          }
+        });
+
+        element.querySelector('[data-action="sleep"]').addEventListener('click', async () => {
+          if (!workflow.sleepUntil) {
+            setStatus('Set a future Sleep Until timestamp first', 'error');
+            return;
+          }
+          if (!workflow.id) {
+            setStatus('Create the workflow before sleeping it', 'error');
+            return;
+          }
+          try {
+            await requestJson('POST', \`/api/workflows/\${workflow.id}/sleep\`, { until: workflow.sleepUntil });
+            await fetchWorkflows();
+            setStatus('Workflow sleep updated');
+          } catch (error) {
+            setStatus(error.message, 'error');
+          }
+        });
+
+        element.querySelector('[data-action="resume"]').addEventListener('click', async () => {
+          if (!workflow.id) {
+            workflow.sleepUntil = null;
+            workflow.lastStatus = 'idle';
+            renderWorkflows();
+            return;
+          }
+          try {
+            await requestJson('POST', \`/api/workflows/\${workflow.id}/resume\`);
+            await fetchWorkflows();
+            setStatus('Workflow resumed');
+          } catch (error) {
+            setStatus(error.message, 'error');
+          }
+        });
+
+        element.querySelector('[data-action="delete"]').addEventListener('click', async () => {
+          try {
+            if (workflow.__draft) {
+              state.workflows.splice(index, 1);
+              renderWorkflows();
+              return;
+            }
+            await requestJson('DELETE', \`/api/workflows/\${workflow.id}\`);
+            await fetchWorkflows();
+            setStatus('Workflow deleted');
+          } catch (error) {
+            setStatus(error.message, 'error');
+          }
+        });
+
+        container.appendChild(element);
       });
     }
 
@@ -910,6 +1166,7 @@ function htmlPage(basePath: string): string {
       renderGateway();
       renderGatewayApiProfile();
       renderGatewayChatPlatformProfile();
+      renderWorkflows();
       renderApps();
       renderJobs();
       renderFeatures();
@@ -936,15 +1193,30 @@ function htmlPage(basePath: string): string {
       renderRuntime();
     }
 
-    async function postJson(url, body) {
-      const response = await fetch(joinBase(url), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
+    async function fetchWorkflows() {
+      if (state.config && !state.config.serviceProfiles.gatewayApi.enabled) {
+        state.workflows = [];
+        renderWorkflows();
+        return;
+      }
+      const response = await fetch(joinBase('/api/workflows'));
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Request failed');
+        throw new Error(data.error || 'Failed to load workflows');
+      }
+      state.workflows = Array.isArray(data) ? data : [];
+      renderWorkflows();
+    }
+
+    async function requestJson(method, url, body) {
+      const response = await fetch(joinBase(url), {
+        method,
+        headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body)
+      });
+      const data = response.status === 204 ? null : await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Request failed');
       }
       return data;
     }
@@ -989,6 +1261,7 @@ function htmlPage(basePath: string): string {
     [
       ['gatewayApiProfileEnabled', 'enabled', 'checkbox'],
       ['gatewayApiProfileAppId', 'appId'],
+      ['gatewayApiProfileApiBaseUrl', 'apiBaseUrl'],
       ['gatewayApiProfileEnvFilePath', 'envFilePath'],
     ].forEach(([id, key, kind]) => {
       const element = document.getElementById(id);
@@ -1015,6 +1288,7 @@ function htmlPage(basePath: string): string {
     document.getElementById('reloadButton').addEventListener('click', async () => {
       try {
         await fetchConfig();
+        await fetchWorkflows();
         await fetchRuntime();
       } catch (error) {
         setStatus(error.message, 'error');
@@ -1023,7 +1297,7 @@ function htmlPage(basePath: string): string {
 
     document.getElementById('validateButton').addEventListener('click', async () => {
       try {
-        const result = await postJson('/api/validate', state.config);
+        const result = await requestJson('POST', '/api/validate', state.config);
         setStatus(result.message || 'Config is valid');
       } catch (error) {
         setStatus(error.message, 'error');
@@ -1032,9 +1306,10 @@ function htmlPage(basePath: string): string {
 
     document.getElementById('saveButton').addEventListener('click', async () => {
       try {
-        const result = await postJson('/api/config', state.config);
+        const result = await requestJson('POST', '/api/config', state.config);
         state.config = result.config;
         render();
+        await fetchWorkflows();
         await fetchRuntime();
         setStatus(result.message || 'Saved');
       } catch (error) {
@@ -1044,9 +1319,10 @@ function htmlPage(basePath: string): string {
 
     document.getElementById('buildButton').addEventListener('click', async () => {
       try {
-        const result = await postJson('/api/build', state.config);
+        const result = await requestJson('POST', '/api/build', state.config);
         state.config = result.config;
         render();
+        await fetchWorkflows();
         await fetchRuntime();
         setStatus(result.message || 'Saved and built');
       } catch (error) {
@@ -1058,6 +1334,14 @@ function htmlPage(basePath: string): string {
       try {
         await fetchRuntime();
         setStatus('Runtime refreshed');
+      } catch (error) {
+        setStatus(error.message, 'error');
+      }
+    });
+    document.getElementById('reloadWorkflowsButton').addEventListener('click', async () => {
+      try {
+        await fetchWorkflows();
+        setStatus('Workflows reloaded');
       } catch (error) {
         setStatus(error.message, 'error');
       }
@@ -1148,8 +1432,13 @@ function htmlPage(basePath: string): string {
       renderGatewayChatPlatformProfile();
       syncRawJson();
     });
+    document.getElementById('addWorkflowButton').addEventListener('click', () => {
+      state.workflows.unshift(createWorkflowDraft());
+      renderWorkflows();
+    });
 
-    Promise.all([fetchConfig(), fetchRuntime()])
+    fetchConfig()
+      .then(() => Promise.all([fetchWorkflows(), fetchRuntime()]))
       .catch((error) => setStatus(error.message, 'error'));
     setInterval(() => {
       fetchRuntime().catch(() => undefined);
@@ -1169,12 +1458,67 @@ function getRequestPath(request: IncomingMessage): string {
   return requestUrl.split('?')[0] ?? '/';
 }
 
+async function proxyWorkflowRequest(
+  config: GatewayConfig,
+  path: string,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  body?: unknown
+): Promise<{ status: number; payload: unknown }> {
+  if (!config.serviceProfiles.gatewayApi.enabled) {
+    throw new Error('gatewayApi service profile is disabled');
+  }
+
+  const workflowBaseUrl = normalizeBaseUrl(config.serviceProfiles.gatewayApi.apiBaseUrl);
+  const requestUrl = `${workflowBaseUrl}${path}`;
+  const requestBody = body === undefined ? undefined : JSON.stringify(body);
+  const requestImpl = requestUrl.startsWith('https://') ? (await import('node:https')).request : (await import('node:http')).request;
+
+  return new Promise((resolve, reject) => {
+    const request = requestImpl(
+      requestUrl,
+      {
+        method,
+        timeout: 10_000,
+        headers: requestBody
+          ? {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(requestBody)
+            }
+          : undefined
+      },
+      (apiResponse) => {
+        const chunks: Buffer[] = [];
+        apiResponse.on('data', (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+        });
+        apiResponse.on('end', () => {
+          const responseText = Buffer.concat(chunks).toString('utf8');
+          const payload = responseText.length > 0 ? JSON.parse(responseText) as unknown : null;
+          resolve({
+            status: apiResponse.statusCode ?? 0,
+            payload
+          });
+        });
+      }
+    );
+
+    request.on('error', reject);
+    request.on('timeout', () => request.destroy(new Error(`Timed out: ${requestUrl}`)));
+    if (requestBody) {
+      request.write(requestBody);
+    }
+    request.end();
+  });
+}
+
 export async function startAdminServer(options: AdminServerOptions): Promise<void> {
   const startedAtMs = Date.now();
   const server = createServer(async (request, response) => {
     try {
       const path = getRequestPath(request);
       const basePath = getForwardedBasePath(request);
+      const workflowIdMatch = path.match(/^\/api\/workflows\/([^/]+)$/);
+      const workflowActionMatch = path.match(/^\/api\/workflows\/([^/]+)\/(enable|disable|sleep|resume|run)$/);
 
       if (request.method === 'GET' && path === '/') {
         sendHtml(response, htmlPage(basePath));
@@ -1195,6 +1539,58 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       if (request.method === 'GET' && path === '/api/runtime') {
         const config = await loadGatewayConfig(options.configPath);
         sendJson(response, 200, createRuntimeSnapshot(config, options, startedAtMs));
+        return;
+      }
+
+      if (request.method === 'GET' && path === '/api/workflows') {
+        const config = await loadGatewayConfig(options.configPath);
+        const result = await proxyWorkflowRequest(config, '/api/workflows', 'GET');
+        sendJson(response, result.status, result.payload);
+        return;
+      }
+
+      if (request.method === 'POST' && path === '/api/workflows') {
+        const config = await loadGatewayConfig(options.configPath);
+        const body = JSON.parse(await readBody(request)) as unknown;
+        const result = await proxyWorkflowRequest(config, '/api/workflows', 'POST', body);
+        sendJson(response, result.status, result.payload);
+        return;
+      }
+
+      if (workflowIdMatch && request.method === 'GET') {
+        const config = await loadGatewayConfig(options.configPath);
+        const result = await proxyWorkflowRequest(config, path, 'GET');
+        sendJson(response, result.status, result.payload);
+        return;
+      }
+
+      if (workflowIdMatch && request.method === 'PUT') {
+        const config = await loadGatewayConfig(options.configPath);
+        const body = JSON.parse(await readBody(request)) as unknown;
+        const result = await proxyWorkflowRequest(config, path, 'PUT', body);
+        sendJson(response, result.status, result.payload);
+        return;
+      }
+
+      if (workflowIdMatch && request.method === 'DELETE') {
+        const config = await loadGatewayConfig(options.configPath);
+        const result = await proxyWorkflowRequest(config, path, 'DELETE');
+        if (result.payload === null) {
+          response.statusCode = result.status;
+          response.end();
+          return;
+        }
+        sendJson(response, result.status, result.payload);
+        return;
+      }
+
+      if (workflowActionMatch && request.method === 'POST') {
+        const config = await loadGatewayConfig(options.configPath);
+        const body = workflowActionMatch[2] === 'sleep'
+          ? JSON.parse(await readBody(request)) as unknown
+          : undefined;
+        const result = await proxyWorkflowRequest(config, path, 'POST', body);
+        sendJson(response, result.status, result.payload);
         return;
       }
 

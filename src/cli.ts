@@ -13,6 +13,7 @@ import {
 import { getApp, loadGatewayConfig } from './lib/config.ts';
 import { renderActiveUpstream, renderGatewaySite } from './lib/nginx.ts';
 import { startAdminServer } from './lib/admin-ui.ts';
+import { importWorkflowSeed } from './lib/workflows.ts';
 function parseArgs(argv: string[]): Record<string, string | boolean> {
   const result: Record<string, string | boolean> = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -162,6 +163,13 @@ async function main(): Promise<void> {
       await syncServiceProfileRuntime(config, appId, { dryRun, log: console.log }, baseUrl);
       return;
     }
+    case 'import-workflow-seed': {
+      const baseUrl = requireStringArg(args, 'base-url');
+      const filePath = requireStringArg(args, 'file');
+      const dryRun = args['dry-run'] === true;
+      await importWorkflowSeed(baseUrl, filePath, { dryRun, log: console.log });
+      return;
+    }
     case 'install-control-plane-service': {
       const dryRun = args['dry-run'] === true;
       const config = await loadGatewayConfig(configPath);
@@ -196,6 +204,7 @@ async function main(): Promise<void> {
   rollback-app --config <path> --app <id> [--dry-run]
   install-jobs --config <path> --app <id> [--dry-run]
   apply-service-profiles --config <path> --app <id> [--base-url <url>] [--dry-run]
+  import-workflow-seed --base-url <url> --file <path> [--dry-run]
   install-control-plane-service --config <path> [--dry-run]
   smoke-test --url <url>`);
   }

@@ -59,6 +59,7 @@ const config: GatewayConfig = {
     gatewayApi: {
       enabled: false,
       appId: 'chat-router',
+      apiBaseUrl: 'http://127.0.0.1:3000',
       envFilePath: '/srv/apps/chat-router/shared/gateway-api.env',
       environment: []
     },

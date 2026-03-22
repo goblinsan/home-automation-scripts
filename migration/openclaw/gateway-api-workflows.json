@@ -1,0 +1,223 @@
+[
+  {
+    "name": "project-health-daily",
+    "schedule": "0 8 * * *",
+    "enabled": true,
+    "target": {
+      "type": "gateway-chat-platform.agent-turn",
+      "ref": "bruvie-d"
+    },
+    "input": {
+      "migrationSource": "openclaw",
+      "legacyJobId": "8b2e8357-8265-46db-aeec-814937992058",
+      "timezone": "America/New_York",
+      "prompt": "project-health-check: Read PROJECTS.md. For each endpoint, make an HTTP GET request and capture status code and response time. Evaluate thresholds: Kulrs /browse warn>2000ms alert>5000ms; Kulrs API /health warn>1500ms alert>3000ms; Vizail endpoints warn>1500ms alert>3000ms. Write structured run data to site-health-history.json with timestamp, endpoint, status, ms, health, threshold breaches. Keep only the latest 500 runs total. Output a health table, changes from previous run, and recommended actions if degraded. Then send the summary to Jimbo via Telegram.",
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram",
+        "to": "8681861530"
+      }
+    }
+  },
+  {
+    "name": "training-weekly",
+    "schedule": "0 7 * * 1",
+    "enabled": true,
+    "target": {
+      "type": "gateway-chat-platform.agent-turn",
+      "ref": "bruvie-d"
+    },
+    "input": {
+      "migrationSource": "openclaw",
+      "legacyJobId": "6dd7a6e0-b1de-4bf2-951b-23b4cd76495a",
+      "timezone": "America/New_York",
+      "prompt": "training-weekly-plan: Read TRAINING.md. Today is Monday. Build this week's triathlon training plan for Jimbo. Race: St. Anthony's Olympic Triathlon, April 26 2026, St. Pete FL. Output: daily schedule Mon-Sun (no Wednesday), key sessions and purpose, minimum viable version if busy, recovery guidance, red flags. Send to Jimbo via Telegram.",
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram",
+        "to": "8681861530"
+      }
+    }
+  },
+  {
+    "name": "chief-of-staff-daily",
+    "schedule": "0 7 * * *",
+    "enabled": true,
+    "target": {
+      "type": "gateway-chat-platform.agent-turn",
+      "ref": "bruvie-d"
+    },
+    "input": {
+      "migrationSource": "openclaw",
+      "legacyJobId": "f622d64f-8493-4eb5-aa11-deedca3ad4f0",
+      "timezone": "America/New_York",
+      "prompt": "daily-brief: Read PROJECTS.md and TRAINING.md. Produce Jimbo's daily brief: top 3 priorities for today, project health risks for Kulrs and Vizail, today's training session per the weekly plan (skip if Wednesday), recommended actions (max 5), and the one thing to do today if nothing else. Be Bruvie-D: direct, mildly fatalistic, no filler."
+    }
+  },
+  {
+    "name": "checkin-evening",
+    "schedule": "30 20 * * *",
+    "enabled": true,
+    "target": {
+      "type": "gateway-chat-platform.agent-turn",
+      "ref": "bruvie-d"
+    },
+    "input": {
+      "migrationSource": "openclaw",
+      "legacyJobId": "05117172-3606-4832-8f91-8536c9b504a7",
+      "timezone": "America/New_York",
+      "prompt": "It is 8:30pm. End-of-day check-in. Ask Jimbo to log what he actually got done today, not what he meant to do. Remind him to set one clear intention for tomorrow. Keep it brief, warm-but-fatalistic, and Marvin-esque.",
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram",
+        "to": "8681861530"
+      }
+    },
+    "timeoutSeconds": 60
+  },
+  {
+    "name": "checkin-midday",
+    "schedule": "30 12 * * *",
+    "enabled": true,
+    "target": {
+      "type": "gateway-chat-platform.agent-turn",
+      "ref": "bruvie-d"
+    },
+    "input": {
+      "migrationSource": "openclaw",
+      "legacyJobId": "920acf5a-bfa9-4bde-9d51-17b54610f764",
+      "timezone": "America/New_York",
+      "prompt": "It is midday. Check in with Jimbo. Remind him to log what he has accomplished so far today. Ask if he is on track with today's top priorities. Keep it short, punchy, and Marvin-esque. One or two lines max.",
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram",
+        "to": "8681861530"
+      }
+    },
+    "timeoutSeconds": 60
+  },
+  {
+    "name": "checkin-afternoon",
+    "schedule": "0 17 * * *",
+    "enabled": true,
+    "target": {
+      "type": "gateway-chat-platform.agent-turn",
+      "ref": "bruvie-d"
+    },
+    "input": {
+      "migrationSource": "openclaw",
+      "legacyJobId": "4fa91a13-9619-4835-95cb-11f603f97952",
+      "timezone": "America/New_York",
+      "prompt": "It is 5pm. Check in with Jimbo. Nudge him to record progress before the evening gets chaotic. Remind him what the day's goal was and ask if he nailed it. Keep it short, dry, and Marvin-esque.",
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram",
+        "to": "8681861530"
+      }
+    },
+    "timeoutSeconds": 60
+  },
+  {
+    "name": "yahoo-triage-quarter-hour",
+    "schedule": "*/15 6-22 * * *",
+    "enabled": false,
+    "target": {
+      "type": "legacy.openclaw.imap-triage",
+      "ref": "yahoo-inbox"
+    },
+    "input": {
+      "migrationSource": "openclaw",
+      "legacyJobId": "1f4a3a98-2f66-4f2a-a708-6d5ec4f43f0e",
+      "timezone": "America/New_York",
+      "prompt": "Run Yahoo IMAP inbox triage using credentials from yahoo.env. Classify recent inbox messages into priority folders, process only recent messages for speed, write a run summary JSON, and do not send chat output unless there is an error."
+    },
+    "secrets": [
+      "yahoo-imap"
+    ]
+  },
+  {
+    "name": "tts-on-morning",
+    "schedule": "0 7 * * *",
+    "enabled": false,
+    "target": {
+      "type": "legacy.openclaw.tts-mode",
+      "ref": "always"
+    },
+    "input": {
+      "migrationSource": "openclaw",
+      "legacyJobId": "tts-tts-on-morning",
+      "timezone": "America/New_York",
+      "prompt": "Set TTS auto mode to always for the active host session."
+    },
+    "timeoutSeconds": 60
+  },
+  {
+    "name": "tts-off-morning",
+    "schedule": "0 9 * * *",
+    "enabled": false,
+    "target": {
+      "type": "legacy.openclaw.tts-mode",
+      "ref": "off"
+    },
+    "input": {
+      "migrationSource": "openclaw",
+      "legacyJobId": "tts-tts-off-morning",
+      "timezone": "America/New_York",
+      "prompt": "Set TTS auto mode to off for the active host session."
+    },
+    "timeoutSeconds": 60
+  },
+  {
+    "name": "tts-on-midday",
+    "schedule": "0 12 * * *",
+    "enabled": false,
+    "target": {
+      "type": "legacy.openclaw.tts-mode",
+      "ref": "always"
+    },
+    "input": {
+      "migrationSource": "openclaw",
+      "legacyJobId": "tts-tts-on-midday",
+      "timezone": "America/New_York",
+      "prompt": "Set TTS auto mode to always for the active host session."
+    },
+    "timeoutSeconds": 60
+  },
+  {
+    "name": "tts-off-evening",
+    "schedule": "0 16 * * *",
+    "enabled": false,
+    "target": {
+      "type": "legacy.openclaw.tts-mode",
+      "ref": "off"
+    },
+    "input": {
+      "migrationSource": "openclaw",
+      "legacyJobId": "tts-tts-off-evening",
+      "timezone": "America/New_York",
+      "prompt": "Set TTS auto mode to off for the active host session."
+    },
+    "timeoutSeconds": 60
+  },
+  {
+    "name": "budget-reminder-pull-amex-csv",
+    "schedule": "0 8 * * 5",
+    "enabled": true,
+    "target": {
+      "type": "gateway-chat-platform.agent-turn",
+      "ref": "bruvie-d"
+    },
+    "input": {
+      "migrationSource": "openclaw",
+      "legacyJobId": "7c6e4f2f-1d1d-4a0d-a3f1-5b9a3e2b8c77",
+      "timezone": "America/New_York",
+      "prompt": "It is Friday morning. Send Jimbo a short reminder to export the latest AmEx transactions CSV and save it so the weekly budget scorecard can run. Keep it concise.",
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram",
+        "to": "8681861530"
+      }
+    },
+    "timeoutSeconds": 60
+  }
+]

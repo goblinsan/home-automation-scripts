@@ -55,6 +55,7 @@ Those profiles let the control plane manage:
 
 - generated `.env` files and secret-bearing variables
 - chat-platform agent definitions, including personalities and model routing
+- gateway-api workflow definitions through its management API
 - service-specific artifacts emitted under `generated/services/`
 
 For `gateway-chat-platform`, the deploy path can also sync those agent

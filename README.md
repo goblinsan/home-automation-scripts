@@ -29,6 +29,10 @@ The current first-class managed apps are:
 - `gateway-api`
 - `gateway-chat-platform`
 
+OpenClaw migration assets live in:
+
+- `migration/openclaw/`
+
 The intended stable checkout path on the gateway host is:
 
 - `/opt/gateway-control-plane`
@@ -76,6 +80,7 @@ npm run validate
 npm run ui
 deploy/bin/install-control-plane-service.sh --config configs/gateway.config.json
 deploy/bin/apply-service-profiles.sh --config configs/gateway.config.json --app gateway-chat-platform
+deploy/bin/import-workflow-seed.sh --base-url http://127.0.0.1:3000 --file migration/openclaw/gateway-api-workflows.json
 ```
 
 ## What The Build Produces
@@ -105,6 +110,7 @@ It exposes the same config shape used by the CLI, including:
 - scheduled job timings
 - feature enable/disable flags
 - `gateway-api` env and secret values
+- `gateway-api` workflow management through the live workflow API
 - `gateway-chat-platform` env, provider keys, and agent definitions
 
 For ad hoc use:

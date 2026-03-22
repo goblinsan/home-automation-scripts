@@ -83,3 +83,12 @@ deploy/bin/apply-service-profiles.sh --config configs/gateway.config.json --app 
 
 For `gateway-chat-platform`, that command both writes the configured chat API
 env file and pushes the configured agents to `/api/agents/manage/sync`.
+
+For `gateway-api`, the admin UI also proxies live workflow CRUD to the
+configured `serviceProfiles.gatewayApi.apiBaseUrl`.
+
+To seed migrated workflows into `gateway-api`:
+
+```bash
+deploy/bin/import-workflow-seed.sh --base-url http://127.0.0.1:3000 --file migration/openclaw/gateway-api-workflows.json
+```
