@@ -1,4 +1,6 @@
+import { existsSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { join } from 'node:path';
 import { buildArtifacts } from './build.ts';
 import { loadGatewayConfig, parseGatewayConfig, saveGatewayConfig, type GatewayConfig } from './config.ts';
 
@@ -7,6 +9,27 @@ export interface AdminServerOptions {
   host: string;
   port: number;
   buildOutDir: string;
+}
+
+interface RuntimeSnapshot {
+  startedAt: string;
+  uptimeSeconds: number;
+  host: string;
+  port: number;
+  configPath: string;
+  buildOutDir: string;
+  adminRoutePath: string;
+  totalApps: number;
+  enabledApps: number;
+  totalJobs: number;
+  enabledJobs: number;
+  totalFeatures: number;
+  enabledFeatures: number;
+  generated: {
+    buildDirectoryExists: boolean;
+    nginxSiteExists: boolean;
+    controlPlaneUnitExists: boolean;
+  };
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
@@ -19,6 +42,12 @@ function sendHtml(response: ServerResponse, html: string): void {
   response.statusCode = 200;
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
   response.end(html);
+}
+
+function sendText(response: ServerResponse, statusCode: number, text: string): void {
+  response.statusCode = statusCode;
+  response.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  response.end(text);
 }
 
 function readBody(request: IncomingMessage): Promise<string> {
@@ -36,12 +65,62 @@ function readBody(request: IncomingMessage): Promise<string> {
   });
 }
 
-function htmlPage(): string {
+function normalizeBasePath(pathValue: string | undefined): string {
+  if (!pathValue || pathValue === '/') {
+    return '/';
+  }
+  const withLeadingSlash = pathValue.startsWith('/') ? pathValue : `/${pathValue}`;
+  return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`;
+}
+
+function getForwardedBasePath(request: IncomingMessage): string {
+  const headerValue = request.headers['x-forwarded-prefix'];
+  return normalizeBasePath(typeof headerValue === 'string' ? headerValue : undefined);
+}
+
+function createRuntimeSnapshot(
+  config: GatewayConfig,
+  options: AdminServerOptions,
+  startedAtMs: number
+): RuntimeSnapshot {
+  const startedAt = new Date(startedAtMs).toISOString();
+  const uptimeSeconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+  const controlPlaneServicePath = join(
+    options.buildOutDir,
+    'systemd',
+    'control-plane',
+    config.gateway.adminUi.serviceName
+  );
+
+  return {
+    startedAt,
+    uptimeSeconds,
+    host: options.host,
+    port: options.port,
+    configPath: options.configPath,
+    buildOutDir: options.buildOutDir,
+    adminRoutePath: config.gateway.adminUi.routePath,
+    totalApps: config.apps.length,
+    enabledApps: config.apps.filter((app) => app.enabled).length,
+    totalJobs: config.scheduledJobs.length,
+    enabledJobs: config.scheduledJobs.filter((job) => job.enabled).length,
+    totalFeatures: config.features.length,
+    enabledFeatures: config.features.filter((feature) => feature.enabled).length,
+    generated: {
+      buildDirectoryExists: existsSync(options.buildOutDir),
+      nginxSiteExists: existsSync(join(options.buildOutDir, 'nginx', 'gateway-site.conf')),
+      controlPlaneUnitExists: config.gateway.adminUi.enabled && existsSync(controlPlaneServicePath)
+    }
+  };
+}
+
+function htmlPage(basePath: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="gateway-base-path" content="${basePath}" />
   <title>Gateway Config Admin</title>
   <style>
     :root {
@@ -55,6 +134,7 @@ function htmlPage(): string {
       --accent-soft: #f2d7c9;
       --danger: #8f2d2d;
       --ok: #1f6b43;
+      --shadow: rgba(71, 44, 18, 0.08);
     }
     * { box-sizing: border-box; }
     body {
@@ -71,7 +151,7 @@ function htmlPage(): string {
     p { margin: 0 0 10px; color: var(--muted); }
     main {
       display: grid;
-      grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.9fr);
+      grid-template-columns: minmax(0, 1.35fr) minmax(330px, 0.9fr);
       gap: 18px;
       padding: 20px 24px 28px;
       align-items: start;
@@ -81,7 +161,7 @@ function htmlPage(): string {
       border: 1px solid var(--line);
       border-radius: 18px;
       padding: 18px;
-      box-shadow: 0 16px 40px rgba(71, 44, 18, 0.08);
+      box-shadow: 0 16px 40px var(--shadow);
     }
     .toolbar {
       display: flex;
@@ -183,6 +263,36 @@ function htmlPage(): string {
       gap: 12px;
       margin-bottom: 10px;
     }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      background: #fffbf4;
+    }
+    .metric strong {
+      display: block;
+      font-size: 22px;
+      margin-bottom: 4px;
+    }
+    .meta-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 14px;
+      color: var(--muted);
+      word-break: break-word;
+    }
+    .hint-list {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+    }
     @media (max-width: 980px) {
       main { grid-template-columns: 1fr; }
       .aside-stack { position: static; }
@@ -198,6 +308,7 @@ function htmlPage(): string {
       <button id="validateButton">Validate</button>
       <button id="saveButton" class="primary">Save</button>
       <button id="buildButton">Save + Build</button>
+      <button id="refreshRuntimeButton">Refresh Runtime</button>
     </div>
     <div id="status"></div>
   </header>
@@ -234,6 +345,98 @@ function htmlPage(): string {
           <label>Enable Timer Command
             <input id="systemdEnableTimerCommand" />
           </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="pill">Admin UI</span>
+        <div class="row">
+          <label class="check"><input id="adminUiEnabled" type="checkbox" /> Enabled</label>
+          <label>Bind Host
+            <input id="adminUiHost" />
+          </label>
+          <label>Bind Port
+            <input id="adminUiPort" type="number" />
+          </label>
+          <label>Gateway Route Path
+            <input id="adminUiRoutePath" />
+          </label>
+          <label>Service Name
+            <input id="adminUiServiceName" />
+          </label>
+          <label>Working Directory
+            <input id="adminUiWorkingDirectory" />
+          </label>
+          <label>Config Path
+            <input id="adminUiConfigPath" />
+          </label>
+          <label>Build Output Directory
+            <input id="adminUiBuildOutDir" />
+          </label>
+          <label>Node Executable
+            <input id="adminUiNodeExecutable" />
+          </label>
+          <label>User
+            <input id="adminUiUser" />
+          </label>
+          <label>Group
+            <input id="adminUiGroup" />
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="split-actions">
+          <div>
+            <span class="pill">gateway-api</span>
+            <h3>Service Config</h3>
+          </div>
+          <button id="addGatewayApiEnvButton">Add Env Var</button>
+        </div>
+        <div class="row">
+          <label class="check"><input id="gatewayApiProfileEnabled" type="checkbox" /> Enabled</label>
+          <label>Managed App
+            <select id="gatewayApiProfileAppId"></select>
+          </label>
+          <label>Env File Path
+            <input id="gatewayApiProfileEnvFilePath" />
+          </label>
+        </div>
+        <div id="gatewayApiEnvContainer" class="section-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="split-actions">
+          <div>
+            <span class="pill">gateway-chat-platform</span>
+            <h3>Service Config</h3>
+          </div>
+          <div class="toolbar">
+            <button id="addGatewayChatEnvButton">Add Env Var</button>
+            <button id="addGatewayChatAgentButton">Add Agent</button>
+          </div>
+        </div>
+        <div class="row">
+          <label class="check"><input id="gatewayChatProfileEnabled" type="checkbox" /> Enabled</label>
+          <label>Managed App
+            <select id="gatewayChatProfileAppId"></select>
+          </label>
+          <label>Chat API Base URL
+            <input id="gatewayChatProfileApiBaseUrl" />
+          </label>
+          <label>API Env File Path
+            <input id="gatewayChatProfileEnvFilePath" />
+          </label>
+        </div>
+        <div class="section-list">
+          <div>
+            <p>Environment</p>
+            <div id="gatewayChatEnvContainer" class="section-list"></div>
+          </div>
+          <div>
+            <p>Agents</p>
+            <div id="gatewayChatAgentsContainer" class="section-list"></div>
+          </div>
         </div>
       </div>
 
@@ -277,6 +480,16 @@ function htmlPage(): string {
       <section class="panel">
         <div class="split-actions">
           <div>
+            <h2>Runtime</h2>
+            <p>Health and control-plane state from the live server process.</p>
+          </div>
+        </div>
+        <div id="runtimeSummary" class="metric-grid"></div>
+        <div id="runtimeMeta" class="meta-list"></div>
+      </section>
+      <section class="panel">
+        <div class="split-actions">
+          <div>
             <h2>Raw JSON</h2>
             <p>Exact config file representation.</p>
           </div>
@@ -286,14 +499,19 @@ function htmlPage(): string {
       </section>
       <section class="panel">
         <h2>Notes</h2>
-        <p>Disabled apps are ignored by generated nginx and deploy/build output.</p>
-        <p>Disabled jobs are omitted from generated systemd units.</p>
-        <p>Feature flags are for control-plane and app integration points that need simple runtime toggles.</p>
+        <div class="hint-list">
+          <p>Disabled apps are ignored by generated nginx and deploy/build output.</p>
+          <p>Disabled jobs are omitted from generated systemd units.</p>
+          <p>The admin UI route is rendered into nginx when Admin UI is enabled.</p>
+          <p>The control-plane systemd unit is generated into <code>generated/systemd/control-plane/</code>.</p>
+          <p>Service profiles generate env files and chat-agent sync payloads for the real gateway-managed apps.</p>
+        </div>
       </section>
     </aside>
   </main>
   <script>
-    const state = { config: null };
+    const state = { config: null, runtime: null };
+    const basePath = document.querySelector('meta[name="gateway-base-path"]').content || '/';
 
     function setStatus(message, kind = 'ok') {
       const status = document.getElementById('status');
@@ -301,8 +519,13 @@ function htmlPage(): string {
       status.className = kind === 'error' ? 'status-error' : 'status-ok';
     }
 
-    function clone(value) {
-      return JSON.parse(JSON.stringify(value));
+    function joinBase(path) {
+      if (basePath === '/') {
+        return path.startsWith('/') ? path : \`/\${path}\`;
+      }
+      const normalizedBase = basePath.endsWith('/') ? basePath : \`\${basePath}/\`;
+      const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
+      return \`\${normalizedBase}\${normalizedPath}\`;
     }
 
     function syncRawJson() {
@@ -312,6 +535,195 @@ function htmlPage(): string {
     function updateGatewayField(key, value) {
       state.config.gateway[key] = value;
       syncRawJson();
+    }
+
+    function updateAdminUiField(key, value) {
+      state.config.gateway.adminUi[key] = value;
+      syncRawJson();
+    }
+
+    function appOptions(selectedAppId) {
+      return state.config.apps.map((app) => \`<option value="\${app.id}" \${app.id === selectedAppId ? 'selected' : ''}>\${app.id || '(unset app id)'}</option>\`).join('');
+    }
+
+    function renderEnvironmentList(containerId, environment, onRemove) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = '';
+      environment.forEach((entry, index) => {
+        const element = document.createElement('div');
+        element.className = 'card';
+        element.innerHTML = \`
+          <div class="split-actions">
+            <div><strong>\${entry.key || 'new-env-var'}</strong></div>
+            <button class="danger">Remove</button>
+          </div>
+          <div class="row">
+            <label>Key<input data-field="key" value="\${entry.key}" /></label>
+            <label>Value<input data-field="value" value="\${entry.value}" /></label>
+            <label class="check"><input type="checkbox" data-field="secret" \${entry.secret ? 'checked' : ''} /> Secret</label>
+          </div>
+          <label>Description<input data-field="description" value="\${entry.description || ''}" /></label>
+        \`;
+
+        element.querySelector('.danger').addEventListener('click', () => onRemove(index));
+        element.querySelectorAll('input').forEach((input) => {
+          const isCheckbox = input.type === 'checkbox';
+          input.addEventListener(isCheckbox ? 'change' : 'input', () => {
+            const field = input.dataset.field;
+            if (!field) {
+              return;
+            }
+            entry[field] = isCheckbox ? input.checked : input.value;
+            if (field === 'description' && !input.value) {
+              delete entry.description;
+            }
+            syncRawJson();
+          });
+        });
+        container.appendChild(element);
+      });
+    }
+
+    function parseJsonField(value, fallback) {
+      if (!value.trim()) {
+        return fallback;
+      }
+      return JSON.parse(value);
+    }
+
+    function renderGatewayApiProfile() {
+      const profile = state.config.serviceProfiles.gatewayApi;
+      document.getElementById('gatewayApiProfileEnabled').checked = profile.enabled;
+      document.getElementById('gatewayApiProfileAppId').innerHTML = appOptions(profile.appId);
+      document.getElementById('gatewayApiProfileEnvFilePath').value = profile.envFilePath;
+      renderEnvironmentList('gatewayApiEnvContainer', profile.environment, (index) => {
+        profile.environment.splice(index, 1);
+        renderGatewayApiProfile();
+        syncRawJson();
+      });
+    }
+
+    function renderGatewayChatPlatformProfile() {
+      const profile = state.config.serviceProfiles.gatewayChatPlatform;
+      document.getElementById('gatewayChatProfileEnabled').checked = profile.enabled;
+      document.getElementById('gatewayChatProfileAppId').innerHTML = appOptions(profile.appId);
+      document.getElementById('gatewayChatProfileApiBaseUrl').value = profile.apiBaseUrl;
+      document.getElementById('gatewayChatProfileEnvFilePath').value = profile.apiEnvFilePath;
+      renderEnvironmentList('gatewayChatEnvContainer', profile.environment, (index) => {
+        profile.environment.splice(index, 1);
+        renderGatewayChatPlatformProfile();
+        syncRawJson();
+      });
+
+      const agentsContainer = document.getElementById('gatewayChatAgentsContainer');
+      agentsContainer.innerHTML = '';
+      profile.agents.forEach((agent, index) => {
+        const element = document.createElement('div');
+        element.className = 'card';
+        element.innerHTML = \`
+          <div class="split-actions">
+            <div><strong>\${agent.name || agent.id || 'new-agent'}</strong></div>
+            <button class="danger">Remove</button>
+          </div>
+          <div class="row">
+            <label class="check"><input type="checkbox" data-field="enabled" \${agent.enabled ? 'checked' : ''} /> Enabled</label>
+            <label>Agent Id<input data-field="id" value="\${agent.id}" /></label>
+            <label>Name<input data-field="name" value="\${agent.name}" /></label>
+            <label>Icon<input data-field="icon" value="\${agent.icon}" /></label>
+            <label>Color<input data-field="color" value="\${agent.color}" /></label>
+            <label>Provider<input data-field="providerName" value="\${agent.providerName}" /></label>
+            <label>Model<input data-field="model" value="\${agent.model}" /></label>
+            <label>Cost Class
+              <select data-field="costClass">
+                <option value="free" \${agent.costClass === 'free' ? 'selected' : ''}>free</option>
+                <option value="cheap" \${agent.costClass === 'cheap' ? 'selected' : ''}>cheap</option>
+                <option value="premium" \${agent.costClass === 'premium' ? 'selected' : ''}>premium</option>
+              </select>
+            </label>
+            <label>Temperature<input type="number" step="0.1" data-field="temperature" value="\${agent.temperature ?? ''}" /></label>
+            <label>Max Tokens<input type="number" data-field="maxTokens" value="\${agent.maxTokens ?? ''}" /></label>
+            <label class="check"><input type="checkbox" data-field="enableReasoning" \${agent.enableReasoning ? 'checked' : ''} /> Reasoning</label>
+          </div>
+          <label>System Prompt<textarea data-field="systemPrompt">\${agent.systemPrompt || ''}</textarea></label>
+          <label>Feature Flags JSON<textarea data-field="featureFlags">\${JSON.stringify(agent.featureFlags || {}, null, 2)}</textarea></label>
+          <label>Routing Policy JSON<textarea data-field="routingPolicy">\${JSON.stringify(agent.routingPolicy || {}, null, 2)}</textarea></label>
+          <label>Endpoint Config JSON<textarea data-field="endpointConfig">\${JSON.stringify(agent.endpointConfig || {}, null, 2)}</textarea></label>
+          <label>Context Sources JSON<textarea data-field="contextSources">\${JSON.stringify(agent.contextSources || [], null, 2)}</textarea></label>
+        \`;
+
+        element.querySelector('.danger').addEventListener('click', () => {
+          profile.agents.splice(index, 1);
+          renderGatewayChatPlatformProfile();
+          syncRawJson();
+        });
+
+        element.querySelectorAll('input, select, textarea').forEach((input) => {
+          const isCheckbox = input.type === 'checkbox';
+          const eventName = isCheckbox ? 'change' : 'input';
+          input.addEventListener(eventName, () => {
+            const field = input.dataset.field;
+            if (!field) {
+              return;
+            }
+            if (field === 'enabled' || field === 'enableReasoning') {
+              agent[field] = input.checked;
+            } else if (field === 'temperature' || field === 'maxTokens') {
+              agent[field] = input.value ? Number(input.value) : undefined;
+              if (!input.value) {
+                delete agent[field];
+              }
+            } else if (field === 'featureFlags') {
+              agent.featureFlags = parseJsonField(input.value, {});
+            } else if (field === 'routingPolicy') {
+              const value = parseJsonField(input.value, {});
+              agent.routingPolicy = Object.keys(value).length > 0 ? value : undefined;
+              if (!agent.routingPolicy) delete agent.routingPolicy;
+            } else if (field === 'endpointConfig') {
+              const value = parseJsonField(input.value, {});
+              agent.endpointConfig = Object.keys(value).length > 0 ? value : undefined;
+              if (!agent.endpointConfig) delete agent.endpointConfig;
+            } else if (field === 'contextSources') {
+              agent.contextSources = parseJsonField(input.value, []);
+            } else if (field === 'systemPrompt') {
+              agent.systemPrompt = input.value || undefined;
+              if (!input.value) delete agent.systemPrompt;
+            } else {
+              agent[field] = input.value;
+            }
+            syncRawJson();
+          });
+        });
+
+        agentsContainer.appendChild(element);
+      });
+    }
+
+    function renderRuntime() {
+      const runtimeSummary = document.getElementById('runtimeSummary');
+      const runtimeMeta = document.getElementById('runtimeMeta');
+      if (!state.runtime) {
+        runtimeSummary.innerHTML = '';
+        runtimeMeta.innerHTML = '<div>Runtime data not loaded</div>';
+        return;
+      }
+
+      const runtime = state.runtime;
+      runtimeSummary.innerHTML = [
+        ['Enabled Apps', \`\${runtime.enabledApps}/\${runtime.totalApps}\`],
+        ['Enabled Jobs', \`\${runtime.enabledJobs}/\${runtime.totalJobs}\`],
+        ['Enabled Features', \`\${runtime.enabledFeatures}/\${runtime.totalFeatures}\`],
+        ['Uptime (s)', String(runtime.uptimeSeconds)]
+      ].map(([label, value]) => \`<div class="metric"><strong>\${value}</strong><span>\${label}</span></div>\`).join('');
+
+      runtimeMeta.innerHTML = [
+        \`<div><strong>Started:</strong> \${runtime.startedAt}</div>\`,
+        \`<div><strong>Config:</strong> \${runtime.configPath}</div>\`,
+        \`<div><strong>Build Dir:</strong> \${runtime.buildOutDir}</div>\`,
+        \`<div><strong>Gateway Route:</strong> \${runtime.adminRoutePath}</div>\`,
+        \`<div><strong>Build Output Present:</strong> \${runtime.generated.buildDirectoryExists ? 'yes' : 'no'}</div>\`,
+        \`<div><strong>nginx Site Generated:</strong> \${runtime.generated.nginxSiteExists ? 'yes' : 'no'}</div>\`,
+        \`<div><strong>Control-Plane Unit Generated:</strong> \${runtime.generated.controlPlaneUnitExists ? 'yes' : 'no'}</div>\`
+      ].join('');
     }
 
     function renderApps() {
@@ -481,18 +893,32 @@ function htmlPage(): string {
       document.getElementById('systemdUnitDirectory').value = state.config.gateway.systemdUnitDirectory;
       document.getElementById('systemdReloadCommand').value = state.config.gateway.systemdReloadCommand;
       document.getElementById('systemdEnableTimerCommand').value = state.config.gateway.systemdEnableTimerCommand;
+      document.getElementById('adminUiEnabled').checked = state.config.gateway.adminUi.enabled;
+      document.getElementById('adminUiHost').value = state.config.gateway.adminUi.host;
+      document.getElementById('adminUiPort').value = String(state.config.gateway.adminUi.port);
+      document.getElementById('adminUiRoutePath').value = state.config.gateway.adminUi.routePath;
+      document.getElementById('adminUiServiceName').value = state.config.gateway.adminUi.serviceName;
+      document.getElementById('adminUiWorkingDirectory').value = state.config.gateway.adminUi.workingDirectory;
+      document.getElementById('adminUiConfigPath').value = state.config.gateway.adminUi.configPath;
+      document.getElementById('adminUiBuildOutDir').value = state.config.gateway.adminUi.buildOutDir;
+      document.getElementById('adminUiNodeExecutable').value = state.config.gateway.adminUi.nodeExecutable;
+      document.getElementById('adminUiUser').value = state.config.gateway.adminUi.user;
+      document.getElementById('adminUiGroup').value = state.config.gateway.adminUi.group || '';
     }
 
     function render() {
       renderGateway();
+      renderGatewayApiProfile();
+      renderGatewayChatPlatformProfile();
       renderApps();
       renderJobs();
       renderFeatures();
+      renderRuntime();
       syncRawJson();
     }
 
     async function fetchConfig() {
-      const response = await fetch('/api/config');
+      const response = await fetch(joinBase('/api/config'));
       if (!response.ok) {
         throw new Error(await response.text());
       }
@@ -501,8 +927,17 @@ function htmlPage(): string {
       setStatus('Config loaded');
     }
 
+    async function fetchRuntime() {
+      const response = await fetch(joinBase('/api/runtime'));
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      state.runtime = await response.json();
+      renderRuntime();
+    }
+
     async function postJson(url, body) {
-      const response = await fetch(url, {
+      const response = await fetch(joinBase(url), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -520,10 +955,67 @@ function htmlPage(): string {
     ['nginxSiteOutputPath', 'upstreamDirectory', 'nginxReloadCommand', 'systemdUnitDirectory', 'systemdReloadCommand', 'systemdEnableTimerCommand'].forEach((id) => {
       document.getElementById(id).addEventListener('input', (event) => updateGatewayField(id, event.target.value));
     });
+    [
+      ['adminUiEnabled', 'enabled', 'checkbox'],
+      ['adminUiHost', 'host'],
+      ['adminUiPort', 'port', 'number'],
+      ['adminUiRoutePath', 'routePath'],
+      ['adminUiServiceName', 'serviceName'],
+      ['adminUiWorkingDirectory', 'workingDirectory'],
+      ['adminUiConfigPath', 'configPath'],
+      ['adminUiBuildOutDir', 'buildOutDir'],
+      ['adminUiNodeExecutable', 'nodeExecutable'],
+      ['adminUiUser', 'user'],
+      ['adminUiGroup', 'group']
+    ].forEach(([id, key, kind]) => {
+      const element = document.getElementById(id);
+      element.addEventListener(kind === 'checkbox' ? 'change' : 'input', (event) => {
+        const target = event.target;
+        if (kind === 'checkbox') {
+          updateAdminUiField(key, target.checked);
+          return;
+        }
+        if (kind === 'number') {
+          updateAdminUiField(key, Number(target.value));
+          return;
+        }
+        updateAdminUiField(key, target.value);
+        if (key === 'group' && !target.value) {
+          delete state.config.gateway.adminUi.group;
+          syncRawJson();
+        }
+      });
+    });
+    [
+      ['gatewayApiProfileEnabled', 'enabled', 'checkbox'],
+      ['gatewayApiProfileAppId', 'appId'],
+      ['gatewayApiProfileEnvFilePath', 'envFilePath'],
+    ].forEach(([id, key, kind]) => {
+      const element = document.getElementById(id);
+      element.addEventListener(kind === 'checkbox' ? 'change' : 'input', (event) => {
+        const target = event.target;
+        state.config.serviceProfiles.gatewayApi[key] = kind === 'checkbox' ? target.checked : target.value;
+        syncRawJson();
+      });
+    });
+    [
+      ['gatewayChatProfileEnabled', 'enabled', 'checkbox'],
+      ['gatewayChatProfileAppId', 'appId'],
+      ['gatewayChatProfileApiBaseUrl', 'apiBaseUrl'],
+      ['gatewayChatProfileEnvFilePath', 'apiEnvFilePath'],
+    ].forEach(([id, key, kind]) => {
+      const element = document.getElementById(id);
+      element.addEventListener(kind === 'checkbox' ? 'change' : 'input', (event) => {
+        const target = event.target;
+        state.config.serviceProfiles.gatewayChatPlatform[key] = kind === 'checkbox' ? target.checked : target.value;
+        syncRawJson();
+      });
+    });
 
     document.getElementById('reloadButton').addEventListener('click', async () => {
       try {
         await fetchConfig();
+        await fetchRuntime();
       } catch (error) {
         setStatus(error.message, 'error');
       }
@@ -543,6 +1035,7 @@ function htmlPage(): string {
         const result = await postJson('/api/config', state.config);
         state.config = result.config;
         render();
+        await fetchRuntime();
         setStatus(result.message || 'Saved');
       } catch (error) {
         setStatus(error.message, 'error');
@@ -554,7 +1047,17 @@ function htmlPage(): string {
         const result = await postJson('/api/build', state.config);
         state.config = result.config;
         render();
+        await fetchRuntime();
         setStatus(result.message || 'Saved and built');
+      } catch (error) {
+        setStatus(error.message, 'error');
+      }
+    });
+
+    document.getElementById('refreshRuntimeButton').addEventListener('click', async () => {
+      try {
+        await fetchRuntime();
+        setStatus('Runtime refreshed');
       } catch (error) {
         setStatus(error.message, 'error');
       }
@@ -611,8 +1114,46 @@ function htmlPage(): string {
       });
       render();
     });
+    document.getElementById('addGatewayApiEnvButton').addEventListener('click', () => {
+      state.config.serviceProfiles.gatewayApi.environment.push({
+        key: '',
+        value: '',
+        secret: false
+      });
+      renderGatewayApiProfile();
+      syncRawJson();
+    });
+    document.getElementById('addGatewayChatEnvButton').addEventListener('click', () => {
+      state.config.serviceProfiles.gatewayChatPlatform.environment.push({
+        key: '',
+        value: '',
+        secret: false
+      });
+      renderGatewayChatPlatformProfile();
+      syncRawJson();
+    });
+    document.getElementById('addGatewayChatAgentButton').addEventListener('click', () => {
+      state.config.serviceProfiles.gatewayChatPlatform.agents.push({
+        id: '',
+        name: '',
+        icon: '🤖',
+        color: '#6366f1',
+        providerName: '',
+        model: '',
+        costClass: 'free',
+        enabled: true,
+        featureFlags: {},
+        contextSources: []
+      });
+      renderGatewayChatPlatformProfile();
+      syncRawJson();
+    });
 
-    fetchConfig().catch((error) => setStatus(error.message, 'error'));
+    Promise.all([fetchConfig(), fetchRuntime()])
+      .catch((error) => setStatus(error.message, 'error'));
+    setInterval(() => {
+      fetchRuntime().catch(() => undefined);
+    }, 15000);
   </script>
 </body>
 </html>`;
@@ -623,34 +1164,54 @@ async function loadRequestConfig(request: IncomingMessage): Promise<GatewayConfi
   return parseGatewayConfig(JSON.parse(body) as unknown);
 }
 
+function getRequestPath(request: IncomingMessage): string {
+  const requestUrl = request.url ?? '/';
+  return requestUrl.split('?')[0] ?? '/';
+}
+
 export async function startAdminServer(options: AdminServerOptions): Promise<void> {
+  const startedAtMs = Date.now();
   const server = createServer(async (request, response) => {
     try {
-      if (request.method === 'GET' && request.url === '/') {
-        sendHtml(response, htmlPage());
+      const path = getRequestPath(request);
+      const basePath = getForwardedBasePath(request);
+
+      if (request.method === 'GET' && path === '/') {
+        sendHtml(response, htmlPage(basePath));
         return;
       }
 
-      if (request.method === 'GET' && request.url === '/api/config') {
+      if (request.method === 'GET' && path === '/healthz') {
+        sendText(response, 200, 'ok\n');
+        return;
+      }
+
+      if (request.method === 'GET' && path === '/api/config') {
         const config = await loadGatewayConfig(options.configPath);
         sendJson(response, 200, config);
         return;
       }
 
-      if (request.method === 'POST' && request.url === '/api/validate') {
+      if (request.method === 'GET' && path === '/api/runtime') {
+        const config = await loadGatewayConfig(options.configPath);
+        sendJson(response, 200, createRuntimeSnapshot(config, options, startedAtMs));
+        return;
+      }
+
+      if (request.method === 'POST' && path === '/api/validate') {
         const config = await loadRequestConfig(request);
         sendJson(response, 200, { message: 'Config is valid', config });
         return;
       }
 
-      if (request.method === 'POST' && request.url === '/api/config') {
+      if (request.method === 'POST' && path === '/api/config') {
         const config = await loadRequestConfig(request);
         await saveGatewayConfig(options.configPath, config);
         sendJson(response, 200, { message: `Saved ${options.configPath}`, config });
         return;
       }
 
-      if (request.method === 'POST' && request.url === '/api/build') {
+      if (request.method === 'POST' && path === '/api/build') {
         const config = await loadRequestConfig(request);
         await saveGatewayConfig(options.configPath, config);
         await buildArtifacts(config, options.buildOutDir);
@@ -676,4 +1237,3 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
     });
   });
 }
-

@@ -1,4 +1,4 @@
-import type { AppConfig, GatewayConfig, ScheduledJobConfig } from './config.ts';
+import type { AdminUiSettings, AppConfig, GatewayConfig, ScheduledJobConfig } from './config.ts';
 
 function resolveJobToken(app: AppConfig, value: string): string {
   return value.replaceAll('__CURRENT__', `${app.deployRoot}/current`);
@@ -35,3 +35,22 @@ WantedBy=timers.target
 `;
 }
 
+export function renderControlPlaneService(adminUi: AdminUiSettings): string {
+  const groupLine = adminUi.group ? `Group=${adminUi.group}\n` : '';
+
+  return `[Unit]
+Description=Gateway control plane admin UI
+After=network.target
+
+[Service]
+Type=simple
+User=${adminUi.user}
+${groupLine}WorkingDirectory=${adminUi.workingDirectory}
+ExecStart=${adminUi.nodeExecutable} ${adminUi.workingDirectory}/src/cli.ts serve-ui --config ${adminUi.configPath} --host ${adminUi.host} --port ${adminUi.port} --out ${adminUi.buildOutDir}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+`;
+}

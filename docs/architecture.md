@@ -10,6 +10,8 @@ The gateway host is responsible for:
 - blue/green slot switching
 - release layout under `/srv/apps/<app>/`
 - scheduled jobs deployed from source control
+- service env/secrets generation for managed apps
+- chat-agent configuration for the local AI platform
 - CI/CD execution via a self-hosted runner
 
 ## Release Layout
@@ -41,6 +43,23 @@ Each app has:
 The control-plane CLI renders nginx config from the gateway config file and the
 deploy tooling swaps active upstreams only after health checks pass.
 
+## Managed Service Profiles
+
+The generic app/deploy model is supplemented by service-specific profiles for
+the apps that actually run on the gateway today:
+
+- `gateway-api`
+- `gateway-chat-platform`
+
+Those profiles let the control plane manage:
+
+- generated `.env` files and secret-bearing variables
+- chat-platform agent definitions, including personalities and model routing
+- service-specific artifacts emitted under `generated/services/`
+
+For `gateway-chat-platform`, the deploy path can also sync those agent
+definitions into the running service through its management API.
+
 ## Scheduled Jobs
 
 Jobs are defined in source control and rendered into host `systemd` service and
@@ -68,3 +87,10 @@ It is intended for:
 - adjusting job schedules
 - enabling or disabling apps, jobs, and feature flags
 - saving and rebuilding generated artifacts without hand-editing JSON
+
+The admin surface is also modeled as part of the gateway config:
+
+- bind host and port for the control-plane UI
+- nginx route prefix such as `/admin/`
+- a generated systemd service for the UI process
+- runtime health and artifact status exposed by the UI itself

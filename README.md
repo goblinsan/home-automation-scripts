@@ -7,6 +7,8 @@ It exists to define and maintain:
 - reverse-proxy routing on the gateway host
 - blue/green deployment mechanics for apps deployed on the gateway
 - source-controlled scheduled jobs
+- service-specific runtime config, env files, and secrets
+- chat-agent definitions for the local chat platform
 - deployment and rollback tooling
 - CI/CD scaffolding for automated promotion to the gateway
 
@@ -21,6 +23,15 @@ The repo is aligned to the plans in `plans/`:
 - gateway server as the ingress and deployment target
 - generic blue/green app slots under `/srv/apps/<app>/`
 - scheduled jobs executed from `/srv/apps/<app>/current`
+
+The current first-class managed apps are:
+
+- `gateway-api`
+- `gateway-chat-platform`
+
+The intended stable checkout path on the gateway host is:
+
+- `/opt/gateway-control-plane`
 
 ## Repo Layout
 
@@ -63,6 +74,8 @@ npm test
 npm run build
 npm run validate
 npm run ui
+deploy/bin/install-control-plane-service.sh --config configs/gateway.config.json
+deploy/bin/apply-service-profiles.sh --config configs/gateway.config.json --app gateway-chat-platform
 ```
 
 ## What The Build Produces
@@ -74,6 +87,10 @@ npm run ui
 - `generated/nginx/upstreams/<app>-green.conf`
 - `generated/systemd/jobs/*.service`
 - `generated/systemd/jobs/*.timer`
+- `generated/systemd/control-plane/*.service`
+- `generated/services/gateway-api/gateway-api.env`
+- `generated/services/gateway-chat-platform/chat-api.env`
+- `generated/services/gateway-chat-platform/agents.json`
 
 These are generated from `configs/gateway.config.example.json`.
 
@@ -83,17 +100,24 @@ This repo also includes a built-in admin UI for editing the gateway config file.
 It exposes the same config shape used by the CLI, including:
 
 - gateway settings
+- admin UI runtime and route settings
 - apps and blue/green slot commands
 - scheduled job timings
 - feature enable/disable flags
+- `gateway-api` env and secret values
+- `gateway-chat-platform` env, provider keys, and agent definitions
 
-Run it with:
+For ad hoc use:
 
 ```bash
 npm run ui
 ```
 
 Then open `http://127.0.0.1:4173`.
+
+For the intended gateway-host model, enable `gateway.adminUi` in the config,
+build artifacts, install the generated `gateway-control-plane.service`, and
+route it through nginx at the configured `routePath` such as `/admin/`.
 
 ## Next Host Setup
 

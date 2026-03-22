@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderJobService, renderJobTimer } from '../src/lib/systemd.ts';
+import { renderControlPlaneService, renderJobService, renderJobTimer } from '../src/lib/systemd.ts';
 import type { GatewayConfig } from '../src/lib/config.ts';
 
 const config: GatewayConfig = {
@@ -11,7 +11,19 @@ const config: GatewayConfig = {
     nginxReloadCommand: 'reload',
     systemdUnitDirectory: '/etc/systemd/system',
     systemdReloadCommand: 'reload-systemd',
-    systemdEnableTimerCommand: 'enable-timers'
+    systemdEnableTimerCommand: 'enable-timers',
+    adminUi: {
+      enabled: true,
+      host: '127.0.0.1',
+      port: 4173,
+      routePath: '/admin/',
+      serviceName: 'gateway-control-plane.service',
+      workingDirectory: '/opt/gateway-control-plane',
+      configPath: '/opt/gateway-control-plane/configs/gateway.config.json',
+      buildOutDir: '/opt/gateway-control-plane/generated',
+      nodeExecutable: '/usr/bin/node',
+      user: 'deploy'
+    }
   },
   apps: [
     {
@@ -42,7 +54,23 @@ const config: GatewayConfig = {
       user: 'deploy'
     }
   ],
-  features: []
+  features: [],
+  serviceProfiles: {
+    gatewayApi: {
+      enabled: false,
+      appId: 'chat-router',
+      envFilePath: '/srv/apps/chat-router/shared/gateway-api.env',
+      environment: []
+    },
+    gatewayChatPlatform: {
+      enabled: false,
+      appId: 'chat-router',
+      apiBaseUrl: 'http://127.0.0.1:3000',
+      apiEnvFilePath: '/srv/apps/chat-router/shared/chat-api.env',
+      environment: [],
+      agents: []
+    }
+  }
 };
 
 test('renderJobService resolves __CURRENT__', () => {
@@ -55,4 +83,12 @@ test('renderJobTimer includes schedule and unit name', () => {
   const output = renderJobTimer(config.scheduledJobs[0]);
   assert.match(output, /OnCalendar=\*:0\/15/);
   assert.match(output, /Unit=refresh-model-catalog\.service/);
+});
+
+test('renderControlPlaneService produces a restartable admin ui unit', () => {
+  const output = renderControlPlaneService(config.gateway.adminUi);
+  assert.match(output, /Description=Gateway control plane admin UI/);
+  assert.match(output, /ExecStart=\/usr\/bin\/node \/opt\/gateway-control-plane\/src\/cli\.ts serve-ui/);
+  assert.match(output, /--config \/opt\/gateway-control-plane\/configs\/gateway\.config\.json/);
+  assert.match(output, /Restart=on-failure/);
 });

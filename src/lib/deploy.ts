@@ -5,7 +5,8 @@ import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { getApp, getJobsForApp, type AppConfig, type GatewayConfig, type ScheduledJobConfig, type Slot } from './config.ts';
 import { renderActiveUpstream } from './nginx.ts';
-import { renderJobService, renderJobTimer } from './systemd.ts';
+import { renderGatewayApiEnv, renderGatewayChatAgents, renderGatewayChatPlatformEnv } from './service-profiles.ts';
+import { renderControlPlaneService, renderJobService, renderJobTimer } from './systemd.ts';
 
 export interface CommandContext {
   dryRun: boolean;
@@ -116,10 +117,104 @@ function httpGet(url: string): Promise<number> {
   });
 }
 
+function httpJsonRequest(url: string, method: 'POST', body: unknown): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const requestBody = JSON.stringify(body);
+    const requestImpl = url.startsWith('https://') ? httpsRequest : httpRequest;
+    const chunks: Buffer[] = [];
+    const request = requestImpl(
+      url,
+      {
+        method,
+        timeout: 10_000,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(requestBody)
+        }
+      },
+      (response) => {
+        response.on('data', (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+        });
+        response.on('end', () => {
+          resolve({
+            status: response.statusCode ?? 0,
+            body: Buffer.concat(chunks).toString('utf8')
+          });
+        });
+      }
+    );
+    request.on('error', reject);
+    request.on('timeout', () => request.destroy(new Error(`Timed out: ${url}`)));
+    request.write(requestBody);
+    request.end();
+  });
+}
+
 export async function smokeTest(url: string, expectedStatus = 200): Promise<void> {
   const status = await httpGet(url);
   if (status !== expectedStatus) {
     throw new Error(`Smoke test failed for ${url}: expected ${expectedStatus}, got ${status}`);
+  }
+}
+
+function normalizeBaseUrl(url: string): string {
+  return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+async function writeServiceProfileFile(path: string, contents: string, context: CommandContext): Promise<void> {
+  context.log(`${context.dryRun ? '[dry-run] ' : ''}write ${path}`);
+  if (context.dryRun) {
+    return;
+  }
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, contents, 'utf8');
+}
+
+export async function installServiceProfileFiles(config: GatewayConfig, appId: string, context: CommandContext): Promise<void> {
+  if (config.serviceProfiles.gatewayApi.enabled && config.serviceProfiles.gatewayApi.appId === appId) {
+    await writeServiceProfileFile(
+      config.serviceProfiles.gatewayApi.envFilePath,
+      renderGatewayApiEnv(config.serviceProfiles.gatewayApi),
+      context
+    );
+  }
+
+  if (config.serviceProfiles.gatewayChatPlatform.enabled && config.serviceProfiles.gatewayChatPlatform.appId === appId) {
+    await writeServiceProfileFile(
+      config.serviceProfiles.gatewayChatPlatform.apiEnvFilePath,
+      renderGatewayChatPlatformEnv(config.serviceProfiles.gatewayChatPlatform),
+      context
+    );
+  }
+}
+
+export async function syncServiceProfileRuntime(
+  config: GatewayConfig,
+  appId: string,
+  context: CommandContext,
+  baseUrlOverride?: string
+): Promise<void> {
+  if (!(config.serviceProfiles.gatewayChatPlatform.enabled && config.serviceProfiles.gatewayChatPlatform.appId === appId)) {
+    return;
+  }
+
+  const baseUrl = normalizeBaseUrl(baseUrlOverride ?? config.serviceProfiles.gatewayChatPlatform.apiBaseUrl);
+  const syncUrl = `${baseUrl}/api/agents/manage/sync`;
+  const payload = {
+    agents: config.serviceProfiles.gatewayChatPlatform.agents
+  };
+
+  context.log(
+    `${context.dryRun ? '[dry-run] ' : ''}POST ${syncUrl} (${config.serviceProfiles.gatewayChatPlatform.agents.length} agents)`
+  );
+  if (context.dryRun) {
+    return;
+  }
+
+  const response = await httpJsonRequest(syncUrl, 'POST', payload);
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Agent sync failed for ${syncUrl}: ${response.status} ${response.body}`);
   }
 }
 
@@ -151,6 +246,28 @@ export async function installJobs(config: GatewayConfig, appId: string, context:
   }
 }
 
+export async function installControlPlaneService(config: GatewayConfig, context: CommandContext): Promise<void> {
+  if (!config.gateway.adminUi.enabled) {
+    throw new Error('Admin UI is disabled in gateway.adminUi');
+  }
+
+  const servicePath = join(config.gateway.systemdUnitDirectory, config.gateway.adminUi.serviceName);
+  const serviceBody = renderControlPlaneService(config.gateway.adminUi);
+
+  context.log(`${context.dryRun ? '[dry-run] ' : ''}install ${servicePath}`);
+  if (!context.dryRun) {
+    await mkdir(dirname(servicePath), { recursive: true });
+    await writeFile(servicePath, serviceBody, 'utf8');
+  }
+
+  await runShell(config.gateway.systemdReloadCommand, process.cwd(), context);
+  await runShell(
+    `${config.gateway.systemdEnableTimerCommand} ${config.gateway.adminUi.serviceName}`,
+    process.cwd(),
+    context
+  );
+}
+
 export async function deployApp(
   config: GatewayConfig,
   appId: string,
@@ -165,8 +282,10 @@ export async function deployApp(
   const slotDir = await checkoutRevision(app, target, revisionToUse, skipFetch, context);
 
   await buildSlot(app, slotDir, context);
+  await installServiceProfileFiles(config, appId, context);
   await runShell(app.slots[target].startCommand, slotDir, context);
   await smokeTest(`http://127.0.0.1:${app.slots[target].port}${app.healthPath}`);
+  await syncServiceProfileRuntime(config, appId, context, `http://127.0.0.1:${app.slots[target].port}`);
   await writeActiveUpstream(app, target, context);
   await runShell(config.gateway.nginxReloadCommand, process.cwd(), context);
   await setCurrentPointers(app, target, context);
@@ -178,10 +297,11 @@ export async function rollbackApp(config: GatewayConfig, appId: string, context:
   const current = await readCurrentSlot(app);
   const target = oppositeSlot(current);
 
+  await installServiceProfileFiles(config, appId, context);
   await runShell(app.slots[target].startCommand, join(app.deployRoot, target), context);
   await smokeTest(`http://127.0.0.1:${app.slots[target].port}${app.healthPath}`);
+  await syncServiceProfileRuntime(config, appId, context, `http://127.0.0.1:${app.slots[target].port}`);
   await writeActiveUpstream(app, target, context);
   await runShell(config.gateway.nginxReloadCommand, process.cwd(), context);
   await setCurrentPointers(app, target, context);
 }
-

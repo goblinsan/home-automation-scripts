@@ -11,7 +11,19 @@ test('parseGatewayConfig accepts the example shape', () => {
       nginxReloadCommand: 'sudo nginx -t && sudo systemctl reload nginx',
       systemdUnitDirectory: '/etc/systemd/system',
       systemdReloadCommand: 'sudo systemctl daemon-reload',
-      systemdEnableTimerCommand: 'sudo systemctl enable --now'
+      systemdEnableTimerCommand: 'sudo systemctl enable --now',
+      adminUi: {
+        enabled: true,
+        host: '127.0.0.1',
+        port: 4173,
+        routePath: '/admin/',
+        serviceName: 'gateway-control-plane.service',
+        workingDirectory: '/opt/gateway-control-plane',
+        configPath: '/opt/gateway-control-plane/configs/gateway.config.json',
+        buildOutDir: '/opt/gateway-control-plane/generated',
+        nodeExecutable: '/usr/bin/node',
+        user: 'deploy'
+      }
     },
     apps: [
       {
@@ -48,12 +60,52 @@ test('parseGatewayConfig accepts the example shape', () => {
         enabled: true,
         description: 'Expose the chat router publicly'
       }
-    ]
+    ],
+    serviceProfiles: {
+      gatewayApi: {
+        enabled: true,
+        appId: 'chat-router',
+        envFilePath: '/srv/apps/chat-router/shared/gateway-api.env',
+        environment: [
+          {
+            key: 'PORT',
+            value: '3000',
+            secret: false
+          }
+        ]
+      },
+      gatewayChatPlatform: {
+        enabled: true,
+        appId: 'chat-router',
+        apiBaseUrl: 'http://127.0.0.1:3000',
+        apiEnvFilePath: '/srv/apps/chat-router/shared/chat-api.env',
+        environment: [],
+        agents: [
+          {
+            id: 'marvin',
+            name: 'Marvin',
+            icon: '🤖',
+            color: '#6366f1',
+            providerName: 'lm-studio-a',
+            model: 'qwen/qwen3-32b',
+            costClass: 'free',
+            systemPrompt: 'Be gloomy.',
+            enabled: true,
+            featureFlags: {
+              codeExecution: true
+            },
+            contextSources: []
+          }
+        ]
+      }
+    }
   });
 
   assert.equal(config.apps[0].id, 'chat-router');
   assert.equal(config.scheduledJobs[0].appId, 'chat-router');
   assert.equal(config.features[0].id, 'chat-router-public-route');
+  assert.equal(config.gateway.adminUi.routePath, '/admin/');
+  assert.equal(config.serviceProfiles.gatewayChatPlatform.agents[0].id, 'marvin');
 });
 
 test('parseGatewayConfig defaults enabled flags when omitted', () => {
@@ -99,4 +151,8 @@ test('parseGatewayConfig defaults enabled flags when omitted', () => {
   assert.equal(config.apps[0].enabled, true);
   assert.equal(config.scheduledJobs[0].enabled, true);
   assert.deepEqual(config.features, []);
+  assert.equal(config.gateway.adminUi.enabled, false);
+  assert.equal(config.gateway.adminUi.port, 4173);
+  assert.equal(config.serviceProfiles.gatewayApi.enabled, false);
+  assert.deepEqual(config.serviceProfiles.gatewayChatPlatform.agents, []);
 });

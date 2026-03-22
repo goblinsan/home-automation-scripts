@@ -1,7 +1,15 @@
 import { readdir, readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { buildArtifacts } from './lib/build.ts';
-import { deployApp, installJobs, rollbackApp, smokeTest } from './lib/deploy.ts';
+import {
+  deployApp,
+  installControlPlaneService,
+  installJobs,
+  installServiceProfileFiles,
+  rollbackApp,
+  smokeTest,
+  syncServiceProfileRuntime
+} from './lib/deploy.ts';
 import { getApp, loadGatewayConfig } from './lib/config.ts';
 import { renderActiveUpstream, renderGatewaySite } from './lib/nginx.ts';
 import { startAdminServer } from './lib/admin-ui.ts';
@@ -145,6 +153,21 @@ async function main(): Promise<void> {
       await installJobs(config, appId, { dryRun, log: console.log });
       return;
     }
+    case 'apply-service-profiles': {
+      const appId = requireStringArg(args, 'app');
+      const dryRun = args['dry-run'] === true;
+      const baseUrl = typeof args['base-url'] === 'string' ? args['base-url'] : undefined;
+      const config = await loadGatewayConfig(configPath);
+      await installServiceProfileFiles(config, appId, { dryRun, log: console.log });
+      await syncServiceProfileRuntime(config, appId, { dryRun, log: console.log }, baseUrl);
+      return;
+    }
+    case 'install-control-plane-service': {
+      const dryRun = args['dry-run'] === true;
+      const config = await loadGatewayConfig(configPath);
+      await installControlPlaneService(config, { dryRun, log: console.log });
+      return;
+    }
     case 'smoke-test': {
       const url = requireStringArg(args, 'url');
       await smokeTest(url);
@@ -152,12 +175,13 @@ async function main(): Promise<void> {
       return;
     }
     case 'serve-ui': {
-      const host = typeof args.host === 'string' ? args.host : '127.0.0.1';
-      const portValue = typeof args.port === 'string' ? Number(args.port) : 4173;
+      const config = await loadGatewayConfig(configPath);
+      const host = typeof args.host === 'string' ? args.host : config.gateway.adminUi.host;
+      const portValue = typeof args.port === 'string' ? Number(args.port) : config.gateway.adminUi.port;
       if (!Number.isInteger(portValue) || portValue <= 0) {
         throw new Error(`Invalid port: ${String(args.port)}`);
       }
-      const outDir = typeof args.out === 'string' ? args.out : 'generated';
+      const outDir = typeof args.out === 'string' ? args.out : config.gateway.adminUi.buildOutDir;
       await startAdminServer({ configPath, host, port: portValue, buildOutDir: outDir });
       return;
     }
@@ -167,10 +191,12 @@ async function main(): Promise<void> {
   lint
   typecheck
   build --config <path> --out <dir>
-  serve-ui --config <path> [--host 127.0.0.1] [--port 4173] [--out generated]
+  serve-ui --config <path> [--host <bind>] [--port <port>] [--out <dir>]
   deploy-app --config <path> --app <id> [--revision <sha>] [--skip-fetch] [--dry-run]
   rollback-app --config <path> --app <id> [--dry-run]
   install-jobs --config <path> --app <id> [--dry-run]
+  apply-service-profiles --config <path> --app <id> [--base-url <url>] [--dry-run]
+  install-control-plane-service --config <path> [--dry-run]
   smoke-test --url <url>`);
   }
 }

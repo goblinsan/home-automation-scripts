@@ -11,7 +11,19 @@ const config: GatewayConfig = {
     nginxReloadCommand: 'reload',
     systemdUnitDirectory: '/etc/systemd/system',
     systemdReloadCommand: 'reload-systemd',
-    systemdEnableTimerCommand: 'enable-timers'
+    systemdEnableTimerCommand: 'enable-timers',
+    adminUi: {
+      enabled: true,
+      host: '127.0.0.1',
+      port: 4173,
+      routePath: '/admin/',
+      serviceName: 'gateway-control-plane.service',
+      workingDirectory: '/opt/gateway-control-plane',
+      configPath: '/opt/gateway-control-plane/configs/gateway.config.json',
+      buildOutDir: '/opt/gateway-control-plane/generated',
+      nodeExecutable: '/usr/bin/node',
+      user: 'deploy'
+    }
   },
   apps: [
     {
@@ -31,13 +43,36 @@ const config: GatewayConfig = {
     }
   ],
   scheduledJobs: [],
-  features: []
+  features: [],
+  serviceProfiles: {
+    gatewayApi: {
+      enabled: false,
+      appId: 'chat-router',
+      envFilePath: '/srv/apps/chat-router/shared/gateway-api.env',
+      environment: []
+    },
+    gatewayChatPlatform: {
+      enabled: false,
+      appId: 'chat-router',
+      apiBaseUrl: 'http://127.0.0.1:3000',
+      apiEnvFilePath: '/srv/apps/chat-router/shared/chat-api.env',
+      environment: [],
+      agents: []
+    }
+  }
 };
 
 test('renderGatewaySite includes active upstream and route path', () => {
   const output = renderGatewaySite(config);
   assert.match(output, /include \/etc\/nginx\/conf\.d\/upstreams\/chat-router-active\.conf;/);
   assert.match(output, /location \/chat\//);
+});
+
+test('renderGatewaySite includes admin ui route when enabled', () => {
+  const output = renderGatewaySite(config);
+  assert.match(output, /location = \/admin/);
+  assert.match(output, /proxy_pass http:\/\/127\.0\.0\.1:4173\//);
+  assert.match(output, /proxy_set_header X-Forwarded-Prefix \/admin\//);
 });
 
 test('renderActiveUpstream renders selected slot port', () => {
