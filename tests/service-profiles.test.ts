@@ -29,6 +29,15 @@ test('renderGatewayChatAgents emits sync payload shape', () => {
     apiBaseUrl: 'http://127.0.0.1:3000',
     apiEnvFilePath: '/srv/apps/gateway-chat-platform/shared/chat-api.env',
     environment: [],
+    tts: {
+      enabled: true,
+      baseUrl: 'http://198.51.100.111:5000',
+      defaultVoice: 'assistant_v1',
+      generatePath: '/tts',
+      streamPath: '/tts/stream',
+      voicesPath: '/voices',
+      healthPath: '/health'
+    },
     agents: [
       {
         id: 'marvin',
@@ -47,4 +56,29 @@ test('renderGatewayChatAgents emits sync payload shape', () => {
 
   assert.match(output, /"agents"/);
   assert.match(output, /"marvin"/);
+});
+
+test('renderGatewayChatPlatformEnv includes derived local tts settings', async () => {
+  const { renderGatewayChatPlatformEnv } = await import('../src/lib/service-profiles.ts');
+  const output = renderGatewayChatPlatformEnv({
+    enabled: true,
+    appId: 'gateway-chat-platform',
+    apiBaseUrl: 'http://127.0.0.1:3000',
+    apiEnvFilePath: '/srv/apps/gateway-chat-platform/shared/chat-api.env',
+    environment: [],
+    tts: {
+      enabled: true,
+      baseUrl: 'http://198.51.100.111:5000',
+      defaultVoice: 'assistant_v1',
+      generatePath: '/tts',
+      streamPath: '/tts/stream',
+      voicesPath: '/voices',
+      healthPath: '/health'
+    },
+    agents: []
+  });
+
+  assert.match(output, /TTS_ENABLED=true/);
+  assert.match(output, /TTS_BASE_URL=http:\/\/192\.168\.0\.111:5000/);
+  assert.match(output, /TTS_DEFAULT_VOICE=assistant_v1/);
 });

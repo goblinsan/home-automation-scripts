@@ -119,12 +119,23 @@ export interface GatewayChatAgentConfig {
   contextSources: ChatContextSourceConfig[];
 }
 
+export interface TextToSpeechServiceConfig {
+  enabled: boolean;
+  baseUrl: string;
+  defaultVoice: string;
+  generatePath: string;
+  streamPath: string;
+  voicesPath: string;
+  healthPath: string;
+}
+
 export interface GatewayChatPlatformServiceProfile {
   enabled: boolean;
   appId: string;
   apiBaseUrl: string;
   apiEnvFilePath: string;
   environment: EnvironmentVariableConfig[];
+  tts: TextToSpeechServiceConfig;
   agents: GatewayChatAgentConfig[];
 }
 
@@ -403,6 +414,34 @@ function parseGatewayApiServiceProfile(value: unknown): GatewayApiServiceProfile
   };
 }
 
+function parseTextToSpeechServiceConfig(value: unknown, field: string): TextToSpeechServiceConfig {
+  if (value === undefined) {
+    return {
+      enabled: false,
+      baseUrl: 'http://198.51.100.111:5000',
+      defaultVoice: 'assistant_v1',
+      generatePath: '/tts',
+      streamPath: '/tts/stream',
+      voicesPath: '/voices',
+      healthPath: '/health'
+    };
+  }
+
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  return {
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
+    baseUrl: assertString(value.baseUrl, `${field}.baseUrl`),
+    defaultVoice: assertString(value.defaultVoice, `${field}.defaultVoice`),
+    generatePath: assertString(value.generatePath, `${field}.generatePath`),
+    streamPath: assertString(value.streamPath, `${field}.streamPath`),
+    voicesPath: assertString(value.voicesPath, `${field}.voicesPath`),
+    healthPath: assertString(value.healthPath, `${field}.healthPath`)
+  };
+}
+
 function parseGatewayChatPlatformServiceProfile(value: unknown): GatewayChatPlatformServiceProfile {
   if (value === undefined) {
     return {
@@ -411,6 +450,7 @@ function parseGatewayChatPlatformServiceProfile(value: unknown): GatewayChatPlat
       apiBaseUrl: 'http://127.0.0.1:3000',
       apiEnvFilePath: '/srv/apps/gateway-chat-platform/shared/chat-api.env',
       environment: [],
+      tts: parseTextToSpeechServiceConfig(undefined, 'serviceProfiles.gatewayChatPlatform.tts'),
       agents: []
     };
   }
@@ -427,6 +467,7 @@ function parseGatewayChatPlatformServiceProfile(value: unknown): GatewayChatPlat
     environment: Array.isArray(value.environment)
       ? value.environment.map((entry, index) => parseEnvironmentVariableConfig(entry, `serviceProfiles.gatewayChatPlatform.environment[${index}]`))
       : [],
+    tts: parseTextToSpeechServiceConfig(value.tts, 'serviceProfiles.gatewayChatPlatform.tts'),
     agents: Array.isArray(value.agents)
       ? value.agents.map((agent, index) => parseGatewayChatAgentConfig(agent, `serviceProfiles.gatewayChatPlatform.agents[${index}]`))
       : []

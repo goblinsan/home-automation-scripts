@@ -84,6 +84,17 @@ deploy/bin/apply-service-profiles.sh --config configs/gateway.config.json --app 
 For `gateway-chat-platform`, that command both writes the configured chat API
 env file and pushes the configured agents to `/api/agents/manage/sync`.
 
+The generated chat-platform env file also includes the typed local TTS settings
+from `serviceProfiles.gatewayChatPlatform.tts`, rendered as:
+
+- `TTS_ENABLED`
+- `TTS_BASE_URL`
+- `TTS_DEFAULT_VOICE`
+- `TTS_GENERATE_PATH`
+- `TTS_STREAM_PATH`
+- `TTS_VOICES_PATH`
+- `TTS_HEALTH_PATH`
+
 You can also exercise a synced agent directly through the control plane:
 
 ```bash
@@ -107,3 +118,4 @@ The admin UI exposes the same live operations:
 - import the bundled OpenClaw workflow seed into `gateway-api`
 - sync configured chat agents into `gateway-chat-platform`
 - run Bruvie-D or any configured agent through `/api/agents/:id/run`
+- configure and probe the external `local-tts-service`

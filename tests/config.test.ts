@@ -81,6 +81,15 @@ test('parseGatewayConfig accepts the example shape', () => {
         apiBaseUrl: 'http://127.0.0.1:3000',
         apiEnvFilePath: '/srv/apps/chat-router/shared/chat-api.env',
         environment: [],
+        tts: {
+          enabled: true,
+          baseUrl: 'http://198.51.100.111:5000',
+          defaultVoice: 'assistant_v1',
+          generatePath: '/tts',
+          streamPath: '/tts/stream',
+          voicesPath: '/voices',
+          healthPath: '/health'
+        },
         agents: [
           {
             id: 'marvin',
@@ -107,6 +116,7 @@ test('parseGatewayConfig accepts the example shape', () => {
   assert.equal(config.features[0].id, 'chat-router-public-route');
   assert.equal(config.gateway.adminUi.routePath, '/admin/');
   assert.equal(config.serviceProfiles.gatewayChatPlatform.agents[0].id, 'marvin');
+  assert.equal(config.serviceProfiles.gatewayChatPlatform.tts.baseUrl, 'http://198.51.100.111:5000');
 });
 
 test('parseGatewayConfig defaults enabled flags when omitted', () => {
@@ -157,4 +167,6 @@ test('parseGatewayConfig defaults enabled flags when omitted', () => {
   assert.equal(config.serviceProfiles.gatewayApi.enabled, false);
   assert.equal(config.serviceProfiles.gatewayApi.apiBaseUrl, 'http://127.0.0.1:3000');
   assert.deepEqual(config.serviceProfiles.gatewayChatPlatform.agents, []);
+  assert.equal(config.serviceProfiles.gatewayChatPlatform.tts.enabled, false);
+  assert.equal(config.serviceProfiles.gatewayChatPlatform.tts.defaultVoice, 'assistant_v1');
 });

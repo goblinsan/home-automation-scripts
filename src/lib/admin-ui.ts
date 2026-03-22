@@ -71,6 +71,11 @@ interface AgentRunUiState {
   result: AgentRunResult | null;
 }
 
+interface TtsStatusSnapshot {
+  healthStatus: number | null;
+  voices: unknown;
+}
+
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
   response.statusCode = statusCode;
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -479,6 +484,37 @@ function htmlPage(basePath: string): string {
             <p>Environment</p>
             <div id="gatewayChatEnvContainer" class="section-list"></div>
           </div>
+          <div class="card">
+            <div class="split-actions">
+              <div>
+                <span class="pill">TTS</span>
+                <h4>Local TTS Service</h4>
+              </div>
+              <button id="checkTtsButton">Check TTS</button>
+            </div>
+            <div class="row">
+              <label class="check"><input id="gatewayChatTtsEnabled" type="checkbox" /> Enabled</label>
+              <label>TTS Base URL
+                <input id="gatewayChatTtsBaseUrl" />
+              </label>
+              <label>Default Voice
+                <input id="gatewayChatTtsDefaultVoice" />
+              </label>
+              <label>Generate Path
+                <input id="gatewayChatTtsGeneratePath" />
+              </label>
+              <label>Stream Path
+                <input id="gatewayChatTtsStreamPath" />
+              </label>
+              <label>Voices Path
+                <input id="gatewayChatTtsVoicesPath" />
+              </label>
+              <label>Health Path
+                <input id="gatewayChatTtsHealthPath" />
+              </label>
+            </div>
+            <div id="ttsStatus" class="meta-list"></div>
+          </div>
           <div>
             <p>Agents</p>
             <div id="gatewayChatAgentsContainer" class="section-list"></div>
@@ -603,6 +639,7 @@ function htmlPage(basePath: string): string {
           <p>Service profiles generate env files and chat-agent sync payloads for the real gateway-managed apps.</p>
           <p>Workflow CRUD in this UI is backed by the live <code>gateway-api</code> workflow endpoints, not the local config file.</p>
           <p>The Automation panel can import the OpenClaw workflow seed, sync live chat agents, and run Bruvie-D through <code>gateway-chat-platform</code>.</p>
+          <p>The TTS section configures the external <code>local-tts-service</code> and can probe its health and available voices.</p>
         </div>
       </section>
     </aside>
@@ -612,6 +649,7 @@ function htmlPage(basePath: string): string {
       config: null,
       runtime: null,
       workflows: [],
+      ttsStatus: null,
       agentRun: {
         agentId: '',
         prompt: 'Give me a short readiness check in character, then confirm the local model route is working.',
@@ -767,11 +805,39 @@ function htmlPage(basePath: string): string {
       document.getElementById('gatewayChatProfileAppId').innerHTML = appOptions(profile.appId);
       document.getElementById('gatewayChatProfileApiBaseUrl').value = profile.apiBaseUrl;
       document.getElementById('gatewayChatProfileEnvFilePath').value = profile.apiEnvFilePath;
+      document.getElementById('gatewayChatTtsEnabled').checked = profile.tts.enabled;
+      document.getElementById('gatewayChatTtsBaseUrl').value = profile.tts.baseUrl;
+      document.getElementById('gatewayChatTtsDefaultVoice').value = profile.tts.defaultVoice;
+      document.getElementById('gatewayChatTtsGeneratePath').value = profile.tts.generatePath;
+      document.getElementById('gatewayChatTtsStreamPath').value = profile.tts.streamPath;
+      document.getElementById('gatewayChatTtsVoicesPath').value = profile.tts.voicesPath;
+      document.getElementById('gatewayChatTtsHealthPath').value = profile.tts.healthPath;
       renderEnvironmentList('gatewayChatEnvContainer', profile.environment, (index) => {
         profile.environment.splice(index, 1);
         renderGatewayChatPlatformProfile();
         syncRawJson();
       });
+
+      const ttsStatus = document.getElementById('ttsStatus');
+      if (!state.ttsStatus) {
+        ttsStatus.innerHTML = '<div>TTS status not checked yet.</div>';
+      } else {
+        const voices = Array.isArray(state.ttsStatus.voices)
+          ? state.ttsStatus.voices.map((voice) => {
+              if (typeof voice === 'string') {
+                return voice;
+              }
+              if (voice && typeof voice === 'object' && 'id' in voice) {
+                return String(voice.id);
+              }
+              return JSON.stringify(voice);
+            }).join(', ')
+          : JSON.stringify(state.ttsStatus.voices);
+        ttsStatus.innerHTML = [
+          \`<div><strong>Health:</strong> \${state.ttsStatus.healthStatus === null ? 'disabled' : state.ttsStatus.healthStatus}</div>\`,
+          \`<div><strong>Voices:</strong> \${voices || 'none reported'}</div>\`
+        ].join('');
+      }
 
       const agentsContainer = document.getElementById('gatewayChatAgentsContainer');
       agentsContainer.innerHTML = '';
@@ -1401,6 +1467,22 @@ function htmlPage(basePath: string): string {
         syncRawJson();
       });
     });
+    [
+      ['gatewayChatTtsEnabled', 'enabled', 'checkbox'],
+      ['gatewayChatTtsBaseUrl', 'baseUrl'],
+      ['gatewayChatTtsDefaultVoice', 'defaultVoice'],
+      ['gatewayChatTtsGeneratePath', 'generatePath'],
+      ['gatewayChatTtsStreamPath', 'streamPath'],
+      ['gatewayChatTtsVoicesPath', 'voicesPath'],
+      ['gatewayChatTtsHealthPath', 'healthPath'],
+    ].forEach(([id, key, kind]) => {
+      const element = document.getElementById(id);
+      element.addEventListener(kind === 'checkbox' ? 'change' : 'input', (event) => {
+        const target = event.target;
+        state.config.serviceProfiles.gatewayChatPlatform.tts[key] = kind === 'checkbox' ? target.checked : target.value;
+        syncRawJson();
+      });
+    });
 
     document.getElementById('reloadButton').addEventListener('click', async () => {
       try {
@@ -1576,6 +1658,15 @@ function htmlPage(basePath: string): string {
         setStatus(error.message, 'error');
       }
     });
+    document.getElementById('checkTtsButton').addEventListener('click', async () => {
+      try {
+        state.ttsStatus = await requestJson('GET', '/api/tts/status');
+        renderGatewayChatPlatformProfile();
+        setStatus('TTS status refreshed');
+      } catch (error) {
+        setStatus(error.message, 'error');
+      }
+    });
     document.getElementById('importWorkflowSeedButton').addEventListener('click', async () => {
       try {
         const result = await requestJson('POST', '/api/workflow-seeds/import', {
@@ -1638,7 +1729,14 @@ async function proxyWorkflowRequest(
   }
 
   const workflowBaseUrl = normalizeBaseUrl(config.serviceProfiles.gatewayApi.apiBaseUrl);
-  const requestUrl = `${workflowBaseUrl}${path}`;
+  return requestJsonUrl(`${workflowBaseUrl}${path}`, method, body);
+}
+
+async function requestJsonUrl(
+  requestUrl: string,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  body?: unknown
+): Promise<{ status: number; payload: unknown }> {
   const requestBody = body === undefined ? undefined : JSON.stringify(body);
   const requestImpl = requestUrl.startsWith('https://') ? (await import('node:https')).request : (await import('node:http')).request;
 
@@ -1680,6 +1778,25 @@ async function proxyWorkflowRequest(
   });
 }
 
+async function probeTtsRuntime(config: GatewayConfig): Promise<TtsStatusSnapshot> {
+  const tts = config.serviceProfiles.gatewayChatPlatform.tts;
+  if (!tts.enabled) {
+    return {
+      healthStatus: null,
+      voices: []
+    };
+  }
+
+  const baseUrl = normalizeBaseUrl(tts.baseUrl);
+  const healthResponse = await requestJsonUrl(`${baseUrl}${tts.healthPath}`, 'GET');
+  const voicesResponse = await requestJsonUrl(`${baseUrl}${tts.voicesPath}`, 'GET');
+
+  return {
+    healthStatus: healthResponse.status,
+    voices: voicesResponse.payload
+  };
+}
+
 export async function startAdminServer(options: AdminServerOptions): Promise<void> {
   const startedAtMs = Date.now();
   const server = createServer(async (request, response) => {
@@ -1709,6 +1826,13 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       if (request.method === 'GET' && path === '/api/runtime') {
         const config = await loadGatewayConfig(options.configPath);
         sendJson(response, 200, createRuntimeSnapshot(config, options, startedAtMs));
+        return;
+      }
+
+      if (request.method === 'GET' && path === '/api/tts/status') {
+        const config = await loadGatewayConfig(options.configPath);
+        const status = await probeTtsRuntime(config);
+        sendJson(response, 200, status);
         return;
       }
 

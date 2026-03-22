@@ -77,6 +77,15 @@ function createConfig(root: string): GatewayConfig {
         apiBaseUrl: 'http://127.0.0.1:3000',
         apiEnvFilePath: join(root, 'chat-api.env'),
         environment: [{ key: 'OPENAI_API_KEY', value: 'sk-test', secret: true }],
+        tts: {
+          enabled: true,
+          baseUrl: 'http://198.51.100.111:5000',
+          defaultVoice: 'assistant_v1',
+          generatePath: '/tts',
+          streamPath: '/tts/stream',
+          voicesPath: '/voices',
+          healthPath: '/health'
+        },
         agents: [
           {
             id: 'marvin',

@@ -28,8 +28,56 @@ export function renderGatewayApiEnv(profile: GatewayApiServiceProfile): string {
   return renderEnvFile(profile.environment);
 }
 
+function buildGatewayChatPlatformEnvironment(profile: GatewayChatPlatformServiceProfile): EnvironmentVariableConfig[] {
+  return [
+    ...profile.environment,
+    {
+      key: 'TTS_ENABLED',
+      value: profile.tts.enabled ? 'true' : 'false',
+      secret: false,
+      description: 'Enable local TTS integration'
+    },
+    {
+      key: 'TTS_BASE_URL',
+      value: profile.tts.baseUrl,
+      secret: false,
+      description: 'Base URL for the local TTS HTTP service'
+    },
+    {
+      key: 'TTS_DEFAULT_VOICE',
+      value: profile.tts.defaultVoice,
+      secret: false,
+      description: 'Default TTS voice id'
+    },
+    {
+      key: 'TTS_GENERATE_PATH',
+      value: profile.tts.generatePath,
+      secret: false,
+      description: 'Relative path for one-shot speech generation'
+    },
+    {
+      key: 'TTS_STREAM_PATH',
+      value: profile.tts.streamPath,
+      secret: false,
+      description: 'Relative path for streamed speech generation'
+    },
+    {
+      key: 'TTS_VOICES_PATH',
+      value: profile.tts.voicesPath,
+      secret: false,
+      description: 'Relative path for listing available voices'
+    },
+    {
+      key: 'TTS_HEALTH_PATH',
+      value: profile.tts.healthPath,
+      secret: false,
+      description: 'Relative path for the TTS health probe'
+    }
+  ];
+}
+
 export function renderGatewayChatPlatformEnv(profile: GatewayChatPlatformServiceProfile): string {
-  return renderEnvFile(profile.environment);
+  return renderEnvFile(buildGatewayChatPlatformEnvironment(profile));
 }
 
 export function renderGatewayChatAgents(profile: GatewayChatPlatformServiceProfile): string {

@@ -113,6 +113,7 @@ It exposes the same config shape used by the CLI, including:
 - `gateway-api` env and secret values
 - `gateway-api` workflow management through the live workflow API
 - `gateway-chat-platform` env, provider keys, and agent definitions
+- `gateway-chat-platform` local TTS service configuration
 - live workflow-seed import into `gateway-api`
 - live agent sync and agent-run execution against `gateway-chat-platform`
 

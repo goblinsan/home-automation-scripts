@@ -69,6 +69,15 @@ const config: GatewayConfig = {
       apiBaseUrl: 'http://127.0.0.1:3000',
       apiEnvFilePath: '/srv/apps/chat-router/shared/chat-api.env',
       environment: [],
+      tts: {
+        enabled: false,
+        baseUrl: 'http://198.51.100.111:5000',
+        defaultVoice: 'assistant_v1',
+        generatePath: '/tts',
+        streamPath: '/tts/stream',
+        voicesPath: '/voices',
+        healthPath: '/health'
+      },
       agents: []
     }
   }
