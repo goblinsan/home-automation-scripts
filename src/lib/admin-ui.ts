@@ -833,6 +833,30 @@ function htmlPage(basePath: string): string {
       return state.config.serviceProfiles.gatewayChatPlatform.agents || [];
     }
 
+    function normalizeTtsVoice(voice) {
+      if (typeof voice === 'string') {
+        return { id: voice };
+      }
+
+      if (voice && typeof voice === 'object') {
+        const id = typeof voice.id === 'string'
+          ? voice.id
+          : typeof voice.voice === 'string'
+            ? voice.voice
+            : typeof voice.name === 'string'
+              ? voice.name
+              : JSON.stringify(voice);
+        return {
+          id,
+          name: typeof voice.name === 'string' ? voice.name : undefined,
+          description: typeof voice.description === 'string' ? voice.description : undefined,
+          source: typeof voice.source === 'string' ? voice.source : undefined
+        };
+      }
+
+      return { id: String(voice) };
+    }
+
     function normalizedTtsVoices() {
       return Array.isArray(state.ttsVoices) ? state.ttsVoices.map((voice) => normalizeTtsVoice(voice)) : [];
     }
