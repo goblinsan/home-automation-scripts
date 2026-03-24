@@ -16,13 +16,18 @@ export function renderGatewaySite(config: GatewayConfig): string {
   const locations = enabledApps
     .map((app) => {
       const routePath = normalizeRoutePath(app.routePath);
+      const prefixHeader = app.stripRoutePrefix ? `\n        proxy_set_header X-Forwarded-Prefix ${routePath};` : '';
+      const proxyPass = app.stripRoutePrefix && routePath !== '/'
+        ? `http://${app.id}_active/`
+        : `http://${app.id}_active`;
       return `
     location ${routePath} {
-        proxy_pass http://${app.id}_active;
+        proxy_pass ${proxyPass};
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+${prefixHeader}
         proxy_set_header Connection "";
     }`.trimEnd();
     })

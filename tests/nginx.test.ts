@@ -33,6 +33,7 @@ const config: GatewayConfig = {
       defaultRevision: 'main',
       deployRoot: '/srv/apps/chat-router',
       routePath: '/chat/',
+      stripRoutePrefix: true,
       healthPath: '/health',
       upstreamConfPath: '/etc/nginx/conf.d/upstreams/chat-router-active.conf',
       buildCommands: ['npm ci'],
@@ -76,6 +77,8 @@ test('renderGatewaySite includes active upstream and route path', () => {
   const output = renderGatewaySite(config);
   assert.match(output, /include \/etc\/nginx\/conf\.d\/upstreams\/chat-router-active\.conf;/);
   assert.match(output, /location \/chat\//);
+  assert.match(output, /proxy_pass http:\/\/chat-router_active\//);
+  assert.match(output, /proxy_set_header X-Forwarded-Prefix \/chat\//);
 });
 
 test('renderGatewaySite includes admin ui route when enabled', () => {
@@ -102,6 +105,7 @@ test('renderGatewaySite skips disabled apps', () => {
         defaultRevision: 'main',
         deployRoot: '/srv/apps/disabled-app',
         routePath: '/disabled/',
+        stripRoutePrefix: false,
         healthPath: '/health',
         upstreamConfPath: '/etc/nginx/conf.d/upstreams/disabled-app-active.conf',
         buildCommands: ['npm ci'],

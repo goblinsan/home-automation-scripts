@@ -41,6 +41,7 @@ export interface AppConfig {
   defaultRevision: string;
   deployRoot: string;
   routePath: string;
+  stripRoutePrefix: boolean;
   healthPath: string;
   upstreamConfPath: string;
   buildCommands: string[];
@@ -246,6 +247,7 @@ function parseAppConfig(value: unknown, index: number): AppConfig {
     defaultRevision: assertString(value.defaultRevision, `apps[${index}].defaultRevision`),
     deployRoot: assertString(value.deployRoot, `apps[${index}].deployRoot`),
     routePath: assertString(value.routePath, `apps[${index}].routePath`),
+    stripRoutePrefix: typeof value.stripRoutePrefix === 'boolean' ? value.stripRoutePrefix : false,
     healthPath: assertString(value.healthPath, `apps[${index}].healthPath`),
     upstreamConfPath: assertString(value.upstreamConfPath, `apps[${index}].upstreamConfPath`),
     buildCommands: assertStringArray(value.buildCommands, `apps[${index}].buildCommands`),
