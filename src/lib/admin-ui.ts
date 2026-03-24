@@ -83,6 +83,19 @@ interface TtsVoiceRecord {
   source?: string;
 }
 
+interface ChatProviderStatusRecord {
+  name: string;
+  status: 'ok' | 'error' | 'unconfigured';
+  latencyMs?: number;
+  error?: string;
+}
+
+interface ChatProviderModelRecord {
+  id: string;
+  name?: string;
+  description?: string;
+}
+
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
   response.statusCode = statusCode;
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -709,6 +722,8 @@ function htmlPage(basePath: string): string {
       config: null,
       runtime: null,
       workflows: [],
+      chatProviders: [],
+      providerModels: {},
       ttsStatus: null,
       ttsVoices: [],
       agentRun: {
@@ -864,6 +879,65 @@ function htmlPage(basePath: string): string {
       return Array.isArray(state.ttsVoices) ? state.ttsVoices.map((voice) => normalizeTtsVoice(voice)) : [];
     }
 
+    function normalizedChatProviders() {
+      return Array.isArray(state.chatProviders) ? state.chatProviders.filter((provider) => provider.status !== 'unconfigured') : [];
+    }
+
+    function providerOptions(currentProviderName) {
+      const providers = normalizedChatProviders();
+      const knownProviders = [...providers];
+      if (currentProviderName && !knownProviders.some((provider) => provider.name === currentProviderName)) {
+        knownProviders.unshift({ name: currentProviderName, status: 'ok' });
+      }
+      return knownProviders
+        .map((provider) => \`<option value="\${provider.name}" \${provider.name === currentProviderName ? 'selected' : ''}>\${provider.name}</option>\`)
+        .join('');
+    }
+
+    function normalizeModel(model) {
+      if (!model || typeof model !== 'object') {
+        return { id: String(model || '') };
+      }
+      return {
+        id: typeof model.id === 'string' ? model.id : typeof model.name === 'string' ? model.name : JSON.stringify(model),
+        name: typeof model.name === 'string' ? model.name : undefined
+      };
+    }
+
+    function modelOptions(providerName, currentModel) {
+      const rawModels = Array.isArray(state.providerModels?.[providerName]) ? state.providerModels[providerName] : [];
+      const knownModels = rawModels.map((model) => normalizeModel(model));
+      if (currentModel && !knownModels.some((model) => model.id === currentModel)) {
+        knownModels.unshift({ id: currentModel, name: currentModel });
+      }
+      return knownModels
+        .map((model) => \`<option value="\${model.id}" \${model.id === currentModel ? 'selected' : ''}>\${model.name || model.id}</option>\`)
+        .join('');
+    }
+
+    function getAgentChatTemplate(agent) {
+      return agent.endpointConfig?.modelParams?.chatTemplate || '';
+    }
+
+    function setAgentChatTemplate(agent, chatTemplate) {
+      if (!chatTemplate) {
+        if (agent.endpointConfig?.modelParams && typeof agent.endpointConfig.modelParams === 'object') {
+          delete agent.endpointConfig.modelParams.chatTemplate;
+          if (Object.keys(agent.endpointConfig.modelParams).length === 0) {
+            delete agent.endpointConfig.modelParams;
+          }
+        }
+        if (agent.endpointConfig && Object.keys(agent.endpointConfig).length === 0) {
+          delete agent.endpointConfig;
+        }
+        return;
+      }
+
+      agent.endpointConfig = agent.endpointConfig || {};
+      agent.endpointConfig.modelParams = agent.endpointConfig.modelParams || {};
+      agent.endpointConfig.modelParams.chatTemplate = chatTemplate;
+    }
+
     function ensureAgentRunDefaults() {
       const agents = configuredAgents();
       if (agents.length === 0) {
@@ -989,6 +1063,7 @@ function htmlPage(basePath: string): string {
       const voiceOptions = normalizedTtsVoices();
       profile.agents.forEach((agent, index) => {
         const currentVoiceId = getAgentVoiceId(agent);
+        const currentChatTemplate = getAgentChatTemplate(agent);
         const knownVoices = [...voiceOptions];
         if (currentVoiceId && !knownVoices.some((voice) => voice.id === currentVoiceId)) {
           knownVoices.unshift({ id: currentVoiceId, name: currentVoiceId });
@@ -996,6 +1071,8 @@ function htmlPage(basePath: string): string {
         const voiceSelectOptions = knownVoices
           .map((voice) => \`<option value="\${voice.id}" \${voice.id === currentVoiceId ? 'selected' : ''}>\${voice.name || voice.id}</option>\`)
           .join('');
+        const providerSelectOptions = providerOptions(agent.providerName);
+        const modelSelectOptions = modelOptions(agent.providerName, agent.model);
         const element = document.createElement('div');
         element.className = 'card';
         element.innerHTML = \`
@@ -1009,8 +1086,22 @@ function htmlPage(basePath: string): string {
             <label>Name<input data-field="name" value="\${agent.name}" /></label>
             <label>Icon<input data-field="icon" value="\${agent.icon}" /></label>
             <label>Color<input data-field="color" value="\${agent.color}" /></label>
-            <label>Provider<input data-field="providerName" value="\${agent.providerName}" /></label>
-            <label>Model<input data-field="model" value="\${agent.model}" /></label>
+            <label>Provider
+              <select data-field="providerName">
+                \${providerSelectOptions}
+              </select>
+            </label>
+            <label>Model
+              <select data-field="model">
+                \${modelSelectOptions}
+              </select>
+            </label>
+            <label>Chat Template
+              <select data-field="chatTemplate">
+                <option value="" \${!currentChatTemplate ? 'selected' : ''}>(provider default)</option>
+                <option value="llama3" \${currentChatTemplate === 'llama3' ? 'selected' : ''}>llama3</option>
+              </select>
+            </label>
             <label>Voice
               <select data-field="ttsVoiceId">
                 <option value="">(use default)</option>
@@ -1043,8 +1134,9 @@ function htmlPage(basePath: string): string {
 
         element.querySelectorAll('input, select, textarea').forEach((input) => {
           const isCheckbox = input.type === 'checkbox';
-          const eventName = isCheckbox ? 'change' : 'input';
-          input.addEventListener(eventName, () => {
+          const isSelect = input.tagName === 'SELECT';
+          const eventName = isCheckbox || isSelect ? 'change' : 'input';
+          input.addEventListener(eventName, async () => {
             const field = input.dataset.field;
             if (!field) {
               return;
@@ -1070,11 +1162,21 @@ function htmlPage(basePath: string): string {
               agent.contextSources = parseJsonField(input.value, []);
             } else if (field === 'ttsVoiceId') {
               setAgentVoiceId(agent, input.value);
+            } else if (field === 'chatTemplate') {
+              setAgentChatTemplate(agent, input.value);
+              renderGatewayChatPlatformProfile();
             } else if (field === 'systemPrompt') {
               agent.systemPrompt = input.value || undefined;
               if (!input.value) delete agent.systemPrompt;
+            } else if (field === 'providerName') {
+              agent.providerName = input.value;
+              await fetchChatProviderModels(agent.providerName);
+              renderGatewayChatPlatformProfile();
             } else {
               agent[field] = input.value;
+            }
+            if (field === 'endpointConfig') {
+              renderGatewayChatPlatformProfile();
             }
             syncRawJson();
           });
@@ -1564,6 +1666,34 @@ function htmlPage(basePath: string): string {
       renderGatewayChatPlatformProfile();
     }
 
+    async function fetchChatProviderModels(providerName) {
+      if (!providerName || !state.config || !state.config.serviceProfiles.gatewayChatPlatform.enabled) {
+        return;
+      }
+      const data = await requestJson('GET', \`/api/chat-platform/providers/\${encodeURIComponent(providerName)}/models\`);
+      state.providerModels[providerName] = Array.isArray(data?.models) ? data.models : [];
+    }
+
+    async function fetchChatProviders() {
+      if (!state.config || !state.config.serviceProfiles.gatewayChatPlatform.enabled) {
+        state.chatProviders = [];
+        state.providerModels = {};
+        renderGatewayChatPlatformProfile();
+        return;
+      }
+      const data = await requestJson('GET', '/api/chat-platform/providers/status');
+      state.chatProviders = Array.isArray(data?.providers) ? data.providers : [];
+      state.providerModels = {};
+      await Promise.all(
+        normalizedChatProviders().map((provider) =>
+          fetchChatProviderModels(provider.name).catch(() => {
+            state.providerModels[provider.name] = [];
+          })
+        )
+      );
+      renderGatewayChatPlatformProfile();
+    }
+
     async function requestJson(method, url, body) {
       const response = await fetch(joinBase(url), {
         method,
@@ -1918,7 +2048,7 @@ function htmlPage(basePath: string): string {
     });
 
     fetchConfig()
-      .then(() => Promise.all([fetchWorkflows(), fetchRuntime(), fetchTtsVoices()]))
+      .then(() => Promise.all([fetchWorkflows(), fetchRuntime(), fetchTtsVoices(), fetchChatProviders()]))
       .catch((error) => setStatus(error.message, 'error'));
     setInterval(() => {
       fetchRuntime().catch(() => undefined);
@@ -1950,6 +2080,56 @@ async function proxyWorkflowRequest(
 
   const workflowBaseUrl = normalizeBaseUrl(config.serviceProfiles.gatewayApi.apiBaseUrl);
   return requestJsonUrl(`${workflowBaseUrl}${path}`, method, body);
+}
+
+async function proxyChatPlatformRequest(
+  config: GatewayConfig,
+  path: string,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  body?: unknown
+): Promise<{ status: number; payload: unknown }> {
+  if (!config.serviceProfiles.gatewayChatPlatform.enabled) {
+    throw new Error('gatewayChatPlatform service profile is disabled');
+  }
+
+  const chatPlatformBaseUrl = normalizeBaseUrl(config.serviceProfiles.gatewayChatPlatform.apiBaseUrl);
+  return requestJsonUrl(`${chatPlatformBaseUrl}${path}`, method, body);
+}
+
+async function listChatProviders(config: GatewayConfig): Promise<ChatProviderStatusRecord[]> {
+  const result = await proxyChatPlatformRequest(config, '/api/providers/status', 'GET');
+  const rawProviders =
+    result.payload && typeof result.payload === 'object' && Array.isArray((result.payload as { providers?: unknown[] }).providers)
+      ? (result.payload as { providers: unknown[] }).providers
+      : [];
+
+  return rawProviders
+    .filter((provider): provider is Record<string, unknown> => provider !== null && typeof provider === 'object')
+    .map((provider) => ({
+      name: typeof provider.name === 'string' ? provider.name : 'unknown',
+      status:
+        provider.status === 'ok' || provider.status === 'error' || provider.status === 'unconfigured'
+          ? provider.status
+          : 'error',
+      latencyMs: typeof provider.latencyMs === 'number' ? provider.latencyMs : undefined,
+      error: typeof provider.error === 'string' ? provider.error : undefined
+    }));
+}
+
+async function listChatProviderModels(config: GatewayConfig, providerName: string): Promise<ChatProviderModelRecord[]> {
+  const result = await proxyChatPlatformRequest(config, `/api/providers/${encodeURIComponent(providerName)}/models`, 'GET');
+  const rawModels =
+    result.payload && typeof result.payload === 'object' && Array.isArray((result.payload as { models?: unknown[] }).models)
+      ? (result.payload as { models: unknown[] }).models
+      : [];
+
+  return rawModels
+    .filter((model): model is Record<string, unknown> => model !== null && typeof model === 'object')
+    .map((model) => ({
+      id: typeof model.id === 'string' ? model.id : typeof model.name === 'string' ? model.name : JSON.stringify(model),
+      name: typeof model.name === 'string' ? model.name : undefined,
+      description: typeof model.description === 'string' ? model.description : undefined
+    }));
 }
 
 async function requestJsonUrl(
@@ -2171,6 +2351,22 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       if (request.method === 'GET' && path === '/api/runtime') {
         const config = await loadGatewayConfig(options.configPath);
         sendJson(response, 200, createRuntimeSnapshot(config, options, startedAtMs));
+        return;
+      }
+
+      if (request.method === 'GET' && path === '/api/chat-platform/providers/status') {
+        const config = await loadGatewayConfig(options.configPath);
+        const providers = await listChatProviders(config);
+        sendJson(response, 200, { providers });
+        return;
+      }
+
+      const providerModelsMatch = path.match(/^\/api\/chat-platform\/providers\/([^/]+)\/models$/);
+      if (providerModelsMatch && request.method === 'GET') {
+        const config = await loadGatewayConfig(options.configPath);
+        const providerName = decodeURIComponent(providerModelsMatch[1]);
+        const models = await listChatProviderModels(config, providerName);
+        sendJson(response, 200, { provider: providerName, models });
         return;
       }
 
