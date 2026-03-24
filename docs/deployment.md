@@ -98,7 +98,7 @@ from `serviceProfiles.gatewayChatPlatform.tts`, rendered as:
 The admin UI also lets you:
 
 - browse voices from the live TTS service
-- create new voices by uploading reference audio
+- create new voices by uploading reference audio and the matching transcript
 - delete obsolete voices
 - map a voice to an agent via `endpointConfig.modelParams.ttsVoiceId`
 

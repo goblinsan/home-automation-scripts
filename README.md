@@ -114,7 +114,7 @@ It exposes the same config shape used by the CLI, including:
 - `gateway-api` workflow management through the live workflow API
 - `gateway-chat-platform` env, provider keys, and agent definitions
 - `gateway-chat-platform` local TTS service configuration
-- local TTS voice browsing, creation, and agent-to-voice mapping
+- local TTS voice browsing, transcript-aware voice creation, and agent-to-voice mapping
 - live workflow-seed import into `gateway-api`
 - live agent sync and agent-run execution against `gateway-chat-platform`
 

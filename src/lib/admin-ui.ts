@@ -570,6 +570,9 @@ function htmlPage(basePath: string): string {
                   <input id="ttsCreateVoiceFile" type="file" accept="audio/*,.wav,.mp3,.m4a" />
                 </label>
               </div>
+              <label>Transcript
+                <textarea id="ttsCreateVoiceTranscript" placeholder="Required by local-tts-service for voice creation. Provide the spoken text from the reference audio."></textarea>
+              </label>
             </div>
           </div>
           <div>
@@ -1853,12 +1856,17 @@ function htmlPage(basePath: string): string {
         if (!file) {
           throw new Error('Choose a reference audio file first');
         }
+        const transcript = document.getElementById('ttsCreateVoiceTranscript').value.trim();
+        if (!transcript) {
+          throw new Error('Provide the spoken transcript for the reference audio');
+        }
 
         const formData = new FormData();
         formData.append('reference_audio', file);
         formData.append('name', document.getElementById('ttsCreateVoiceName').value);
         formData.append('description', document.getElementById('ttsCreateVoiceDescription').value);
         formData.append('source', document.getElementById('ttsCreateVoiceSource').value || 'recorded');
+        formData.append('transcript', transcript);
 
         const response = await fetch(joinBase('/api/tts/voices'), {
           method: 'POST',
@@ -1871,6 +1879,7 @@ function htmlPage(basePath: string): string {
         document.getElementById('ttsCreateVoiceName').value = '';
         document.getElementById('ttsCreateVoiceDescription').value = '';
         document.getElementById('ttsCreateVoiceSource').value = 'recorded';
+        document.getElementById('ttsCreateVoiceTranscript').value = '';
         fileInput.value = '';
         await fetchTtsVoices();
         setStatus(result.message || 'Voice created');
