@@ -79,7 +79,7 @@
       "deployRoot": "/srv/apps/gateway-chat-platform",
       "routePath": "/chat/",
       "stripRoutePrefix": true,
-      "healthPath": "/api/health",
+      "healthPath": "/api/ready",
       "upstreamConfPath": "/etc/nginx/conf.d/upstreams/gateway-chat-platform-active.conf",
       "buildCommands": [],
       "slots": {

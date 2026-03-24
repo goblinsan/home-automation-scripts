@@ -60,6 +60,47 @@ async function runShell(command: string, cwd: string, context: CommandContext): 
   });
 }
 
+async function runCommandCapture(command: string, args: string[], cwd: string): Promise<{ code: number; stdout: string; stderr: string }> {
+  const { spawn } = await import('node:child_process');
+
+  return await new Promise((resolve, reject) => {
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    const child = spawn(command, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+
+    child.stdout.on('data', (chunk) => {
+      stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    });
+    child.stderr.on('data', (chunk) => {
+      stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      resolve({
+        code: code ?? 1,
+        stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+        stderr: Buffer.concat(stderrChunks).toString('utf8')
+      });
+    });
+  });
+}
+
+async function resolveCheckoutRevision(slotDir: string, revision: string, context: CommandContext): Promise<string> {
+  if (context.dryRun || revision.startsWith('origin/')) {
+    return revision;
+  }
+
+  const candidates = [`origin/${revision}`, revision];
+  for (const candidate of candidates) {
+    const result = await runCommandCapture('git', ['rev-parse', '--verify', '--quiet', `${candidate}^{commit}`], slotDir);
+    if (result.code === 0 && result.stdout.trim().length > 0) {
+      return candidate;
+    }
+  }
+
+  return revision;
+}
+
 function resolveAppCommandTokens(app: AppConfig, slot: Slot, slotDir: string, command: string): string {
   return command
     .replaceAll('__APP_ID__', app.id)
@@ -108,7 +149,8 @@ async function checkoutRevision(app: AppConfig, slot: Slot, revision: string, sk
     await runShell('git fetch --all --tags --prune', slotDir, context);
   }
 
-  await runShell(`git checkout --force ${revision}`, slotDir, context);
+  const resolvedRevision = await resolveCheckoutRevision(slotDir, revision, context);
+  await runShell(`git checkout --force ${resolvedRevision}`, slotDir, context);
   return slotDir;
 }
 
@@ -193,10 +235,56 @@ function httpJsonRequest(url: string, method: 'POST', body: unknown): Promise<{ 
 type JsonPostRequest = typeof httpJsonRequest;
 
 export async function smokeTest(url: string, expectedStatus = 200): Promise<void> {
-  const status = await httpGet(url);
-  if (status !== expectedStatus) {
-    throw new Error(`Smoke test failed for ${url}: expected ${expectedStatus}, got ${status}`);
+  await smokeTestWithRetry(url, expectedStatus);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function smokeTestWithRetry(
+  url: string,
+  expectedStatus = 200,
+  attempts = 10,
+  delayMs = 2_000,
+  log?: (message: string) => void
+): Promise<void> {
+  let lastStatus = 0;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      lastStatus = await httpGet(url);
+      if (lastStatus === expectedStatus) {
+        return;
+      }
+      log?.(`Smoke test attempt ${attempt}/${attempts} for ${url}: expected ${expectedStatus}, got ${lastStatus}`);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      log?.(`Smoke test attempt ${attempt}/${attempts} for ${url} failed: ${message}`);
+    }
+
+    if (attempt < attempts) {
+      await sleep(delayMs);
+    }
   }
+
+  if (lastError) {
+    const message = lastError instanceof Error ? lastError.message : String(lastError);
+    throw new Error(`Smoke test failed for ${url}: ${message}`);
+  }
+
+  throw new Error(`Smoke test failed for ${url}: expected ${expectedStatus}, got ${lastStatus}`);
+}
+
+async function smokeTestSlot(app: AppConfig, slot: Slot, context: CommandContext): Promise<void> {
+  const url = `http://127.0.0.1:${app.slots[slot].port}${app.healthPath}`;
+  if (context.dryRun) {
+    context.log(`[dry-run] smoke test ${url}`);
+    return;
+  }
+  await smokeTestWithRetry(url, 200, 10, 2_000, context.log);
 }
 
 function normalizeBaseUrl(url: string): string {
@@ -369,7 +457,7 @@ export async function deployApp(
   await buildSlot(app, target, slotDir, context);
   await installServiceProfileFiles(config, appId, context);
   await runShell(resolveAppCommandTokens(app, target, slotDir, app.slots[target].startCommand), slotDir, context);
-  await smokeTest(`http://127.0.0.1:${app.slots[target].port}${app.healthPath}`);
+  await smokeTestSlot(app, target, context);
   await syncServiceProfileRuntime(config, appId, context, `http://127.0.0.1:${app.slots[target].port}`);
   await writeActiveUpstream(app, target, context);
   await runShell(config.gateway.nginxReloadCommand, process.cwd(), context);
@@ -385,7 +473,7 @@ export async function rollbackApp(config: GatewayConfig, appId: string, context:
 
   await installServiceProfileFiles(config, appId, context);
   await runShell(resolveAppCommandTokens(app, target, slotDir, app.slots[target].startCommand), slotDir, context);
-  await smokeTest(`http://127.0.0.1:${app.slots[target].port}${app.healthPath}`);
+  await smokeTestSlot(app, target, context);
   await syncServiceProfileRuntime(config, appId, context, `http://127.0.0.1:${app.slots[target].port}`);
   await writeActiveUpstream(app, target, context);
   await runShell(config.gateway.nginxReloadCommand, process.cwd(), context);

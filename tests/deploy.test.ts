@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { installServiceProfileFiles, runServiceProfileAgent, syncServiceProfileRuntime } from '../src/lib/deploy.ts';
+import { createServer } from 'node:http';
+import { installServiceProfileFiles, runServiceProfileAgent, smokeTestWithRetry, syncServiceProfileRuntime } from '../src/lib/deploy.ts';
 import type { GatewayConfig } from '../src/lib/config.ts';
 
 function createConfig(root: string): GatewayConfig {
@@ -166,4 +167,44 @@ test('runServiceProfileAgent posts to the chat-platform agent run endpoint', asy
   assert.equal(result.agentId, 'marvin');
   assert.equal(result.usedProvider, 'lm-studio-a');
   assert.equal(result.content, 'systems nominal');
+});
+
+test('smokeTestWithRetry tolerates startup delays', async (t) => {
+  let attempts = 0;
+  const server = createServer((_, response) => {
+    attempts += 1;
+    response.statusCode = attempts >= 3 ? 200 : 503;
+    response.end(attempts >= 3 ? 'ok' : 'warming');
+  });
+
+  const listenResult = await new Promise<'ok' | NodeJS.ErrnoException>((resolve) => {
+    server.listen(0, '127.0.0.1', () => resolve());
+    server.on('error', (error) => resolve(error));
+  });
+
+  if (listenResult !== 'ok') {
+    if (listenResult.code === 'EPERM') {
+      t.skip('sandbox does not allow binding a local test server');
+      return;
+    }
+    throw listenResult;
+  }
+
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+
+  try {
+    await smokeTestWithRetry(`http://127.0.0.1:${address.port}/health`, 200, 4, 10);
+    assert.equal(attempts, 3);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  }
 });
