@@ -85,13 +85,13 @@
       "slots": {
         "blue": {
           "port": 3301,
-          "startCommand": "HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans",
-          "stopCommand": "HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml down --remove-orphans"
+          "startCommand": "HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env CHAT_API_DATA_DIR=__SHARED__/chat-api-data docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans",
+          "stopCommand": "HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env CHAT_API_DATA_DIR=__SHARED__/chat-api-data docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml down --remove-orphans"
         },
         "green": {
           "port": 3302,
-          "startCommand": "HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans",
-          "stopCommand": "HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml down --remove-orphans"
+          "startCommand": "HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env CHAT_API_DATA_DIR=__SHARED__/chat-api-data docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans",
+          "stopCommand": "HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env CHAT_API_DATA_DIR=__SHARED__/chat-api-data docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml down --remove-orphans"
         }
       }
     }
