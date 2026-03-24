@@ -32,6 +32,7 @@ const config: GatewayConfig = {
       repoUrl: 'git@example/chat-router.git',
       defaultRevision: 'main',
       deployRoot: '/srv/apps/chat-router',
+      hostnames: ['chat.gateway.example.test'],
       routePath: '/chat/',
       healthPath: '/health',
       upstreamConfPath: '/etc/nginx/conf.d/upstreams/chat-router-active.conf',

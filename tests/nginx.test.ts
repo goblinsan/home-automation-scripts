@@ -32,6 +32,7 @@ const config: GatewayConfig = {
       repoUrl: 'git@example/chat-router.git',
       defaultRevision: 'main',
       deployRoot: '/srv/apps/chat-router',
+      hostnames: ['chat.gateway.example.test'],
       routePath: '/chat/',
       stripRoutePrefix: true,
       healthPath: '/health',
@@ -88,6 +89,15 @@ test('renderGatewaySite includes admin ui route when enabled', () => {
   assert.match(output, /proxy_set_header X-Forwarded-Prefix \/admin\//);
 });
 
+test('renderGatewaySite includes dedicated hostname blocks for apps', () => {
+  const output = renderGatewaySite(config);
+  assert.match(output, /server_name chat\.gateway.example.test;/);
+  assert.match(output, /client_header_buffer_size 16k;/);
+  assert.match(output, /large_client_header_buffers 4 32k;/);
+  assert.match(output, /location \/ \{/);
+  assert.match(output, /proxy_pass http:\/\/chat-router_active;/);
+});
+
 test('renderActiveUpstream renders selected slot port', () => {
   const output = renderActiveUpstream(config.apps[0], 'green');
   assert.match(output, /127\.0\.0\.1:3002/);
@@ -104,6 +114,7 @@ test('renderGatewaySite skips disabled apps', () => {
         repoUrl: 'git@example/disabled-app.git',
         defaultRevision: 'main',
         deployRoot: '/srv/apps/disabled-app',
+        hostnames: ['disabled.gateway.example.test'],
         routePath: '/disabled/',
         stripRoutePrefix: false,
         healthPath: '/health',

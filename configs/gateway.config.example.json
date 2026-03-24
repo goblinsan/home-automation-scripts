@@ -29,6 +29,9 @@
       "repoUrl": "git@github.com:goblinsan/gateway-control-plane.git",
       "defaultRevision": "main",
       "deployRoot": "/srv/apps/gateway-control-plane",
+      "hostnames": [
+        "admin.gateway.example.test"
+      ],
       "routePath": "/admin/",
       "stripRoutePrefix": true,
       "healthPath": "/healthz",
@@ -53,6 +56,9 @@
       "repoUrl": "git@github.com:goblinsan/gateway-api.git",
       "defaultRevision": "main",
       "deployRoot": "/srv/apps/gateway-api",
+      "hostnames": [
+        "api.gateway.example.test"
+      ],
       "routePath": "/api/",
       "stripRoutePrefix": false,
       "healthPath": "/health",
@@ -77,9 +83,12 @@
       "repoUrl": "git@github.com:goblinsan/gateway-chat-platform.git",
       "defaultRevision": "main",
       "deployRoot": "/srv/apps/gateway-chat-platform",
+      "hostnames": [
+        "chat.gateway.example.test"
+      ],
       "routePath": "/chat/",
       "stripRoutePrefix": true,
-      "healthPath": "/api/ready",
+      "healthPath": "/api/agents",
       "upstreamConfPath": "/etc/nginx/conf.d/upstreams/gateway-chat-platform-active.conf",
       "buildCommands": [],
       "slots": {

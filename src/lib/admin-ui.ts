@@ -1447,6 +1447,7 @@ function htmlPage(basePath: string): string {
             <label>Repo URL<input data-field="repoUrl" value="\${app.repoUrl}" /></label>
             <label>Default Revision<input data-field="defaultRevision" value="\${app.defaultRevision}" /></label>
             <label>Deploy Root<input data-field="deployRoot" value="\${app.deployRoot}" /></label>
+            <label>Hostnames (comma separated)<input data-field="hostnames" value="\${(app.hostnames || []).join(', ')}" /></label>
             <label>Route Path<input data-field="routePath" value="\${app.routePath}" /></label>
             <label>Health Path<input data-field="healthPath" value="\${app.healthPath}" /></label>
             <label>Upstream Conf Path<input data-field="upstreamConfPath" value="\${app.upstreamConfPath}" /></label>
@@ -1476,6 +1477,8 @@ function htmlPage(basePath: string): string {
               state.config.apps[index].slots[slot][field] = field === 'port' ? Number(input.value) : input.value;
             } else if (field === 'enabled') {
               state.config.apps[index].enabled = input.checked;
+            } else if (field === 'hostnames') {
+              state.config.apps[index].hostnames = input.value.split(',').map((item) => item.trim()).filter(Boolean);
             } else if (field === 'buildCommands') {
               state.config.apps[index].buildCommands = input.value.split('\\n').map((item) => item.trim()).filter(Boolean);
             } else {
@@ -1866,6 +1869,7 @@ function htmlPage(basePath: string): string {
         repoUrl: '',
         defaultRevision: 'main',
         deployRoot: '',
+        hostnames: [],
         routePath: '/',
         healthPath: '/health',
         upstreamConfPath: '',

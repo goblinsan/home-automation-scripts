@@ -137,7 +137,15 @@ npm run ui
 Then open `http://127.0.0.1:4173`.
 
 For the intended gateway-host model, treat the control plane as a normal
-blue/green app at `/admin/`. Keep `gateway.adminUi.enabled` disabled unless you
+blue/green app. The cleanest setup is dedicated hostnames per app, for example:
+
+- `admin.gateway.example.test`
+- `api.gateway.example.test`
+- `chat.gateway.example.test`
+
+The example config keeps the older path routes as a fallback (`/admin/`,
+`/api/`, `/chat/`), but separate hostnames avoid cookie collisions between the
+admin UI and chat UI. Keep `gateway.adminUi.enabled` disabled unless you
 explicitly want the legacy singleton systemd service for development or rescue
 access.
 

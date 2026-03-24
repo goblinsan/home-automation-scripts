@@ -32,6 +32,7 @@ test('parseGatewayConfig accepts the example shape', () => {
         repoUrl: 'git@github.com:example/chat-router.git',
         defaultRevision: 'main',
         deployRoot: '/srv/apps/chat-router',
+        hostnames: ['chat.gateway.example.test'],
         routePath: '/chat/',
         healthPath: '/health',
         upstreamConfPath: '/etc/nginx/conf.d/upstreams/chat-router-active.conf',
@@ -112,6 +113,7 @@ test('parseGatewayConfig accepts the example shape', () => {
   });
 
   assert.equal(config.apps[0].id, 'chat-router');
+  assert.deepEqual(config.apps[0].hostnames, ['chat.gateway.example.test']);
   assert.equal(config.scheduledJobs[0].appId, 'chat-router');
   assert.equal(config.features[0].id, 'chat-router-public-route');
   assert.equal(config.gateway.adminUi.routePath, '/admin/');
@@ -160,6 +162,7 @@ test('parseGatewayConfig defaults enabled flags when omitted', () => {
   });
 
   assert.equal(config.apps[0].enabled, true);
+  assert.deepEqual(config.apps[0].hostnames, []);
   assert.equal(config.scheduledJobs[0].enabled, true);
   assert.deepEqual(config.features, []);
   assert.equal(config.gateway.adminUi.enabled, false);

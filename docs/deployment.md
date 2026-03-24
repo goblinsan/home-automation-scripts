@@ -12,6 +12,15 @@ Each app is deployed into `/srv/apps/<app>/blue` or `/srv/apps/<app>/green`,
 started through the slot's configured `docker compose` command, smoke-tested on
 its slot port, and then promoted by switching the generated nginx upstream.
 
+The generated nginx config supports both:
+
+- a shared gateway host with path routes like `/admin/`, `/api/`, and `/chat/`
+- dedicated app hostnames like `admin.gateway.example.test`, `api.gateway.example.test`, and
+  `chat.gateway.example.test`
+
+Dedicated hostnames are the preferred browser-facing setup because they avoid
+shared cookies across the admin and chat UIs.
+
 ## Deploy
 
 ```bash

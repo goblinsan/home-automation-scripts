@@ -18,7 +18,11 @@ Install a GitHub Actions self-hosted runner on the gateway and label it:
 - `self-hosted`
 - `gateway`
 
-That runner needs Docker, nginx, Node 24, and access to:
+If your GitHub plan does not allow an org-level runner, install one repo-level
+runner per repo with the same `gateway` label. The workflows still use the same
+`runs-on: [self-hosted, gateway]` matcher.
+
+Each runner needs Docker, nginx, Node 24, and access to:
 
 - `/opt/gateway-control-plane`
 - `/opt/gateway-api`

@@ -97,11 +97,20 @@ service path still exists:
 deploy/bin/install-control-plane-service.sh --config configs/gateway.config.json
 ```
 
-But once Docker blue/green is in place, the preferred deploy flow is:
+But once Docker blue/green is in place, the preferred deploy flow is separate
+hostnames per app, for example:
 
-- `gateway-control-plane` at `/admin/`
-- `gateway-api` at `/api/`
-- `gateway-chat-platform` at `/chat/`
+- `admin.gateway.example.test`
+- `api.gateway.example.test`
+- `chat.gateway.example.test`
 
-all promoted by nginx upstream switching rather than by restarting singleton
+The generated nginx config still supports the shared fallback paths:
+
+- `/admin/`
+- `/api/`
+- `/chat/`
+
+but separate hostnames are cleaner for browser clients because they avoid
+sharing the same cookie jar across the admin and chat UIs. All three are still
+promoted by nginx upstream switching rather than by restarting singleton
 processes on fixed ports.

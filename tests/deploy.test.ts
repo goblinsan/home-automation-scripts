@@ -37,6 +37,7 @@ function createConfig(root: string): GatewayConfig {
         repoUrl: 'git@example/gateway-api.git',
         defaultRevision: 'main',
         deployRoot: '/srv/apps/gateway-api',
+        hostnames: ['api.gateway.example.test'],
         routePath: '/api/',
         healthPath: '/health',
         upstreamConfPath: '/etc/nginx/conf.d/upstreams/gateway-api-active.conf',
@@ -52,8 +53,9 @@ function createConfig(root: string): GatewayConfig {
         repoUrl: 'git@example/gateway-chat-platform.git',
         defaultRevision: 'main',
         deployRoot: '/srv/apps/gateway-chat-platform',
+        hostnames: ['chat.gateway.example.test'],
         routePath: '/chat/',
-        healthPath: '/api/health',
+        healthPath: '/api/agents',
         upstreamConfPath: '/etc/nginx/conf.d/upstreams/gateway-chat-platform-active.conf',
         buildCommands: ['pnpm install'],
         slots: {
