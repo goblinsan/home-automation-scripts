@@ -10,7 +10,7 @@
     "systemdReloadCommand": "sudo systemctl daemon-reload",
     "systemdEnableTimerCommand": "sudo systemctl enable --now",
     "adminUi": {
-      "enabled": true,
+      "enabled": false,
       "host": "127.0.0.1",
       "port": 4173,
       "routePath": "/admin/",
@@ -24,6 +24,29 @@
   },
   "apps": [
     {
+      "id": "gateway-control-plane",
+      "enabled": true,
+      "repoUrl": "git@github.com:goblinsan/gateway-control-plane.git",
+      "defaultRevision": "main",
+      "deployRoot": "/srv/apps/gateway-control-plane",
+      "routePath": "/admin/",
+      "healthPath": "/healthz",
+      "upstreamConfPath": "/etc/nginx/conf.d/upstreams/gateway-control-plane-active.conf",
+      "buildCommands": [],
+      "slots": {
+        "blue": {
+          "port": 4173,
+          "startCommand": "HOST_PORT=__SLOT_PORT__ GATEWAY_CONFIG_PATH=/opt/gateway-control-plane/configs/gateway.config.json GATEWAY_BUILD_OUT_DIR=/opt/gateway-control-plane/generated docker compose --project-name gateway-control-plane-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans",
+          "stopCommand": "HOST_PORT=__SLOT_PORT__ GATEWAY_CONFIG_PATH=/opt/gateway-control-plane/configs/gateway.config.json GATEWAY_BUILD_OUT_DIR=/opt/gateway-control-plane/generated docker compose --project-name gateway-control-plane-__SLOT__ -f docker-compose.yml down --remove-orphans"
+        },
+        "green": {
+          "port": 4174,
+          "startCommand": "HOST_PORT=__SLOT_PORT__ GATEWAY_CONFIG_PATH=/opt/gateway-control-plane/configs/gateway.config.json GATEWAY_BUILD_OUT_DIR=/opt/gateway-control-plane/generated docker compose --project-name gateway-control-plane-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans",
+          "stopCommand": "HOST_PORT=__SLOT_PORT__ GATEWAY_CONFIG_PATH=/opt/gateway-control-plane/configs/gateway.config.json GATEWAY_BUILD_OUT_DIR=/opt/gateway-control-plane/generated docker compose --project-name gateway-control-plane-__SLOT__ -f docker-compose.yml down --remove-orphans"
+        }
+      }
+    },
+    {
       "id": "gateway-api",
       "enabled": true,
       "repoUrl": "git@github.com:goblinsan/gateway-api.git",
@@ -32,20 +55,17 @@
       "routePath": "/api/",
       "healthPath": "/health",
       "upstreamConfPath": "/etc/nginx/conf.d/upstreams/gateway-api-active.conf",
-      "buildCommands": [
-        "npm install",
-        "npm run build"
-      ],
+      "buildCommands": [],
       "slots": {
         "blue": {
           "port": 3201,
-          "startCommand": "sudo systemctl restart gateway-api-blue.service",
-          "stopCommand": "sudo systemctl stop gateway-api-blue.service"
+          "startCommand": "HOST_PORT=__SLOT_PORT__ APP_ENV_FILE=__SHARED__/gateway-api.env docker compose --project-name gateway-api-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans",
+          "stopCommand": "HOST_PORT=__SLOT_PORT__ APP_ENV_FILE=__SHARED__/gateway-api.env docker compose --project-name gateway-api-__SLOT__ -f docker-compose.yml down --remove-orphans"
         },
         "green": {
           "port": 3202,
-          "startCommand": "sudo systemctl restart gateway-api-green.service",
-          "stopCommand": "sudo systemctl stop gateway-api-green.service"
+          "startCommand": "HOST_PORT=__SLOT_PORT__ APP_ENV_FILE=__SHARED__/gateway-api.env docker compose --project-name gateway-api-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans",
+          "stopCommand": "HOST_PORT=__SLOT_PORT__ APP_ENV_FILE=__SHARED__/gateway-api.env docker compose --project-name gateway-api-__SLOT__ -f docker-compose.yml down --remove-orphans"
         }
       }
     },
@@ -58,20 +78,17 @@
       "routePath": "/chat/",
       "healthPath": "/api/health",
       "upstreamConfPath": "/etc/nginx/conf.d/upstreams/gateway-chat-platform-active.conf",
-      "buildCommands": [
-        "pnpm install --frozen-lockfile",
-        "pnpm build"
-      ],
+      "buildCommands": [],
       "slots": {
         "blue": {
           "port": 3301,
-          "startCommand": "sudo systemctl restart gateway-chat-platform-blue.service",
-          "stopCommand": "sudo systemctl stop gateway-chat-platform-blue.service"
+          "startCommand": "HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans",
+          "stopCommand": "HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml down --remove-orphans"
         },
         "green": {
           "port": 3302,
-          "startCommand": "sudo systemctl restart gateway-chat-platform-green.service",
-          "stopCommand": "sudo systemctl stop gateway-chat-platform-green.service"
+          "startCommand": "HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans",
+          "stopCommand": "HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml down --remove-orphans"
         }
       }
     }
@@ -93,7 +110,7 @@
     "gatewayApi": {
       "enabled": true,
       "appId": "gateway-api",
-      "apiBaseUrl": "http://127.0.0.1:3000",
+      "apiBaseUrl": "http://127.0.0.1:3200",
       "envFilePath": "/srv/apps/gateway-api/shared/gateway-api.env",
       "environment": [
         {
@@ -173,8 +190,8 @@
       ],
       "tts": {
         "enabled": true,
-        "baseUrl": "http://198.51.100.111:5000",
-        "defaultVoice": "assistant_v1",
+        "baseUrl": "http://198.51.100.172:5000",
+        "defaultVoice": "Alan Marvin",
         "generatePath": "/tts",
         "streamPath": "/tts/stream",
         "voicesPath": "/voices",
@@ -212,7 +229,7 @@
             "modelParams": {
               "chatTemplate": "llama3",
               "top_p": 0.9,
-              "ttsVoiceId": "assistant_v1"
+              "ttsVoiceId": "Alan Marvin"
             }
           },
           "contextSources": []

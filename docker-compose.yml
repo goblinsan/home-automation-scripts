@@ -1,0 +1,11 @@
+services:
+  gateway-control-plane:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-4173}:4173"
+    volumes:
+      - "${GATEWAY_CONFIG_PATH:-./configs/gateway.config.json}:/config/gateway.config.json:ro"
+      - "${GATEWAY_BUILD_OUT_DIR:-./generated}:/data/generated"

@@ -26,6 +26,7 @@ The repo is aligned to the plans in `plans/`:
 
 The current first-class managed apps are:
 
+- `gateway-control-plane`
 - `gateway-api`
 - `gateway-chat-platform`
 
@@ -43,6 +44,8 @@ The intended stable checkout path on the gateway host is:
 .
 ├── configs/
 │   └── gateway.config.example.json
+├── Dockerfile
+├── docker-compose.yml
 ├── deploy/
 │   └── bin/
 │       ├── deploy-app.sh
@@ -93,12 +96,19 @@ node src/cli.ts run-agent --config configs/gateway.config.json --app gateway-cha
 - `generated/nginx/upstreams/<app>-green.conf`
 - `generated/systemd/jobs/*.service`
 - `generated/systemd/jobs/*.timer`
-- `generated/systemd/control-plane/*.service`
 - `generated/services/gateway-api/gateway-api.env`
 - `generated/services/gateway-chat-platform/chat-api.env`
 - `generated/services/gateway-chat-platform/agents.json`
 
 These are generated from `configs/gateway.config.example.json`.
+
+The control plane itself is also containerized in this repo:
+
+- [`Dockerfile`](/Users/jamescoghlan/code/home-automation-scripts/Dockerfile)
+- [`docker-compose.yml`](/Users/jamescoghlan/code/home-automation-scripts/docker-compose.yml)
+
+That lets `gateway-control-plane` participate in the same blue/green
+deployment flow as the other managed apps.
 
 ## Admin UI
 
@@ -126,9 +136,23 @@ npm run ui
 
 Then open `http://127.0.0.1:4173`.
 
-For the intended gateway-host model, enable `gateway.adminUi` in the config,
-build artifacts, install the generated `gateway-control-plane.service`, and
-route it through nginx at the configured `routePath` such as `/admin/`.
+For the intended gateway-host model, treat the control plane as a normal
+blue/green app at `/admin/`. Keep `gateway.adminUi.enabled` disabled unless you
+explicitly want the legacy singleton systemd service for development or rescue
+access.
+
+Each managed repo should deploy itself by invoking the control plane on the
+gateway host. The intended GitHub Actions command shape is:
+
+```bash
+/opt/gateway-control-plane/deploy/bin/deploy-app.sh --config /opt/gateway-control-plane/configs/gateway.config.json --app <app-id> --revision "${GITHUB_SHA}"
+```
+
+The three app ids are:
+
+- `gateway-control-plane`
+- `gateway-api`
+- `gateway-chat-platform`
 
 ## Next Host Setup
 

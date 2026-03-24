@@ -2,14 +2,20 @@
 
 This repo provides generic blue/green deployment wrappers in `deploy/bin/`.
 
-It also manages the gateway control plane itself through a generated systemd
-unit for the admin UI, plus service-specific artifacts for `gateway-api` and
-`gateway-chat-platform`.
+It also defines the Docker/Compose deployment model for the three gateway apps:
+
+- `gateway-control-plane`
+- `gateway-api`
+- `gateway-chat-platform`
+
+Each app is deployed into `/srv/apps/<app>/blue` or `/srv/apps/<app>/green`,
+started through the slot's configured `docker compose` command, smoke-tested on
+its slot port, and then promoted by switching the generated nginx upstream.
 
 ## Deploy
 
 ```bash
-deploy/bin/deploy-app.sh --config configs/gateway.config.json --app chat-router --revision <sha>
+deploy/bin/deploy-app.sh --config /opt/gateway-control-plane/configs/gateway.config.json --app gateway-control-plane --revision <sha>
 ```
 
 What it does:
@@ -30,7 +36,7 @@ What it does:
 ## Rollback
 
 ```bash
-deploy/bin/rollback-app.sh --config configs/gateway.config.json --app chat-router
+deploy/bin/rollback-app.sh --config /opt/gateway-control-plane/configs/gateway.config.json --app gateway-chat-platform
 ```
 
 Rollback flips traffic back to the opposite slot and repoints `current`.
@@ -38,30 +44,43 @@ Rollback flips traffic back to the opposite slot and repoints `current`.
 ## Smoke Test
 
 ```bash
-deploy/bin/smoke-test-app.sh http://127.0.0.1:3001/health
+deploy/bin/smoke-test-app.sh http://127.0.0.1:3301/api/health
 ```
 
 ## Scheduled Jobs
 
 ```bash
-deploy/bin/install-scheduled-jobs.sh --config configs/gateway.config.json --app chat-router
+deploy/bin/install-scheduled-jobs.sh --config /opt/gateway-control-plane/configs/gateway.config.json --app gateway-api
 ```
 
-## Control-Plane Service
+## Docker Slot Commands
 
-Build output includes a generated admin UI unit:
+The example config now models every app as a Docker Compose project with
+slot-tokenized commands such as:
 
-- `generated/systemd/control-plane/gateway-control-plane.service`
+- `HOST_PORT=__SLOT_PORT__ ... docker compose --project-name gateway-api-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans`
+- `HOST_PORT=__SLOT_PORT__ ... docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans`
+- `HOST_PORT=__SLOT_PORT__ ... docker compose --project-name gateway-control-plane-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans`
 
-Install it on the gateway with:
+`deploy-app` resolves these tokens per slot:
 
-```bash
-deploy/bin/install-control-plane-service.sh --config configs/gateway.config.json
-```
+- `__APP_ID__`
+- `__SLOT__`
+- `__SLOT_DIR__`
+- `__SLOT_PORT__`
+- `__DEPLOY_ROOT__`
+- `__CURRENT__`
+- `__SHARED__`
+- `__HEALTH_PATH__`
 
-That installs the unit described by `gateway.adminUi`, reloads systemd, and
-enables the service. The nginx site renderer also adds an admin route such as
-`/admin/` when `gateway.adminUi.enabled` is true.
+That is what lets a single config file drive blue/green deployments across all
+three repos without hardcoding slot paths into the deploy engine.
+
+## Legacy Control-Plane Service
+
+The generated singleton `gateway-control-plane.service` still exists as an
+optional legacy path for development or rescue access. It is not the preferred
+production model once the control plane is deployed as a blue/green Docker app.
 
 ## Service Artifacts
 
@@ -117,7 +136,7 @@ configured `serviceProfiles.gatewayApi.apiBaseUrl`.
 To seed migrated workflows into `gateway-api`:
 
 ```bash
-deploy/bin/import-workflow-seed.sh --base-url http://127.0.0.1:3000
+deploy/bin/import-workflow-seed.sh --base-url http://127.0.0.1:3200
 ```
 
 The admin UI exposes the same live operations:
@@ -126,3 +145,18 @@ The admin UI exposes the same live operations:
 - sync configured chat agents into `gateway-chat-platform`
 - run Bruvie-D or any configured agent through `/api/agents/:id/run`
 - configure and probe the external `local-tts-service`
+
+## Per-Repo Auto Deploy
+
+The intended automation model is:
+
+- this repo deploys `gateway-control-plane`
+- the `gateway-api` repo deploys `gateway-api`
+- the `gateway-chat-platform` repo deploys `gateway-chat-platform`
+
+Each workflow should run on the gateway self-hosted runner and call the live
+control-plane checkout on the host:
+
+```bash
+/opt/gateway-control-plane/deploy/bin/deploy-app.sh --config /opt/gateway-control-plane/configs/gateway.config.json --app <app-id> --revision "${GITHUB_SHA}"
+```

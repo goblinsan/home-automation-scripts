@@ -21,5 +21,4 @@ jobs:
           node-version: '24'
       - run: npm ci
       - run: npm run build
-      - run: deploy/bin/deploy-app.sh --config configs/gateway.config.json --app chat-router --revision "${GITHUB_SHA}"
-
+      - run: deploy/bin/deploy-app.sh --config /opt/gateway-control-plane/configs/gateway.config.json --app gateway-control-plane --revision "${GITHUB_SHA}"

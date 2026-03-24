@@ -12,6 +12,7 @@ Install these on the gateway host:
 - `jq`
 - `nginx`
 - `docker.io`
+- `docker-compose-plugin`
 - `nodejs`
 - `npm`
 
@@ -69,16 +70,38 @@ node src/cli.ts serve-ui --config configs/gateway.config.json --host 0.0.0.0 --p
 
 and browse to `http://<gateway-lan-ip>:4173`.
 
-For the intended managed setup, keep `gateway.adminUi.enabled` set in
-`configs/gateway.config.json`, then install the control-plane service:
+For the intended managed setup, clone the companion app repos into stable host
+paths as well:
+
+```bash
+sudo git clone https://github.com/goblinsan/gateway-api.git /opt/gateway-api
+sudo git clone https://github.com/goblinsan/gateway-chat-platform.git /opt/gateway-chat-platform
+sudo chown -R "$USER":"$(id -gn)" /opt/gateway-api /opt/gateway-chat-platform
+```
+
+Then install and enable the real host prerequisites for Docker deployments:
+
+```bash
+sudo systemctl enable --now docker
+sudo systemctl enable --now nginx
+```
+
+The intended production model is to keep `gateway.adminUi.enabled` disabled and
+deploy `gateway-control-plane` itself through the same blue/green Docker flow as
+the other apps.
+
+If you need a temporary singleton admin UI during bootstrap, the legacy systemd
+service path still exists:
 
 ```bash
 deploy/bin/install-control-plane-service.sh --config configs/gateway.config.json
 ```
 
-That installs the configured control-plane service unit into the configured
-systemd unit directory and enables it with the configured systemd enable
-command.
+But once Docker blue/green is in place, the preferred deploy flow is:
 
-After that, install the generated nginx site and reload nginx so the control
-plane is reachable at the configured route path such as `/admin/`.
+- `gateway-control-plane` at `/admin/`
+- `gateway-api` at `/api/`
+- `gateway-chat-platform` at `/chat/`
+
+all promoted by nginx upstream switching rather than by restarting singleton
+processes on fixed ports.

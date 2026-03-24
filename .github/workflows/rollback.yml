@@ -6,7 +6,7 @@ on:
       app:
         description: App id
         required: true
-        default: chat-router
+        default: gateway-control-plane
 
 jobs:
   rollback:
@@ -19,4 +19,4 @@ jobs:
         with:
           node-version: '24'
       - run: npm ci
-      - run: deploy/bin/rollback-app.sh --config configs/gateway.config.json --app "${{ inputs.app }}"
+      - run: deploy/bin/rollback-app.sh --config /opt/gateway-control-plane/configs/gateway.config.json --app "${{ inputs.app }}"

@@ -60,6 +60,18 @@ async function runShell(command: string, cwd: string, context: CommandContext): 
   });
 }
 
+function resolveAppCommandTokens(app: AppConfig, slot: Slot, slotDir: string, command: string): string {
+  return command
+    .replaceAll('__APP_ID__', app.id)
+    .replaceAll('__SLOT__', slot)
+    .replaceAll('__SLOT_DIR__', slotDir)
+    .replaceAll('__SLOT_PORT__', String(app.slots[slot].port))
+    .replaceAll('__DEPLOY_ROOT__', app.deployRoot)
+    .replaceAll('__CURRENT__', join(app.deployRoot, 'current'))
+    .replaceAll('__SHARED__', join(app.deployRoot, 'shared'))
+    .replaceAll('__HEALTH_PATH__', app.healthPath);
+}
+
 async function ensureDirectory(path: string, context: CommandContext): Promise<void> {
   context.log(`${context.dryRun ? '[dry-run] ' : ''}mkdir -p ${path}`);
   if (!context.dryRun) {
@@ -100,9 +112,9 @@ async function checkoutRevision(app: AppConfig, slot: Slot, revision: string, sk
   return slotDir;
 }
 
-async function buildSlot(app: AppConfig, slotDir: string, context: CommandContext): Promise<void> {
+async function buildSlot(app: AppConfig, slot: Slot, slotDir: string, context: CommandContext): Promise<void> {
   for (const command of app.buildCommands) {
-    await runShell(command, slotDir, context);
+    await runShell(resolveAppCommandTokens(app, slot, slotDir, command), slotDir, context);
   }
 }
 
@@ -354,9 +366,9 @@ export async function deployApp(
   const revisionToUse = revision ?? app.defaultRevision;
   const slotDir = await checkoutRevision(app, target, revisionToUse, skipFetch, context);
 
-  await buildSlot(app, slotDir, context);
+  await buildSlot(app, target, slotDir, context);
   await installServiceProfileFiles(config, appId, context);
-  await runShell(app.slots[target].startCommand, slotDir, context);
+  await runShell(resolveAppCommandTokens(app, target, slotDir, app.slots[target].startCommand), slotDir, context);
   await smokeTest(`http://127.0.0.1:${app.slots[target].port}${app.healthPath}`);
   await syncServiceProfileRuntime(config, appId, context, `http://127.0.0.1:${app.slots[target].port}`);
   await writeActiveUpstream(app, target, context);
@@ -369,9 +381,10 @@ export async function rollbackApp(config: GatewayConfig, appId: string, context:
   const app = getApp(config, appId);
   const current = await readCurrentSlot(app);
   const target = oppositeSlot(current);
+  const slotDir = join(app.deployRoot, target);
 
   await installServiceProfileFiles(config, appId, context);
-  await runShell(app.slots[target].startCommand, join(app.deployRoot, target), context);
+  await runShell(resolveAppCommandTokens(app, target, slotDir, app.slots[target].startCommand), slotDir, context);
   await smokeTest(`http://127.0.0.1:${app.slots[target].port}${app.healthPath}`);
   await syncServiceProfileRuntime(config, appId, context, `http://127.0.0.1:${app.slots[target].port}`);
   await writeActiveUpstream(app, target, context);
