@@ -211,34 +211,39 @@ function htmlPage(basePath: string): string {
   <style>
     :root {
       color-scheme: light;
-      --bg: #f3efe6;
-      --panel: #fffdf9;
-      --line: #d2c7b8;
-      --text: #1f1b16;
-      --muted: #6b6257;
-      --accent: #9d4b22;
-      --accent-soft: #f2d7c9;
-      --danger: #8f2d2d;
+      --bg: #edf2f2;
+      --panel: #ffffff;
+      --line: #d8e2e3;
+      --text: #1e2740;
+      --muted: #6b7890;
+      --accent: #0c788e;
+      --accent-soft: rgba(12, 120, 142, 0.12);
+      --sidebar: #25544b;
+      --sidebar-soft: rgba(255, 255, 255, 0.14);
+      --highlight: #f5b100;
+      --danger: #9b3131;
       --ok: #1f6b43;
-      --shadow: rgba(71, 44, 18, 0.08);
+      --shadow: rgba(30, 39, 64, 0.08);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-      background: linear-gradient(180deg, #efe5d6 0%, var(--bg) 100%);
+      font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #f4f6f7 0%, var(--bg) 100%);
       color: var(--text);
     }
     header {
       padding: 24px 28px 12px;
-      border-bottom: 1px solid rgba(31, 27, 22, 0.08);
+      border-bottom: 1px solid rgba(30, 39, 64, 0.08);
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(10px);
     }
     h1, h2, h3 { margin: 0 0 10px; font-weight: 600; }
     p { margin: 0 0 10px; color: var(--muted); }
     main {
       display: grid;
-      grid-template-columns: minmax(0, 1.35fr) minmax(330px, 0.9fr);
-      gap: 18px;
+      grid-template-columns: 290px minmax(0, 1fr);
+      gap: 20px;
       padding: 20px 24px 28px;
       align-items: start;
     }
@@ -249,6 +254,9 @@ function htmlPage(basePath: string): string {
       padding: 18px;
       box-shadow: 0 16px 40px var(--shadow);
     }
+    .editor-panel {
+      order: 2;
+    }
     .toolbar {
       display: flex;
       gap: 10px;
@@ -256,7 +264,7 @@ function htmlPage(basePath: string): string {
       margin-top: 14px;
     }
     button {
-      border: 1px solid var(--text);
+      border: 1px solid rgba(30, 39, 64, 0.12);
       background: var(--panel);
       color: var(--text);
       border-radius: 999px;
@@ -267,7 +275,7 @@ function htmlPage(basePath: string): string {
     button.primary {
       background: var(--accent);
       border-color: var(--accent);
-      color: #fff8f1;
+      color: #fff;
     }
     button.danger {
       border-color: var(--danger);
@@ -282,7 +290,7 @@ function htmlPage(basePath: string): string {
       border: 1px solid var(--line);
       border-radius: 16px;
       padding: 14px;
-      background: #fffaf3;
+      background: #fbfdfd;
     }
     .row {
       display: grid;
@@ -337,10 +345,48 @@ function htmlPage(basePath: string): string {
     .status-ok { color: var(--ok); }
     .status-error { color: var(--danger); }
     .aside-stack {
+      order: 1;
       display: grid;
       gap: 18px;
       position: sticky;
       top: 18px;
+    }
+    .nav-card {
+      background: linear-gradient(180deg, var(--sidebar) 0%, #214c44 100%);
+      color: #f3f7f5;
+      border-color: rgba(255, 255, 255, 0.08);
+      min-height: 320px;
+    }
+    .nav-card p,
+    .nav-card h2 {
+      color: inherit;
+    }
+    .nav-card p {
+      opacity: 0.76;
+    }
+    .tab-nav {
+      display: grid;
+      gap: 10px;
+      margin-top: 22px;
+    }
+    .tab-button {
+      width: 100%;
+      text-align: left;
+      border: 0;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.82);
+      border-radius: 16px;
+      padding: 14px 16px;
+      font: inherit;
+      font-size: 16px;
+    }
+    .tab-button:hover,
+    .tab-button.active {
+      background: var(--sidebar-soft);
+      color: white;
+    }
+    .tab-panel[hidden] {
+      display: none !important;
     }
     .split-actions {
       display: flex;
@@ -359,11 +405,25 @@ function htmlPage(basePath: string): string {
       border: 1px solid var(--line);
       border-radius: 14px;
       padding: 12px;
-      background: #fffbf4;
+      background: white;
+      position: relative;
+      overflow: hidden;
+    }
+    .metric::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 5px;
+      background: linear-gradient(90deg, #1f5f56 0%, var(--accent) 100%);
+    }
+    .metric:nth-child(3n)::before {
+      background: linear-gradient(90deg, var(--highlight) 0%, #ffce45 100%);
     }
     .metric strong {
       display: block;
-      font-size: 22px;
+      font-size: 30px;
       margin-bottom: 4px;
     }
     .meta-list {
@@ -382,13 +442,14 @@ function htmlPage(basePath: string): string {
     @media (max-width: 980px) {
       main { grid-template-columns: 1fr; }
       .aside-stack { position: static; }
+      .editor-panel { order: 2; }
     }
   </style>
 </head>
 <body>
   <header>
     <h1>Gateway Config Admin</h1>
-    <p>Edit the control-plane config, scheduled job timings, and feature flags. Save writes the JSON file used by deployment automation.</p>
+    <p>Configure gateway services, agents, workflows, and deployment state from one control surface.</p>
     <div class="toolbar">
       <button id="reloadButton">Reload</button>
       <button id="validateButton">Validate</button>
@@ -399,14 +460,15 @@ function htmlPage(basePath: string): string {
     <div id="status"></div>
   </header>
   <main>
-    <section class="panel">
+    <section class="panel editor-panel">
       <div class="split-actions">
         <div>
-          <h2>Structured Editor</h2>
-          <p>Updates are kept in-memory until you save.</p>
+          <h2>Config Workspace</h2>
+          <p>Use the left navigation to focus one config area at a time. Changes stay in memory until you save.</p>
         </div>
       </div>
 
+      <div class="tab-panel" data-tab-panel="gateway">
       <div class="card">
         <span class="pill">Gateway</span>
         <div class="row">
@@ -471,6 +533,9 @@ function htmlPage(basePath: string): string {
         </div>
       </div>
 
+      </div>
+
+      <div class="tab-panel" data-tab-panel="services" hidden>
       <div class="card">
         <div class="split-actions">
           <div>
@@ -502,7 +567,6 @@ function htmlPage(basePath: string): string {
           </div>
           <div class="toolbar">
             <button id="addGatewayChatEnvButton">Add Env Var</button>
-            <button id="addGatewayChatAgentButton">Add Agent</button>
           </div>
         </div>
         <div class="row">
@@ -588,13 +652,29 @@ function htmlPage(basePath: string): string {
               </label>
             </div>
           </div>
-          <div>
-            <p>Agents</p>
-            <div id="gatewayChatAgentsContainer" class="section-list"></div>
-          </div>
         </div>
       </div>
 
+      </div>
+
+      <div class="tab-panel" data-tab-panel="agents" hidden>
+      <div class="card">
+        <div class="split-actions">
+          <div>
+            <span class="pill">Agents</span>
+            <h3>Configured Chat Agents</h3>
+            <p>Only these agents are synced into <code>gateway-chat-platform</code>.</p>
+          </div>
+          <div class="toolbar">
+            <button id="addGatewayChatAgentButton">Add Agent</button>
+            <button id="syncGatewayChatAgentsButtonSecondary">Sync Agents</button>
+          </div>
+        </div>
+        <div id="gatewayChatAgentsContainer" class="section-list"></div>
+      </div>
+      </div>
+
+      <div class="tab-panel" data-tab-panel="workflows" hidden>
       <div class="card">
         <div class="split-actions">
           <div>
@@ -608,7 +688,9 @@ function htmlPage(basePath: string): string {
         </div>
         <div id="workflowsContainer" class="section-list"></div>
       </div>
+      </div>
 
+      <div class="tab-panel" data-tab-panel="overview">
       <div class="card">
         <div class="split-actions">
           <div>
@@ -644,7 +726,9 @@ function htmlPage(basePath: string): string {
         </div>
         <div id="agentRunResult" class="meta-list"></div>
       </div>
+      </div>
 
+      <div class="tab-panel" data-tab-panel="apps" hidden>
       <div class="section-list">
         <div class="card">
           <div class="split-actions">
@@ -679,20 +763,35 @@ function htmlPage(basePath: string): string {
           <div id="featuresContainer" class="section-list"></div>
         </div>
       </div>
+      </div>
     </section>
 
     <aside class="aside-stack">
+      <section class="panel nav-card">
+        <h2>Dashboard</h2>
+        <p>Focus each part of the gateway config without scrolling through everything at once.</p>
+        <div class="tab-nav">
+          <button class="tab-button active" data-tab="overview">Overview</button>
+          <button class="tab-button" data-tab="gateway">Gateway</button>
+          <button class="tab-button" data-tab="services">Services</button>
+          <button class="tab-button" data-tab="agents">Agents</button>
+          <button class="tab-button" data-tab="workflows">Workflows</button>
+          <button class="tab-button" data-tab="apps">Apps & Jobs</button>
+          <button class="tab-button" data-tab="raw">Raw Config</button>
+        </div>
+      </section>
       <section class="panel">
         <div class="split-actions">
           <div>
             <h2>Runtime</h2>
             <p>Health and control-plane state from the live server process.</p>
           </div>
+          <button id="refreshRuntimeButtonSecondary">Refresh</button>
         </div>
         <div id="runtimeSummary" class="metric-grid"></div>
         <div id="runtimeMeta" class="meta-list"></div>
       </section>
-      <section class="panel">
+      <section class="panel tab-panel" data-tab-panel="raw" hidden>
         <div class="split-actions">
           <div>
             <h2>Raw JSON</h2>
@@ -733,7 +832,8 @@ function htmlPage(basePath: string): string {
         deliveryJson: '{}',
         workflowSeedPath: '${DEFAULT_WORKFLOW_SEED_PATH}',
         result: null
-      }
+      },
+      activeTab: 'overview'
     };
     const basePath = document.querySelector('meta[name="gateway-base-path"]').content || '/';
 
@@ -754,6 +854,15 @@ function htmlPage(basePath: string): string {
 
     function syncRawJson() {
       document.getElementById('rawJson').value = JSON.stringify(state.config, null, 2);
+    }
+
+    function renderActiveTab() {
+      document.querySelectorAll('[data-tab-panel]').forEach((panel) => {
+        panel.hidden = panel.dataset.tabPanel !== state.activeTab;
+      });
+      document.querySelectorAll('.tab-button').forEach((button) => {
+        button.classList.toggle('active', button.dataset.tab === state.activeTab);
+      });
     }
 
     function updateGatewayField(key, value) {
@@ -1622,6 +1731,7 @@ function htmlPage(basePath: string): string {
       renderFeatures();
       renderRuntime();
       syncRawJson();
+      renderActiveTab();
     }
 
     async function fetchConfig() {
@@ -1709,6 +1819,18 @@ function htmlPage(basePath: string): string {
       }
       return data;
     }
+
+    async function syncConfiguredAgents() {
+      await requestJson('POST', '/api/service-profiles/gateway-chat-platform/sync');
+      setStatus('Chat agents synced to gateway-chat-platform');
+    }
+
+    document.querySelectorAll('.tab-button').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.activeTab = button.dataset.tab || 'overview';
+        renderActiveTab();
+      });
+    });
 
     document.getElementById('gatewayServerNames').addEventListener('input', (event) => {
       updateGatewayField('serverNames', event.target.value.split(',').map((item) => item.trim()).filter(Boolean));
@@ -1843,6 +1965,14 @@ function htmlPage(basePath: string): string {
         setStatus(error.message, 'error');
       }
     });
+    document.getElementById('refreshRuntimeButtonSecondary').addEventListener('click', async () => {
+      try {
+        await fetchRuntime();
+        setStatus('Runtime refreshed');
+      } catch (error) {
+        setStatus(error.message, 'error');
+      }
+    });
     document.getElementById('reloadWorkflowsButton').addEventListener('click', async () => {
       try {
         await fetchWorkflows();
@@ -1923,6 +2053,7 @@ function htmlPage(basePath: string): string {
       syncRawJson();
     });
     document.getElementById('addGatewayChatAgentButton').addEventListener('click', () => {
+      state.activeTab = 'agents';
       state.config.serviceProfiles.gatewayChatPlatform.agents.push({
         id: '',
         name: '',
@@ -1936,6 +2067,7 @@ function htmlPage(basePath: string): string {
         contextSources: []
       });
       renderGatewayChatPlatformProfile();
+      renderActiveTab();
       syncRawJson();
     });
     document.getElementById('addWorkflowButton').addEventListener('click', () => {
@@ -1959,8 +2091,14 @@ function htmlPage(basePath: string): string {
     });
     document.getElementById('syncGatewayChatAgentsButton').addEventListener('click', async () => {
       try {
-        await requestJson('POST', '/api/service-profiles/gateway-chat-platform/sync');
-        setStatus('Chat agents synced to gateway-chat-platform');
+        await syncConfiguredAgents();
+      } catch (error) {
+        setStatus(error.message, 'error');
+      }
+    });
+    document.getElementById('syncGatewayChatAgentsButtonSecondary').addEventListener('click', async () => {
+      try {
+        await syncConfiguredAgents();
       } catch (error) {
         setStatus(error.message, 'error');
       }
