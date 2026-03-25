@@ -992,15 +992,25 @@ function htmlPage(basePath: string): string {
       return Array.isArray(state.chatProviders) ? state.chatProviders.filter((provider) => provider.status !== 'unconfigured') : [];
     }
 
+    function firstAvailableProviderName() {
+      const providers = normalizedChatProviders();
+      return providers[0]?.name || '';
+    }
+
     function providerOptions(currentProviderName) {
       const providers = normalizedChatProviders();
       const knownProviders = [...providers];
       if (currentProviderName && !knownProviders.some((provider) => provider.name === currentProviderName)) {
         knownProviders.unshift({ name: currentProviderName, status: 'ok' });
       }
-      return knownProviders
-        .map((provider) => \`<option value="\${provider.name}" \${provider.name === currentProviderName ? 'selected' : ''}>\${provider.name}</option>\`)
-        .join('');
+      const options = [];
+      if (!currentProviderName) {
+        options.push('<option value="" selected disabled>Select provider</option>');
+      }
+      return options.concat(
+        knownProviders
+          .map((provider) => \`<option value="\${provider.name}" \${provider.name === currentProviderName ? 'selected' : ''}>\${provider.name}</option>\`)
+      ).join('');
     }
 
     function normalizeModel(model) {
@@ -1019,9 +1029,29 @@ function htmlPage(basePath: string): string {
       if (currentModel && !knownModels.some((model) => model.id === currentModel)) {
         knownModels.unshift({ id: currentModel, name: currentModel });
       }
-      return knownModels
-        .map((model) => \`<option value="\${model.id}" \${model.id === currentModel ? 'selected' : ''}>\${model.name || model.id}</option>\`)
-        .join('');
+      const options = [];
+      if (!currentModel) {
+        options.push(\`<option value="" selected \${providerName ? '' : 'disabled'}>\${providerName ? 'Select model' : 'Choose provider first'}</option>\`);
+      }
+      return options.concat(
+        knownModels
+          .map((model) => \`<option value="\${model.id}" \${model.id === currentModel ? 'selected' : ''}>\${model.name || model.id}</option>\`)
+      ).join('');
+    }
+
+    function firstAvailableModelId(providerName) {
+      const rawModels = Array.isArray(state.providerModels?.[providerName]) ? state.providerModels[providerName] : [];
+      const knownModels = rawModels.map((model) => normalizeModel(model)).filter((model) => model.id);
+      return knownModels[0]?.id || '';
+    }
+
+    function ensureAgentProviderAndModel(agent) {
+      if (!agent.providerName) {
+        agent.providerName = firstAvailableProviderName();
+      }
+      if (!agent.model && agent.providerName) {
+        agent.model = firstAvailableModelId(agent.providerName);
+      }
     }
 
     function getAgentChatTemplate(agent) {
@@ -1171,6 +1201,7 @@ function htmlPage(basePath: string): string {
       agentsContainer.innerHTML = '';
       const voiceOptions = normalizedTtsVoices();
       profile.agents.forEach((agent, index) => {
+        ensureAgentProviderAndModel(agent);
         const currentVoiceId = getAgentVoiceId(agent);
         const currentChatTemplate = getAgentChatTemplate(agent);
         const knownVoices = [...voiceOptions];
@@ -1280,6 +1311,7 @@ function htmlPage(basePath: string): string {
             } else if (field === 'providerName') {
               agent.providerName = input.value;
               await fetchChatProviderModels(agent.providerName);
+              agent.model = firstAvailableModelId(agent.providerName);
               renderGatewayChatPlatformProfile();
             } else {
               agent[field] = input.value;
@@ -2054,13 +2086,14 @@ function htmlPage(basePath: string): string {
     });
     document.getElementById('addGatewayChatAgentButton').addEventListener('click', () => {
       state.activeTab = 'agents';
+      const providerName = firstAvailableProviderName();
       state.config.serviceProfiles.gatewayChatPlatform.agents.push({
         id: '',
         name: '',
         icon: '🤖',
         color: '#6366f1',
-        providerName: '',
-        model: '',
+        providerName,
+        model: firstAvailableModelId(providerName),
         costClass: 'free',
         enabled: true,
         featureFlags: {},
