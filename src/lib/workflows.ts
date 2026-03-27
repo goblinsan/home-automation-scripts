@@ -51,11 +51,20 @@ async function requestWorkflowApi(
   baseUrl: string,
   path: string,
   method: 'GET' | 'POST' | 'PUT',
-  body?: unknown
+  body?: unknown,
+  extraHeaders?: Record<string, string>
 ): Promise<{ status: number; payload: unknown }> {
   const requestUrl = `${normalizeBaseUrl(baseUrl)}${path}`;
   const requestBody = body === undefined ? undefined : JSON.stringify(body);
   const requestImpl = requestUrl.startsWith('https://') ? httpsRequest : httpRequest;
+  const headers: Record<string, string | number> = {
+    ...(extraHeaders ?? {})
+  };
+
+  if (requestBody) {
+    headers['Content-Type'] = 'application/json';
+    headers['Content-Length'] = Buffer.byteLength(requestBody);
+  }
 
   return new Promise((resolve, reject) => {
     const request = requestImpl(
@@ -63,12 +72,7 @@ async function requestWorkflowApi(
       {
         method,
         timeout: 10_000,
-        headers: requestBody
-          ? {
-              'Content-Type': 'application/json',
-              'Content-Length': Buffer.byteLength(requestBody)
-            }
-          : undefined
+        headers: Object.keys(headers).length > 0 ? headers : undefined
       },
       (response) => {
         const chunks: Buffer[] = [];
@@ -134,10 +138,11 @@ export async function importWorkflowSeed(
   baseUrl: string,
   filePath: string,
   context: CommandContext,
+  extraHeaders?: Record<string, string>,
   requestApi: WorkflowApiRequest = requestWorkflowApi
 ): Promise<WorkflowImportResult> {
   const seed = await loadWorkflowSeed(filePath);
-  const listResponse = await requestApi(baseUrl, '/api/workflows', 'GET');
+  const listResponse = await requestApi(baseUrl, '/api/workflows', 'GET', undefined, extraHeaders);
   if (listResponse.status !== 200 || !Array.isArray(listResponse.payload)) {
     throw new Error(`Failed to list existing workflows from ${baseUrl}`);
   }
@@ -151,8 +156,8 @@ export async function importWorkflowSeed(
     }
 
     const response = operation.type === 'create'
-      ? await requestApi(baseUrl, '/api/workflows', 'POST', operation.body)
-      : await requestApi(baseUrl, `/api/workflows/${operation.id}`, 'PUT', operation.body);
+      ? await requestApi(baseUrl, '/api/workflows', 'POST', operation.body, extraHeaders)
+      : await requestApi(baseUrl, `/api/workflows/${operation.id}`, 'PUT', operation.body, extraHeaders);
 
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`${description} failed: ${response.status} ${JSON.stringify(response.payload)}`);

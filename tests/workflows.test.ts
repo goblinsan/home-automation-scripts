@@ -69,6 +69,7 @@ test('importWorkflowSeed creates missing workflows and returns the executed plan
     'http://127.0.0.1:3000',
     seedPath,
     { dryRun: false, log: () => undefined },
+    undefined,
     async (_baseUrl, path, method, body) => {
       requests.push({ path, method, body });
       if (path === '/api/workflows' && method === 'GET') {

@@ -2254,7 +2254,7 @@ async function proxyWorkflowRequest(
   }
 
   const workflowBaseUrl = normalizeBaseUrl(config.serviceProfiles.gatewayApi.apiBaseUrl);
-  return requestJsonUrl(`${workflowBaseUrl}${path}`, method, body);
+  return requestJsonUrl(`${workflowBaseUrl}${path}`, method, body, getGatewayApiAuthHeaders(config));
 }
 
 async function proxyChatPlatformRequest(
@@ -2310,10 +2310,19 @@ async function listChatProviderModels(config: GatewayConfig, providerName: strin
 async function requestJsonUrl(
   requestUrl: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
-  body?: unknown
+  body?: unknown,
+  extraHeaders?: Record<string, string>
 ): Promise<{ status: number; payload: unknown }> {
   const requestBody = body === undefined ? undefined : JSON.stringify(body);
   const requestImpl = requestUrl.startsWith('https://') ? (await import('node:https')).request : (await import('node:http')).request;
+  const headers: Record<string, string | number> = {
+    ...(extraHeaders ?? {})
+  };
+
+  if (requestBody) {
+    headers['Content-Type'] = 'application/json';
+    headers['Content-Length'] = Buffer.byteLength(requestBody);
+  }
 
   return new Promise((resolve, reject) => {
     const request = requestImpl(
@@ -2321,12 +2330,7 @@ async function requestJsonUrl(
       {
         method,
         timeout: 10_000,
-        headers: requestBody
-          ? {
-              'Content-Type': 'application/json',
-              'Content-Length': Buffer.byteLength(requestBody)
-            }
-          : undefined
+        headers: Object.keys(headers).length > 0 ? headers : undefined
       },
       (apiResponse) => {
         const chunks: Buffer[] = [];
@@ -2351,6 +2355,21 @@ async function requestJsonUrl(
     }
     request.end();
   });
+}
+
+function getGatewayApiAuthHeaders(config: GatewayConfig): Record<string, string> | undefined {
+  const apiKey = config.serviceProfiles.gatewayApi.environment
+    .find((entry) => entry.key === 'GATEWAY_API_KEY')
+    ?.value
+    ?.trim();
+
+  if (!apiKey) {
+    return undefined;
+  }
+
+  return {
+    'X-API-Key': apiKey
+  };
 }
 
 async function requestBinaryUrl(
@@ -2667,7 +2686,8 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         const result = await importWorkflowSeed(
           config.serviceProfiles.gatewayApi.apiBaseUrl,
           body.filePath || DEFAULT_WORKFLOW_SEED_PATH,
-          { dryRun: false, log: () => undefined }
+          { dryRun: false, log: () => undefined },
+          getGatewayApiAuthHeaders(config)
         );
         sendJson(response, 200, {
           message: `Imported ${result.operations.length} workflow seed entries from ${result.filePath}`,
