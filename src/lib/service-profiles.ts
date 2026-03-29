@@ -1,7 +1,9 @@
 import type {
   EnvironmentVariableConfig,
   GatewayApiServiceProfile,
-  GatewayChatPlatformServiceProfile
+  GatewayApiJobRuntimeConfig,
+  GatewayChatPlatformServiceProfile,
+  KulrsActivityConfig
 } from './config.ts';
 
 function escapeEnvValue(value: string): string {
@@ -25,7 +27,66 @@ export function renderEnvFile(environment: EnvironmentVariableConfig[]): string 
 }
 
 export function renderGatewayApiEnv(profile: GatewayApiServiceProfile): string {
-  return renderEnvFile(profile.environment);
+  return renderEnvFile([
+    ...profile.environment,
+    {
+      key: 'GATEWAY_JOB_CHANNELS_PATH',
+      value: profile.jobRuntime.channelsFilePath,
+      secret: false,
+      description: 'Path to named delivery channels for gateway job runtime'
+    }
+  ]);
+}
+
+export function renderGatewayApiJobChannels(profile: GatewayApiJobRuntimeConfig): string {
+  return `${JSON.stringify({ channels: profile.channels }, null, 2)}\n`;
+}
+
+export function renderKulrsActivityEnv(profile: KulrsActivityConfig): string {
+  return renderEnvFile([
+    {
+      key: 'UNSPLASH_ACCESS_KEY',
+      value: profile.unsplashAccessKey,
+      secret: true,
+      description: 'Unsplash access key used for palette inspiration images'
+    },
+    {
+      key: 'KULRS_WORKSPACE_DIR',
+      value: profile.workspaceDir,
+      secret: false,
+      description: 'Shared directory for KULRS activity logs and cache'
+    },
+    {
+      key: 'KULRS_CREDS_PATH',
+      value: profile.credentialsFilePath,
+      secret: false,
+      description: 'Generated credentials JSON consumed by the KULRS cron script'
+    },
+    {
+      key: 'KULRS_TIMEZONE',
+      value: profile.timezone,
+      secret: false,
+      description: 'Timezone used for KULRS run-window gating'
+    }
+  ]);
+}
+
+export function renderKulrsCredentials(profile: KulrsActivityConfig): string {
+  const payload: Record<string, unknown> = {
+    firebaseApiKey: profile.firebaseApiKey
+  };
+
+  for (const bot of profile.bots) {
+    if (!bot.id) {
+      continue;
+    }
+    payload[bot.id] = {
+      email: bot.email,
+      password: bot.password
+    };
+  }
+
+  return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
 function buildGatewayChatPlatformEnvironment(profile: GatewayChatPlatformServiceProfile): EnvironmentVariableConfig[] {

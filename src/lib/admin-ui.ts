@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { buildArtifacts } from './build.ts';
-import { loadGatewayConfig, parseGatewayConfig, saveGatewayConfig, type GatewayConfig } from './config.ts';
+import { getAllScheduledJobs, loadGatewayConfig, parseGatewayConfig, saveGatewayConfig, type GatewayConfig } from './config.ts';
 import { runServiceProfileAgent, syncServiceProfileRuntime, type AgentRunPayload, type AgentRunResult } from './deploy.ts';
 import { DEFAULT_WORKFLOW_SEED_PATH, importWorkflowSeed } from './workflows.ts';
 
@@ -60,6 +60,12 @@ interface WorkflowRecord {
   lastError: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface JobCatalogRecord {
+  id: string;
+  name: string;
+  description: string;
 }
 
 interface AgentRunUiState {
@@ -178,6 +184,8 @@ function createRuntimeSnapshot(
     config.gateway.adminUi.serviceName
   );
 
+  const jobs = getAllScheduledJobs(config);
+
   return {
     startedAt,
     uptimeSeconds,
@@ -188,8 +196,8 @@ function createRuntimeSnapshot(
     adminRoutePath: config.gateway.adminUi.routePath,
     totalApps: config.apps.length,
     enabledApps: config.apps.filter((app) => app.enabled).length,
-    totalJobs: config.scheduledJobs.length,
-    enabledJobs: config.scheduledJobs.filter((job) => job.enabled).length,
+    totalJobs: jobs.length,
+    enabledJobs: jobs.filter((job) => job.enabled).length,
     totalFeatures: config.features.length,
     enabledFeatures: config.features.filter((feature) => feature.enabled).length,
     generated: {
@@ -542,7 +550,11 @@ function htmlPage(basePath: string): string {
             <span class="pill">gateway-api</span>
             <h3>Service Config</h3>
           </div>
-          <button id="addGatewayApiEnvButton">Add Env Var</button>
+          <div class="toolbar">
+            <button id="addGatewayApiEnvButton">Add Env Var</button>
+            <button id="addGatewayApiChannelButton">Add Channel</button>
+            <button id="addKulrsBotButton">Add KULRS Bot</button>
+          </div>
         </div>
         <div class="row">
           <label class="check"><input id="gatewayApiProfileEnabled" type="checkbox" /> Enabled</label>
@@ -557,6 +569,76 @@ function htmlPage(basePath: string): string {
           </label>
         </div>
         <div id="gatewayApiEnvContainer" class="section-list"></div>
+        <div class="card">
+          <div class="split-actions">
+            <div>
+              <span class="pill">Jobs</span>
+              <h4>Job Runtime Channels</h4>
+              <p>Named delivery channels for catalog jobs running through <code>gateway-jobs.run</code>.</p>
+            </div>
+          </div>
+          <div class="row">
+            <label>Channels File Path
+              <input id="gatewayApiJobChannelsFilePath" />
+            </label>
+          </div>
+          <div id="gatewayApiJobChannelsContainer" class="section-list"></div>
+        </div>
+        <div class="card">
+          <div class="split-actions">
+            <div>
+              <span class="pill">KULRS</span>
+              <h4>Activity Job</h4>
+              <p>Generates the KULRS env file, credentials JSON, and derived systemd timer for <code>gateway-api</code>.</p>
+            </div>
+          </div>
+          <div class="row">
+            <label class="check"><input id="kulrsEnabled" type="checkbox" /> Enabled</label>
+            <label>Schedule
+              <input id="kulrsSchedule" />
+            </label>
+            <label>User
+              <input id="kulrsUser" />
+            </label>
+            <label>Group
+              <input id="kulrsGroup" />
+            </label>
+            <label>Timezone
+              <input id="kulrsTimezone" />
+            </label>
+          </div>
+          <div class="row">
+            <label>Env File Path
+              <input id="kulrsEnvFilePath" />
+            </label>
+            <label>Credentials File Path
+              <input id="kulrsCredentialsFilePath" />
+            </label>
+            <label>Workspace Dir
+              <input id="kulrsWorkspaceDir" />
+            </label>
+          </div>
+          <div class="row">
+            <label>Working Directory
+              <input id="kulrsWorkingDirectory" />
+            </label>
+            <label>ExecStart
+              <input id="kulrsExecStart" />
+            </label>
+          </div>
+          <label>Description
+            <input id="kulrsDescription" />
+          </label>
+          <div class="row">
+            <label>Firebase API Key
+              <input id="kulrsFirebaseApiKey" type="password" />
+            </label>
+            <label>Unsplash Access Key
+              <input id="kulrsUnsplashAccessKey" type="password" />
+            </label>
+          </div>
+          <div id="kulrsBotsContainer" class="section-list"></div>
+        </div>
       </div>
 
       <div class="card">
@@ -675,6 +757,17 @@ function htmlPage(basePath: string): string {
       </div>
 
       <div class="tab-panel" data-tab-panel="workflows" hidden>
+      <div class="card">
+        <div class="split-actions">
+          <div>
+            <span class="pill">Catalog</span>
+            <h3>gateway-api Job Catalog</h3>
+            <p>Available refs for <code>target.type = gateway-jobs.run</code>.</p>
+          </div>
+          <button id="reloadJobsButton">Reload Jobs</button>
+        </div>
+        <div id="jobsCatalogContainer" class="section-list"></div>
+      </div>
       <div class="card">
         <div class="split-actions">
           <div>
@@ -810,6 +903,7 @@ function htmlPage(basePath: string): string {
           <p>The control-plane systemd unit is generated into <code>generated/systemd/control-plane/</code>.</p>
           <p>Service profiles generate env files and chat-agent sync payloads for the real gateway-managed apps.</p>
           <p>Workflow CRUD in this UI is backed by the live <code>gateway-api</code> workflow endpoints, not the local config file.</p>
+          <p>The job catalog list is also proxied from the live <code>gateway-api</code> runtime so <code>gateway-jobs.run</code> refs stay visible in the UI.</p>
           <p>The Automation panel can import the OpenClaw workflow seed, sync live chat agents, and run Bruvie-D through <code>gateway-chat-platform</code>.</p>
           <p>The TTS section configures the external <code>local-tts-service</code> and can probe its health and available voices.</p>
         </div>
@@ -821,6 +915,7 @@ function htmlPage(basePath: string): string {
       config: null,
       runtime: null,
       workflows: [],
+      jobsCatalog: [],
       chatProviders: [],
       providerModels: {},
       ttsStatus: null,
@@ -1121,6 +1216,146 @@ function htmlPage(basePath: string): string {
         profile.environment.splice(index, 1);
         renderGatewayApiProfile();
         syncRawJson();
+      });
+    }
+
+    function renderGatewayApiJobRuntimeProfile() {
+      const runtime = state.config.serviceProfiles.gatewayApi.jobRuntime;
+      document.getElementById('gatewayApiJobChannelsFilePath').value = runtime.channelsFilePath;
+
+      const container = document.getElementById('gatewayApiJobChannelsContainer');
+      container.innerHTML = '';
+      if (runtime.channels.length === 0) {
+        container.innerHTML = '<div>No delivery channels configured yet.</div>';
+        return;
+      }
+
+      runtime.channels.forEach((channel, index) => {
+        const element = document.createElement('div');
+        element.className = 'card';
+        element.innerHTML = \`
+          <div class="split-actions">
+            <div><strong>\${channel.id || 'new-channel'}</strong></div>
+            <button class="danger">Remove</button>
+          </div>
+          <div class="row">
+            <label class="check"><input type="checkbox" data-field="enabled" \${channel.enabled ? 'checked' : ''} /> Enabled</label>
+            <label>Channel Id<input data-field="id" value="\${channel.id}" /></label>
+            <label>Type
+              <select data-field="type">
+                <option value="telegram" \${channel.type === 'telegram' ? 'selected' : ''}>telegram</option>
+                <option value="webhook" \${channel.type === 'webhook' ? 'selected' : ''}>webhook</option>
+              </select>
+            </label>
+            <label>Description<input data-field="description" value="\${channel.description || ''}" /></label>
+          </div>
+          <div class="row">
+            <label>Telegram Bot Token<input type="password" data-field="botToken" value="\${channel.botToken || ''}" /></label>
+            <label>Telegram Chat Id<input data-field="chatId" value="\${channel.chatId || ''}" /></label>
+            <label>Parse Mode<input data-field="parseMode" value="\${channel.parseMode || ''}" /></label>
+            <label>Thread Id<input type="number" data-field="messageThreadId" value="\${channel.messageThreadId ?? ''}" /></label>
+          </div>
+          <div class="row">
+            <label>Webhook URL<input data-field="webhookUrl" value="\${channel.webhookUrl || ''}" /></label>
+          </div>
+        \`;
+
+        element.querySelector('.danger').addEventListener('click', () => {
+          runtime.channels.splice(index, 1);
+          renderGatewayApiJobRuntimeProfile();
+          syncRawJson();
+        });
+
+        element.querySelectorAll('input, select').forEach((input) => {
+          const isCheckbox = input.type === 'checkbox';
+          const isSelect = input.tagName === 'SELECT';
+          const eventName = isCheckbox || isSelect ? 'change' : 'input';
+          input.addEventListener(eventName, () => {
+            const field = input.dataset.field;
+            if (!field) {
+              return;
+            }
+            if (field === 'enabled') {
+              channel.enabled = input.checked;
+            } else if (field === 'messageThreadId') {
+              channel.messageThreadId = input.value ? Number(input.value) : undefined;
+              if (!input.value) {
+                delete channel.messageThreadId;
+              }
+            } else {
+              channel[field] = input.value;
+              if ((field === 'description' || field === 'botToken' || field === 'chatId' || field === 'parseMode' || field === 'webhookUrl') && !input.value) {
+                delete channel[field];
+              }
+            }
+            syncRawJson();
+          });
+        });
+
+        container.appendChild(element);
+      });
+    }
+
+    function renderKulrsActivityProfile() {
+      const kulrs = state.config.serviceProfiles.gatewayApi.kulrsActivity;
+      document.getElementById('kulrsEnabled').checked = kulrs.enabled;
+      document.getElementById('kulrsSchedule').value = kulrs.schedule;
+      document.getElementById('kulrsUser').value = kulrs.user;
+      document.getElementById('kulrsGroup').value = kulrs.group || '';
+      document.getElementById('kulrsTimezone').value = kulrs.timezone;
+      document.getElementById('kulrsEnvFilePath').value = kulrs.envFilePath;
+      document.getElementById('kulrsCredentialsFilePath').value = kulrs.credentialsFilePath;
+      document.getElementById('kulrsWorkspaceDir').value = kulrs.workspaceDir;
+      document.getElementById('kulrsWorkingDirectory').value = kulrs.workingDirectory;
+      document.getElementById('kulrsExecStart').value = kulrs.execStart;
+      document.getElementById('kulrsDescription').value = kulrs.description;
+      document.getElementById('kulrsFirebaseApiKey').value = kulrs.firebaseApiKey;
+      document.getElementById('kulrsUnsplashAccessKey').value = kulrs.unsplashAccessKey;
+
+      const container = document.getElementById('kulrsBotsContainer');
+      container.innerHTML = '';
+      if (kulrs.bots.length === 0) {
+        container.innerHTML = '<div>No KULRS bot credentials configured yet.</div>';
+        return;
+      }
+
+      kulrs.bots.forEach((bot, index) => {
+        const element = document.createElement('div');
+        element.className = 'card';
+        element.innerHTML = \`
+          <div class="split-actions">
+            <div><strong>\${bot.id || 'new-kulrs-bot'}</strong></div>
+            <button class="danger">Remove</button>
+          </div>
+          <div class="row">
+            <label>Bot Id<input data-field="id" value="\${bot.id}" /></label>
+            <label>Email<input data-field="email" value="\${bot.email}" /></label>
+            <label>Password<input type="password" data-field="password" value="\${bot.password}" /></label>
+          </div>
+          <label>Description<input data-field="description" value="\${bot.description || ''}" /></label>
+        \`;
+
+        element.querySelector('.danger').addEventListener('click', () => {
+          kulrs.bots.splice(index, 1);
+          renderKulrsActivityProfile();
+          syncRawJson();
+        });
+
+        element.querySelectorAll('input').forEach((input) => {
+          input.addEventListener('input', () => {
+            const field = input.dataset.field;
+            if (!field) {
+              return;
+            }
+            bot[field] = input.value;
+            if (field === 'description' && !input.value) {
+              delete bot.description;
+            }
+            syncRawJson();
+          });
+        });
+
+        container.appendChild(element);
       });
     }
 
@@ -1511,6 +1746,40 @@ function htmlPage(basePath: string): string {
       });
     }
 
+    function renderJobCatalog() {
+      const container = document.getElementById('jobsCatalogContainer');
+      container.innerHTML = '';
+
+      if (!state.config || !state.config.serviceProfiles.gatewayApi.enabled) {
+        container.innerHTML = '<p>gateway-api service profile is disabled.</p>';
+        return;
+      }
+
+      if (state.jobsCatalog.length === 0) {
+        container.innerHTML = '<p>No catalog jobs reported by gateway-api.</p>';
+        return;
+      }
+
+      state.jobsCatalog.forEach((job) => {
+        const element = document.createElement('div');
+        element.className = 'card';
+        element.innerHTML = \`
+          <div class="split-actions">
+            <div>
+              <strong>\${job.name || job.id}</strong>
+              <p>\${job.description || 'No description provided.'}</p>
+            </div>
+          </div>
+          <div class="meta-list">
+            <div><strong>Job Id:</strong> \${job.id}</div>
+            <div><strong>Target Type:</strong> gateway-jobs.run</div>
+            <div><strong>Target Ref:</strong> \${job.id}</div>
+          </div>
+        \`;
+        container.appendChild(element);
+      });
+    }
+
     function renderAutomation() {
       ensureAgentRunDefaults();
       const agentOptions = configuredAgents()
@@ -1755,7 +2024,10 @@ function htmlPage(basePath: string): string {
     function render() {
       renderGateway();
       renderGatewayApiProfile();
+      renderGatewayApiJobRuntimeProfile();
+      renderKulrsActivityProfile();
       renderGatewayChatPlatformProfile();
+      renderJobCatalog();
       renderWorkflows();
       renderAutomation();
       renderApps();
@@ -1798,6 +2070,18 @@ function htmlPage(basePath: string): string {
       }
       state.workflows = Array.isArray(data) ? data : [];
       renderWorkflows();
+    }
+
+    async function fetchJobsCatalog() {
+      if (!state.config || !state.config.serviceProfiles.gatewayApi.enabled) {
+        state.jobsCatalog = [];
+        renderJobCatalog();
+        return;
+      }
+
+      const data = await requestJson('GET', '/api/jobs');
+      state.jobsCatalog = Array.isArray(data?.jobs) ? data.jobs : [];
+      renderJobCatalog();
     }
 
     async function fetchTtsVoices() {
@@ -1915,6 +2199,40 @@ function htmlPage(basePath: string): string {
       });
     });
     [
+      ['gatewayApiJobChannelsFilePath', 'channelsFilePath']
+    ].forEach(([id, key]) => {
+      const element = document.getElementById(id);
+      element.addEventListener('input', (event) => {
+        state.config.serviceProfiles.gatewayApi.jobRuntime[key] = event.target.value;
+        syncRawJson();
+      });
+    });
+    [
+      ['kulrsEnabled', 'enabled', 'checkbox'],
+      ['kulrsSchedule', 'schedule'],
+      ['kulrsUser', 'user'],
+      ['kulrsGroup', 'group'],
+      ['kulrsTimezone', 'timezone'],
+      ['kulrsEnvFilePath', 'envFilePath'],
+      ['kulrsCredentialsFilePath', 'credentialsFilePath'],
+      ['kulrsWorkspaceDir', 'workspaceDir'],
+      ['kulrsWorkingDirectory', 'workingDirectory'],
+      ['kulrsExecStart', 'execStart'],
+      ['kulrsDescription', 'description'],
+      ['kulrsFirebaseApiKey', 'firebaseApiKey'],
+      ['kulrsUnsplashAccessKey', 'unsplashAccessKey'],
+    ].forEach(([id, key, kind]) => {
+      const element = document.getElementById(id);
+      element.addEventListener(kind === 'checkbox' ? 'change' : 'input', (event) => {
+        const target = event.target;
+        state.config.serviceProfiles.gatewayApi.kulrsActivity[key] = kind === 'checkbox' ? target.checked : target.value;
+        if (key === 'group' && !target.value) {
+          delete state.config.serviceProfiles.gatewayApi.kulrsActivity.group;
+        }
+        syncRawJson();
+      });
+    });
+    [
       ['gatewayChatProfileEnabled', 'enabled', 'checkbox'],
       ['gatewayChatProfileAppId', 'appId'],
       ['gatewayChatProfileApiBaseUrl', 'apiBaseUrl'],
@@ -1947,8 +2265,7 @@ function htmlPage(basePath: string): string {
     document.getElementById('reloadButton').addEventListener('click', async () => {
       try {
         await fetchConfig();
-        await fetchWorkflows();
-        await fetchRuntime();
+        await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime()]);
       } catch (error) {
         setStatus(error.message, 'error');
       }
@@ -1968,8 +2285,7 @@ function htmlPage(basePath: string): string {
         const result = await requestJson('POST', '/api/config', state.config);
         state.config = result.config;
         render();
-        await fetchWorkflows();
-        await fetchRuntime();
+        await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime()]);
         setStatus(result.message || 'Saved');
       } catch (error) {
         setStatus(error.message, 'error');
@@ -1981,8 +2297,7 @@ function htmlPage(basePath: string): string {
         const result = await requestJson('POST', '/api/build', state.config);
         state.config = result.config;
         render();
-        await fetchWorkflows();
-        await fetchRuntime();
+        await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime()]);
         setStatus(result.message || 'Saved and built');
       } catch (error) {
         setStatus(error.message, 'error');
@@ -2009,6 +2324,14 @@ function htmlPage(basePath: string): string {
       try {
         await fetchWorkflows();
         setStatus('Workflows reloaded');
+      } catch (error) {
+        setStatus(error.message, 'error');
+      }
+    });
+    document.getElementById('reloadJobsButton').addEventListener('click', async () => {
+      try {
+        await fetchJobsCatalog();
+        setStatus('Job catalog reloaded');
       } catch (error) {
         setStatus(error.message, 'error');
       }
@@ -2073,6 +2396,24 @@ function htmlPage(basePath: string): string {
         secret: false
       });
       renderGatewayApiProfile();
+      syncRawJson();
+    });
+    document.getElementById('addGatewayApiChannelButton').addEventListener('click', () => {
+      state.config.serviceProfiles.gatewayApi.jobRuntime.channels.push({
+        id: '',
+        type: 'telegram',
+        enabled: true
+      });
+      renderGatewayApiJobRuntimeProfile();
+      syncRawJson();
+    });
+    document.getElementById('addKulrsBotButton').addEventListener('click', () => {
+      state.config.serviceProfiles.gatewayApi.kulrsActivity.bots.push({
+        id: '',
+        email: '',
+        password: ''
+      });
+      renderKulrsActivityProfile();
       syncRawJson();
     });
     document.getElementById('addGatewayChatEnvButton').addEventListener('click', () => {
@@ -2223,7 +2564,7 @@ function htmlPage(basePath: string): string {
     });
 
     fetchConfig()
-      .then(() => Promise.all([fetchWorkflows(), fetchRuntime(), fetchTtsVoices(), fetchChatProviders()]))
+      .then(() => Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime(), fetchTtsVoices(), fetchChatProviders()]))
       .catch((error) => setStatus(error.message, 'error'));
     setInterval(() => {
       fetchRuntime().catch(() => undefined);
@@ -2243,7 +2584,7 @@ function getRequestPath(request: IncomingMessage): string {
   return requestUrl.split('?')[0] ?? '/';
 }
 
-async function proxyWorkflowRequest(
+async function proxyGatewayApiRequest(
   config: GatewayConfig,
   path: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
@@ -2255,6 +2596,15 @@ async function proxyWorkflowRequest(
 
   const workflowBaseUrl = normalizeBaseUrl(config.serviceProfiles.gatewayApi.apiBaseUrl);
   return requestJsonUrl(`${workflowBaseUrl}${path}`, method, body, getGatewayApiAuthHeaders(config));
+}
+
+async function proxyWorkflowRequest(
+  config: GatewayConfig,
+  path: string,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  body?: unknown
+): Promise<{ status: number; payload: unknown }> {
+  return proxyGatewayApiRequest(config, path, method, body);
 }
 
 async function proxyChatPlatformRequest(
@@ -2604,6 +2954,13 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       if (request.method === 'GET' && path === '/api/workflows') {
         const config = await loadGatewayConfig(options.configPath);
         const result = await proxyWorkflowRequest(config, '/api/workflows', 'GET');
+        sendJson(response, result.status, result.payload);
+        return;
+      }
+
+      if (request.method === 'GET' && path === '/api/jobs') {
+        const config = await loadGatewayConfig(options.configPath);
+        const result = await proxyGatewayApiRequest(config, '/api/jobs', 'GET');
         sendJson(response, result.status, result.payload);
         return;
       }

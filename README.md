@@ -97,6 +97,9 @@ node src/cli.ts run-agent --config configs/gateway.config.json --app gateway-cha
 - `generated/systemd/jobs/*.service`
 - `generated/systemd/jobs/*.timer`
 - `generated/services/gateway-api/gateway-api.env`
+- `generated/services/gateway-api/job-channels.json`
+- `generated/services/gateway-api/kulrs-activity.env`
+- `generated/services/gateway-api/kulrs.json`
 - `generated/services/gateway-chat-platform/chat-api.env`
 - `generated/services/gateway-chat-platform/agents.json`
 
@@ -121,6 +124,8 @@ It exposes the same config shape used by the CLI, including:
 - scheduled job timings
 - feature enable/disable flags
 - `gateway-api` env and secret values
+- `gateway-api` named delivery channels for job runtime
+- `gateway-api` KULRS credentials, schedule, and enable/disable state
 - `gateway-api` workflow management through the live workflow API
 - `gateway-chat-platform` env, provider keys, and agent definitions
 - `gateway-chat-platform` local TTS service configuration

@@ -5,7 +5,14 @@ import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { getApp, getJobsForApp, type AppConfig, type GatewayConfig, type ScheduledJobConfig, type Slot } from './config.ts';
 import { renderActiveUpstream } from './nginx.ts';
-import { renderGatewayApiEnv, renderGatewayChatAgents, renderGatewayChatPlatformEnv } from './service-profiles.ts';
+import {
+  renderGatewayApiEnv,
+  renderGatewayApiJobChannels,
+  renderGatewayChatAgents,
+  renderGatewayChatPlatformEnv,
+  renderKulrsActivityEnv,
+  renderKulrsCredentials
+} from './service-profiles.ts';
 import { renderControlPlaneService, renderJobService, renderJobTimer } from './systemd.ts';
 
 export interface CommandContext {
@@ -301,10 +308,27 @@ async function writeServiceProfileFile(path: string, contents: string, context: 
 }
 
 export async function installServiceProfileFiles(config: GatewayConfig, appId: string, context: CommandContext): Promise<void> {
-  if (config.serviceProfiles.gatewayApi.enabled && config.serviceProfiles.gatewayApi.appId === appId) {
+  if (config.serviceProfiles.gatewayApi.appId === appId) {
+    if (config.serviceProfiles.gatewayApi.enabled) {
+      await writeServiceProfileFile(
+        config.serviceProfiles.gatewayApi.envFilePath,
+        renderGatewayApiEnv(config.serviceProfiles.gatewayApi),
+        context
+      );
+    }
     await writeServiceProfileFile(
-      config.serviceProfiles.gatewayApi.envFilePath,
-      renderGatewayApiEnv(config.serviceProfiles.gatewayApi),
+      config.serviceProfiles.gatewayApi.jobRuntime.channelsFilePath,
+      renderGatewayApiJobChannels(config.serviceProfiles.gatewayApi.jobRuntime),
+      context
+    );
+    await writeServiceProfileFile(
+      config.serviceProfiles.gatewayApi.kulrsActivity.envFilePath,
+      renderKulrsActivityEnv(config.serviceProfiles.gatewayApi.kulrsActivity),
+      context
+    );
+    await writeServiceProfileFile(
+      config.serviceProfiles.gatewayApi.kulrsActivity.credentialsFilePath,
+      renderKulrsCredentials(config.serviceProfiles.gatewayApi.kulrsActivity),
       context
     );
   }

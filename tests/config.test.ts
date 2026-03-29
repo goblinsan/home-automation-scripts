@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseGatewayConfig } from '../src/lib/config.ts';
+import { getAllScheduledJobs, parseGatewayConfig } from '../src/lib/config.ts';
 
 test('parseGatewayConfig accepts the example shape', () => {
   const config = parseGatewayConfig({
@@ -74,7 +74,36 @@ test('parseGatewayConfig accepts the example shape', () => {
             value: '3000',
             secret: false
           }
-        ]
+        ],
+        jobRuntime: {
+          channelsFilePath: '/srv/apps/chat-router/shared/job-channels.json',
+          channels: [
+            {
+              id: 'jim-telegram',
+              type: 'telegram',
+              enabled: true,
+              botToken: 'telegram-token',
+              chatId: '12345'
+            }
+          ]
+        },
+        kulrsActivity: {
+          enabled: true,
+          schedule: '*:0/5',
+          envFilePath: '/srv/apps/chat-router/shared/kulrs-activity.env',
+          credentialsFilePath: '/srv/apps/chat-router/shared/kulrs.json',
+          workspaceDir: '/srv/apps/chat-router/shared/kulrs',
+          timezone: 'America/New_York',
+          unsplashAccessKey: 'unsplash-test',
+          firebaseApiKey: 'firebase-test',
+          bots: [
+            {
+              id: 'mireille',
+              email: 'mireille@example.com',
+              password: 'secret'
+            }
+          ]
+        }
       },
       gatewayChatPlatform: {
         enabled: true,
@@ -117,8 +146,11 @@ test('parseGatewayConfig accepts the example shape', () => {
   assert.equal(config.scheduledJobs[0].appId, 'chat-router');
   assert.equal(config.features[0].id, 'chat-router-public-route');
   assert.equal(config.gateway.adminUi.routePath, '/admin/');
+  assert.equal(config.serviceProfiles.gatewayApi.jobRuntime.channels[0].id, 'jim-telegram');
+  assert.equal(config.serviceProfiles.gatewayApi.kulrsActivity.bots[0].id, 'mireille');
   assert.equal(config.serviceProfiles.gatewayChatPlatform.agents[0].id, 'marvin');
   assert.equal(config.serviceProfiles.gatewayChatPlatform.tts.baseUrl, 'http://198.51.100.111:5000');
+  assert.equal(getAllScheduledJobs(config).some((job) => job.id === 'gateway-api-kulrs-activity'), true);
 });
 
 test('parseGatewayConfig defaults enabled flags when omitted', () => {
@@ -169,6 +201,10 @@ test('parseGatewayConfig defaults enabled flags when omitted', () => {
   assert.equal(config.gateway.adminUi.port, 4173);
   assert.equal(config.serviceProfiles.gatewayApi.enabled, false);
   assert.equal(config.serviceProfiles.gatewayApi.apiBaseUrl, 'http://127.0.0.1:3000');
+  assert.equal(config.serviceProfiles.gatewayApi.jobRuntime.channelsFilePath, '/srv/apps/gateway-api/shared/job-channels.json');
+  assert.deepEqual(config.serviceProfiles.gatewayApi.jobRuntime.channels, []);
+  assert.equal(config.serviceProfiles.gatewayApi.kulrsActivity.enabled, false);
+  assert.equal(config.serviceProfiles.gatewayApi.kulrsActivity.schedule, '*:0/5');
   assert.deepEqual(config.serviceProfiles.gatewayChatPlatform.agents, []);
   assert.equal(config.serviceProfiles.gatewayChatPlatform.tts.enabled, false);
   assert.equal(config.serviceProfiles.gatewayChatPlatform.tts.defaultVoice, 'assistant_v1');

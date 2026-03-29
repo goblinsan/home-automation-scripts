@@ -75,12 +75,55 @@ export interface EnvironmentVariableConfig {
   description?: string;
 }
 
+export interface KulrsBotCredentialsConfig {
+  id: string;
+  email: string;
+  password: string;
+  description?: string;
+}
+
+export interface GatewayApiJobChannelConfig {
+  id: string;
+  type: 'telegram' | 'webhook';
+  enabled: boolean;
+  description?: string;
+  botToken?: string;
+  chatId?: string;
+  parseMode?: string;
+  messageThreadId?: number;
+  webhookUrl?: string;
+}
+
+export interface GatewayApiJobRuntimeConfig {
+  channelsFilePath: string;
+  channels: GatewayApiJobChannelConfig[];
+}
+
+export interface KulrsActivityConfig {
+  enabled: boolean;
+  description: string;
+  schedule: string;
+  workingDirectory: string;
+  execStart: string;
+  user: string;
+  group?: string;
+  envFilePath: string;
+  credentialsFilePath: string;
+  workspaceDir: string;
+  timezone: string;
+  unsplashAccessKey: string;
+  firebaseApiKey: string;
+  bots: KulrsBotCredentialsConfig[];
+}
+
 export interface GatewayApiServiceProfile {
   enabled: boolean;
   appId: string;
   apiBaseUrl: string;
   envFilePath: string;
   environment: EnvironmentVariableConfig[];
+  jobRuntime: GatewayApiJobRuntimeConfig;
+  kulrsActivity: KulrsActivityConfig;
 }
 
 export interface ChatContextSourceConfig {
@@ -304,6 +347,115 @@ function parseEnvironmentVariableConfig(value: unknown, field: string): Environm
   };
 }
 
+function parseGatewayApiJobChannelConfig(value: unknown, field: string): GatewayApiJobChannelConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  const type = value.type;
+  if (type !== 'telegram' && type !== 'webhook') {
+    throw new Error(`Invalid type for ${field}.type`);
+  }
+
+  return {
+    id: assertString(value.id, `${field}.id`),
+    type,
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
+    description: typeof value.description === 'string' ? value.description : undefined,
+    botToken: typeof value.botToken === 'string' ? value.botToken : undefined,
+    chatId: typeof value.chatId === 'string' ? value.chatId : undefined,
+    parseMode: typeof value.parseMode === 'string' ? value.parseMode : undefined,
+    messageThreadId: value.messageThreadId === undefined ? undefined : assertPositiveInteger(value.messageThreadId, `${field}.messageThreadId`),
+    webhookUrl: typeof value.webhookUrl === 'string' ? value.webhookUrl : undefined
+  };
+}
+
+function parseGatewayApiJobRuntimeConfig(value: unknown, appId: string): GatewayApiJobRuntimeConfig {
+  if (value === undefined) {
+    return {
+      channelsFilePath: `/srv/apps/${appId}/shared/job-channels.json`,
+      channels: []
+    };
+  }
+
+  if (!isRecord(value)) {
+    throw new Error('Expected object for serviceProfiles.gatewayApi.jobRuntime');
+  }
+
+  return {
+    channelsFilePath: typeof value.channelsFilePath === 'string'
+      ? value.channelsFilePath
+      : `/srv/apps/${appId}/shared/job-channels.json`,
+    channels: Array.isArray(value.channels)
+      ? value.channels.map((entry, index) =>
+          parseGatewayApiJobChannelConfig(entry, `serviceProfiles.gatewayApi.jobRuntime.channels[${index}]`)
+        )
+      : []
+  };
+}
+
+function parseKulrsBotCredentialsConfig(value: unknown, field: string): KulrsBotCredentialsConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  return {
+    id: assertString(value.id, `${field}.id`),
+    email: typeof value.email === 'string' ? value.email : '',
+    password: typeof value.password === 'string' ? value.password : '',
+    description: typeof value.description === 'string' ? value.description : undefined
+  };
+}
+
+function parseKulrsActivityConfig(value: unknown, appId: string): KulrsActivityConfig {
+  if (value === undefined) {
+    return {
+      enabled: false,
+      description: 'KULRS activity automation',
+      schedule: '*:0/5',
+      workingDirectory: '__CURRENT__',
+      execStart: '/usr/bin/node __CURRENT__/jobs/kulrs_activity.js',
+      user: 'deploy',
+      envFilePath: '/srv/apps/gateway-api/shared/kulrs-activity.env',
+      credentialsFilePath: '/srv/apps/gateway-api/shared/kulrs.json',
+      workspaceDir: '/srv/apps/gateway-api/shared/kulrs',
+      timezone: 'America/New_York',
+      unsplashAccessKey: '',
+      firebaseApiKey: '',
+      bots: []
+    };
+  }
+
+  if (!isRecord(value)) {
+    throw new Error('Expected object for serviceProfiles.gatewayApi.kulrsActivity');
+  }
+
+  return {
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
+    description: typeof value.description === 'string' ? value.description : 'KULRS activity automation',
+    schedule: typeof value.schedule === 'string' ? value.schedule : '*:0/5',
+    workingDirectory: typeof value.workingDirectory === 'string' ? value.workingDirectory : '__CURRENT__',
+    execStart: typeof value.execStart === 'string'
+      ? value.execStart
+      : '/usr/bin/node __CURRENT__/jobs/kulrs_activity.js',
+    user: typeof value.user === 'string' ? value.user : 'deploy',
+    group: typeof value.group === 'string' ? value.group : undefined,
+    envFilePath: typeof value.envFilePath === 'string' ? value.envFilePath : `/srv/apps/${appId}/shared/kulrs-activity.env`,
+    credentialsFilePath: typeof value.credentialsFilePath === 'string'
+      ? value.credentialsFilePath
+      : `/srv/apps/${appId}/shared/kulrs.json`,
+    workspaceDir: typeof value.workspaceDir === 'string' ? value.workspaceDir : `/srv/apps/${appId}/shared/kulrs`,
+    timezone: typeof value.timezone === 'string' ? value.timezone : 'America/New_York',
+    unsplashAccessKey: typeof value.unsplashAccessKey === 'string' ? value.unsplashAccessKey : '',
+    firebaseApiKey: typeof value.firebaseApiKey === 'string' ? value.firebaseApiKey : '',
+    bots: Array.isArray(value.bots)
+      ? value.bots.map((entry, index) =>
+          parseKulrsBotCredentialsConfig(entry, `serviceProfiles.gatewayApi.kulrsActivity.bots[${index}]`)
+        )
+      : []
+  };
+}
+
 function parseChatRoutingPolicy(value: unknown, field: string): ChatRoutingPolicyConfig {
   if (!isRecord(value)) {
     throw new Error(`Expected object for ${field}`);
@@ -399,7 +551,9 @@ function parseGatewayApiServiceProfile(value: unknown): GatewayApiServiceProfile
       appId: 'gateway-api',
       apiBaseUrl: 'http://127.0.0.1:3000',
       envFilePath: '/srv/apps/gateway-api/shared/gateway-api.env',
-      environment: []
+      environment: [],
+      jobRuntime: parseGatewayApiJobRuntimeConfig(undefined, 'gateway-api'),
+      kulrsActivity: parseKulrsActivityConfig(undefined, 'gateway-api')
     };
   }
 
@@ -407,14 +561,17 @@ function parseGatewayApiServiceProfile(value: unknown): GatewayApiServiceProfile
     throw new Error('Expected object for serviceProfiles.gatewayApi');
   }
 
+  const appId = assertString(value.appId, 'serviceProfiles.gatewayApi.appId');
   return {
     enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
-    appId: assertString(value.appId, 'serviceProfiles.gatewayApi.appId'),
+    appId,
     apiBaseUrl: assertString(value.apiBaseUrl, 'serviceProfiles.gatewayApi.apiBaseUrl'),
     envFilePath: assertString(value.envFilePath, 'serviceProfiles.gatewayApi.envFilePath'),
     environment: Array.isArray(value.environment)
       ? value.environment.map((entry, index) => parseEnvironmentVariableConfig(entry, `serviceProfiles.gatewayApi.environment[${index}]`))
-      : []
+      : [],
+    jobRuntime: parseGatewayApiJobRuntimeConfig(value.jobRuntime, appId),
+    kulrsActivity: parseKulrsActivityConfig(value.kulrsActivity, appId)
   };
 }
 
@@ -605,5 +762,25 @@ export function getApp(config: GatewayConfig, appId: string): AppConfig {
 }
 
 export function getJobsForApp(config: GatewayConfig, appId: string): ScheduledJobConfig[] {
-  return config.scheduledJobs.filter((job) => job.appId === appId && job.enabled);
+  return getAllScheduledJobs(config).filter((job) => job.appId === appId && job.enabled);
+}
+
+export function getAllScheduledJobs(config: GatewayConfig): ScheduledJobConfig[] {
+  const jobs = [...config.scheduledJobs];
+  const kulrs = config.serviceProfiles.gatewayApi.kulrsActivity;
+
+  jobs.push({
+    id: 'gateway-api-kulrs-activity',
+    appId: config.serviceProfiles.gatewayApi.appId,
+    enabled: kulrs.enabled,
+    description: kulrs.description,
+    schedule: kulrs.schedule,
+    workingDirectory: kulrs.workingDirectory,
+    execStart: kulrs.execStart,
+    user: kulrs.user,
+    group: kulrs.group,
+    environmentFile: kulrs.envFilePath
+  });
+
+  return jobs;
 }

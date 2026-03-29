@@ -62,7 +62,26 @@ const config: GatewayConfig = {
       appId: 'chat-router',
       apiBaseUrl: 'http://127.0.0.1:3000',
       envFilePath: '/srv/apps/chat-router/shared/gateway-api.env',
-      environment: []
+      environment: [],
+      jobRuntime: {
+        channelsFilePath: '/srv/apps/chat-router/shared/job-channels.json',
+        channels: []
+      },
+      kulrsActivity: {
+        enabled: false,
+        description: 'KULRS activity automation',
+        schedule: '*:0/5',
+        workingDirectory: '__CURRENT__',
+        execStart: '/usr/bin/node __CURRENT__/jobs/kulrs_activity.js',
+        user: 'deploy',
+        envFilePath: '/srv/apps/chat-router/shared/kulrs-activity.env',
+        credentialsFilePath: '/srv/apps/chat-router/shared/kulrs.json',
+        workspaceDir: '/srv/apps/chat-router/shared/kulrs',
+        timezone: 'America/New_York',
+        unsplashAccessKey: '',
+        firebaseApiKey: '',
+        bots: []
+      }
     },
     gatewayChatPlatform: {
       enabled: false,

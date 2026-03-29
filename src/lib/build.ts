@@ -2,7 +2,14 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type GatewayConfig, getJobsForApp } from './config.ts';
 import { renderActiveUpstream, renderGatewaySite } from './nginx.ts';
-import { renderGatewayApiEnv, renderGatewayChatAgents, renderGatewayChatPlatformEnv } from './service-profiles.ts';
+import {
+  renderGatewayApiEnv,
+  renderGatewayApiJobChannels,
+  renderGatewayChatAgents,
+  renderGatewayChatPlatformEnv,
+  renderKulrsActivityEnv,
+  renderKulrsCredentials
+} from './service-profiles.ts';
 import { renderControlPlaneService, renderJobService, renderJobTimer } from './systemd.ts';
 
 export async function buildArtifacts(config: GatewayConfig, outDir: string): Promise<void> {
@@ -44,6 +51,21 @@ export async function buildArtifacts(config: GatewayConfig, outDir: string): Pro
   if (config.serviceProfiles.gatewayApi.enabled) {
     await writeFile(join(gatewayApiDir, 'gateway-api.env'), renderGatewayApiEnv(config.serviceProfiles.gatewayApi), 'utf8');
   }
+  await writeFile(
+    join(gatewayApiDir, 'job-channels.json'),
+    renderGatewayApiJobChannels(config.serviceProfiles.gatewayApi.jobRuntime),
+    'utf8'
+  );
+  await writeFile(
+    join(gatewayApiDir, 'kulrs-activity.env'),
+    renderKulrsActivityEnv(config.serviceProfiles.gatewayApi.kulrsActivity),
+    'utf8'
+  );
+  await writeFile(
+    join(gatewayApiDir, 'kulrs.json'),
+    renderKulrsCredentials(config.serviceProfiles.gatewayApi.kulrsActivity),
+    'utf8'
+  );
 
   if (config.serviceProfiles.gatewayChatPlatform.enabled) {
     await writeFile(

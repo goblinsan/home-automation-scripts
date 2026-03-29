@@ -72,7 +72,39 @@ function createConfig(root: string): GatewayConfig {
         appId: 'gateway-api',
         apiBaseUrl: 'http://127.0.0.1:3000',
         envFilePath: join(root, 'gateway-api.env'),
-        environment: [{ key: 'PORT', value: '3000', secret: false }]
+        environment: [{ key: 'PORT', value: '3000', secret: false }],
+        jobRuntime: {
+          channelsFilePath: join(root, 'job-channels.json'),
+          channels: [
+            {
+              id: 'jim-webhook',
+              type: 'webhook',
+              enabled: true,
+              webhookUrl: 'https://example.com/hooks/jim'
+            }
+          ]
+        },
+        kulrsActivity: {
+          enabled: true,
+          description: 'KULRS activity automation',
+          schedule: '*:0/5',
+          workingDirectory: '__CURRENT__',
+          execStart: '/usr/bin/node __CURRENT__/jobs/kulrs_activity.js',
+          user: 'deploy',
+          envFilePath: join(root, 'kulrs-activity.env'),
+          credentialsFilePath: join(root, 'kulrs.json'),
+          workspaceDir: join(root, 'kulrs'),
+          timezone: 'America/New_York',
+          unsplashAccessKey: 'unsplash-test',
+          firebaseApiKey: 'firebase-test',
+          bots: [
+            {
+              id: 'mireille',
+              email: 'mireille@example.com',
+              password: 'secret'
+            }
+          ]
+        }
       },
       gatewayChatPlatform: {
         enabled: true,
@@ -117,6 +149,9 @@ test('installServiceProfileFiles writes env files for matching apps', async () =
   await installServiceProfileFiles(config, 'gateway-chat-platform', context);
 
   assert.match(await readFile(join(root, 'gateway-api.env'), 'utf8'), /PORT=3000/);
+  assert.match(await readFile(join(root, 'job-channels.json'), 'utf8'), /jim-webhook/);
+  assert.match(await readFile(join(root, 'kulrs-activity.env'), 'utf8'), /KULRS_WORKSPACE_DIR=/);
+  assert.match(await readFile(join(root, 'kulrs.json'), 'utf8'), /"firebaseApiKey": "firebase-test"/);
   assert.match(await readFile(join(root, 'chat-api.env'), 'utf8'), /OPENAI_API_KEY=sk-test/);
 });
 
