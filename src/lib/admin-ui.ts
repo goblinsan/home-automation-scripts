@@ -2454,6 +2454,37 @@ function htmlPage(basePath: string): string {
       return trimmed.split('.').map((part) => Number(part.trim())).filter((part) => Number.isInteger(part) && part >= 0);
     }
 
+    function slugifyIdentifier(value) {
+      return String(value || '')
+        .toLowerCase()
+        .replaceAll(/[^a-z0-9]+/g, '-')
+        .replaceAll(/^-+|-+$/g, '');
+    }
+
+    function deriveBedrockWorkloadId(minecraft) {
+      const base = slugifyIdentifier(minecraft.worldName || minecraft.serverName || 'server');
+      return \`bedrock-\${base || 'server'}\`;
+    }
+
+    function deriveBedrockDescription(minecraft) {
+      const label = minecraft.serverName || minecraft.worldName || 'server';
+      return \`Minecraft Bedrock server: \${label}\`;
+    }
+
+    function applyBedrockIdentityDefaults(workload, previousMinecraft, nextMinecraft) {
+      const previousId = deriveBedrockWorkloadId(previousMinecraft || {});
+      const nextId = deriveBedrockWorkloadId(nextMinecraft || {});
+      if (!workload.id || workload.id === previousId) {
+        workload.id = nextId;
+      }
+
+      const previousDescription = deriveBedrockDescription(previousMinecraft || {});
+      const nextDescription = deriveBedrockDescription(nextMinecraft || {});
+      if (!workload.description || workload.description === previousDescription) {
+        workload.description = nextDescription;
+      }
+    }
+
     function renderWorkerNodes() {
       const container = document.getElementById('workerNodesContainer');
       container.innerHTML = '';
@@ -2834,27 +2865,16 @@ function htmlPage(basePath: string): string {
             <div>
               <strong>\${minecraft.serverName || workload.id || 'new-bedrock-server'}</strong>
               <p>\${workload.description || 'Minecraft Bedrock server on a worker node'}</p>
+              <p>For a new server, fill out the four basic fields below and click <strong>Apply Server</strong>. If <code>Auto Start</code> is enabled, deploy will also start it.</p>
             </div>
             <div class="toolbar">
-              <button data-action="deploy">Deploy</button>
-              <button data-action="start">Start</button>
-              <button data-action="stop">Stop</button>
-              <button data-action="restart">Restart</button>
-              <button data-action="update">Update</button>
+              <button data-action="deploy" class="primary">Apply Server</button>
               <button data-action="remove" class="danger">Remove</button>
             </div>
           </div>
           <div class="row">
-            <label class="check"><input type="checkbox" data-field="enabled" \${workload.enabled ? 'checked' : ''} /> Enabled</label>
-            <label>Workload Id<input data-field="id" value="\${workload.id}" /></label>
-            <label>Description<input data-field="description" value="\${workload.description || ''}" /></label>
-            <label>Node<select data-field="nodeId">\${workerNodeOptions(workload.nodeId)}</select></label>
-            <label>Image<input data-mc-field="image" value="\${minecraft.image}" /></label>
-            <label>Deploy Revision<input data-control="deployRevision" placeholder="optional sha/tag" /></label>
-          </div>
-          <div class="row">
-            <label>Server Name<input data-mc-field="serverName" value="\${minecraft.serverName}" /></label>
-            <label>World Name<input data-mc-field="worldName" value="\${minecraft.worldName}" /></label>
+            <label>Server Name<input data-mc-field="serverName" value="\${minecraft.serverName}" placeholder="Gateway Bedrock" /></label>
+            <label>World Name<input data-mc-field="worldName" value="\${minecraft.worldName}" placeholder="gateway-main" /></label>
             <label>Game Mode
               <select data-mc-field="gameMode">
                 <option value="survival" \${minecraft.gameMode === 'survival' ? 'selected' : ''}>survival</option>
@@ -2870,9 +2890,19 @@ function htmlPage(basePath: string): string {
                 <option value="hard" \${minecraft.difficulty === 'hard' ? 'selected' : ''}>hard</option>
               </select>
             </label>
-            <label>Seed<input data-mc-field="levelSeed" value="\${minecraft.levelSeed || ''}" /></label>
           </div>
-          <div class="row">
+          <details class="card">
+            <summary><strong>Advanced Options</strong></summary>
+            <div class="row">
+            <label class="check"><input type="checkbox" data-field="enabled" \${workload.enabled ? 'checked' : ''} /> Enabled</label>
+            <label>Workload Id<input data-field="id" value="\${workload.id}" /></label>
+            <label>Description<input data-field="description" value="\${workload.description || ''}" /></label>
+            <label>Node<select data-field="nodeId">\${workerNodeOptions(workload.nodeId)}</select></label>
+            <label>Image<input data-mc-field="image" value="\${minecraft.image}" /></label>
+            <label>Deploy Revision<input data-control="deployRevision" placeholder="optional sha/tag" /></label>
+            </div>
+            <div class="row">
+              <label>Seed<input data-mc-field="levelSeed" value="\${minecraft.levelSeed || ''}" /></label>
             <label>World Source Path<input data-mc-field="worldSourcePath" value="\${minecraft.worldSourcePath || ''}" placeholder="/mnt/storage/docker/shared/worlds/existing-world or .mcworld" /></label>
             <label>World Copy Mode
               <select data-mc-field="worldCopyMode">
@@ -2911,12 +2941,19 @@ function htmlPage(basePath: string): string {
             </div>
             <div data-pack-container="resource"></div>
           </div>
+          </details>
           <div class="card">
             <div class="split-actions">
               <div>
-                <span class="pill">Live Admin</span>
-                <p>Control the running world on the worker node.</p>
+                <span class="pill">Server Controls</span>
+                <p>Use these after the server has been applied at least once.</p>
               </div>
+            </div>
+            <div class="toolbar">
+              <button data-action="start">Start</button>
+              <button data-action="stop">Stop</button>
+              <button data-action="restart">Restart</button>
+              <button data-action="update">Update</button>
             </div>
             <div class="row">
               <label>Broadcast Message<input data-control="broadcastMessage" placeholder="Server message" /></label>
@@ -2962,12 +2999,18 @@ function htmlPage(basePath: string): string {
 
         const remoteIndex = state.config.remoteWorkloads.findIndex((candidate) => candidate === workload);
         const updateMinecraftField = (field, value, removeWhenEmpty = false) => {
-          state.config.remoteWorkloads[remoteIndex].minecraft = state.config.remoteWorkloads[remoteIndex].minecraft || createDefaultMinecraftConfig();
-          state.config.remoteWorkloads[remoteIndex].minecraft[field] = value;
+          const targetWorkload = state.config.remoteWorkloads[remoteIndex];
+          targetWorkload.minecraft = targetWorkload.minecraft || createDefaultMinecraftConfig();
+          const previousMinecraft = { ...targetWorkload.minecraft };
+          targetWorkload.minecraft[field] = value;
           if (removeWhenEmpty && (value === '' || value === undefined)) {
-            delete state.config.remoteWorkloads[remoteIndex].minecraft[field];
+            delete targetWorkload.minecraft[field];
+          }
+          if (field === 'serverName' || field === 'worldName') {
+            applyBedrockIdentityDefaults(targetWorkload, previousMinecraft, targetWorkload.minecraft);
           }
           renderRemoteWorkloads();
+          renderBedrockServers();
           syncRawJson();
         };
 
@@ -2980,9 +3023,15 @@ function htmlPage(basePath: string): string {
 
         element.querySelector('[data-action="deploy"]').addEventListener('click', async () => {
           try {
+            const targetWorkload = state.config.remoteWorkloads[remoteIndex];
+            targetWorkload.minecraft = targetWorkload.minecraft || createDefaultMinecraftConfig();
+            applyBedrockIdentityDefaults(targetWorkload, targetWorkload.minecraft, targetWorkload.minecraft);
+            renderRemoteWorkloads();
+            renderBedrockServers();
+            syncRawJson();
             const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
-            await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/deploy\`, revision ? { revision } : {});
-            setStatus(\`Deployed Bedrock server \${workload.id}\`);
+            await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(targetWorkload.id)}/deploy\`, revision ? { revision } : {});
+            setStatus(\`Deployed Bedrock server \${targetWorkload.id}\`);
           } catch (error) {
             setStatus(error.message, 'error');
           }
@@ -3032,6 +3081,7 @@ function htmlPage(basePath: string): string {
             }
             state.config.remoteWorkloads[remoteIndex][field] = isCheckbox ? input.checked : input.value;
             renderRemoteWorkloads();
+            renderBedrockServers();
             syncRawJson();
           });
         });
