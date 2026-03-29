@@ -2183,7 +2183,14 @@ function htmlPage(basePath: string): string {
             if (field === 'group' || field === 'environmentFile') {
               if (!input.value) {
                 delete state.config.scheduledJobs[index][field];
-      }
+              }
+            }
+            syncRawJson();
+          });
+        });
+
+        container.appendChild(element);
+      });
     }
 
     function renderSecrets() {
@@ -2318,13 +2325,6 @@ function htmlPage(basePath: string): string {
             }
             renderKulrsActivityProfile();
             renderSecrets();
-            syncRawJson();
-          });
-        });
-
-        container.appendChild(element);
-      });
-    }
             syncRawJson();
           });
         });
