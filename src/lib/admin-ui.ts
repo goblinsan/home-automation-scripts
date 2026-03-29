@@ -3,7 +3,14 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { join } from 'node:path';
 import { buildArtifacts } from './build.ts';
 import { getAllScheduledJobs, loadGatewayConfig, parseGatewayConfig, saveGatewayConfig, type GatewayConfig } from './config.ts';
-import { runServiceProfileAgent, syncServiceProfileRuntime, type AgentRunPayload, type AgentRunResult } from './deploy.ts';
+import {
+  controlMinecraftWorkload,
+  deployRemoteWorkload,
+  runServiceProfileAgent,
+  syncServiceProfileRuntime,
+  type AgentRunPayload,
+  type AgentRunResult
+} from './deploy.ts';
 import { DEFAULT_WORKFLOW_SEED_PATH, importWorkflowSeed } from './workflows.ts';
 
 export interface AdminServerOptions {
@@ -548,7 +555,8 @@ function htmlPage(basePath: string): string {
         <div class="split-actions">
           <div>
             <span class="pill">gateway-api</span>
-            <h3>Service Config</h3>
+            <h3>Runtime Profile</h3>
+            <p>Runtime wiring for <code>gateway-api</code>: env files, job delivery channels, and KULRS integration. This is not where app deployments or workflows are created.</p>
           </div>
           <div class="toolbar">
             <button id="addGatewayApiEnvButton">Add Env Var</button>
@@ -645,7 +653,8 @@ function htmlPage(basePath: string): string {
         <div class="split-actions">
           <div>
             <span class="pill">gateway-chat-platform</span>
-            <h3>Service Config</h3>
+            <h3>Runtime Profile</h3>
+            <p>Runtime wiring for <code>gateway-chat-platform</code>: env vars, provider sync, and local TTS integration.</p>
           </div>
           <div class="toolbar">
             <button id="addGatewayChatEnvButton">Add Env Var</button>
@@ -739,6 +748,69 @@ function htmlPage(basePath: string): string {
 
       </div>
 
+      <div class="tab-panel" data-tab-panel="secrets" hidden>
+      <div class="section-list">
+        <div class="card">
+          <div class="split-actions">
+            <div>
+              <span class="pill">Secrets</span>
+              <h3>Credentials, Keys, and Secret Env Vars</h3>
+              <p>Use this tab when you need to manage API keys, bot tokens, passwords, webhooks, or other sensitive values. This is the credential-focused view of the same config.</p>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="split-actions">
+            <div>
+              <span class="pill">gateway-api</span>
+              <h3>Secret Env Vars</h3>
+            </div>
+            <button id="addGatewayApiSecretButton">Add Secret Env Var</button>
+          </div>
+          <div id="gatewayApiSecretsContainer" class="section-list"></div>
+        </div>
+        <div class="card">
+          <div class="split-actions">
+            <div>
+              <span class="pill">Delivery</span>
+              <h3>Job Delivery Channels</h3>
+              <p>These credentials are used by <code>gateway-jobs.run</code> jobs when they send a message to Telegram or a webhook.</p>
+            </div>
+            <button id="addGatewayApiSecretChannelButton">Add Channel</button>
+          </div>
+          <div id="gatewayApiSecretChannelsContainer" class="section-list"></div>
+        </div>
+        <div class="card">
+          <div class="split-actions">
+            <div>
+              <span class="pill">KULRS</span>
+              <h3>KULRS Credentials</h3>
+            </div>
+            <button id="addKulrsSecretBotButton">Add KULRS Bot</button>
+          </div>
+          <div class="row">
+            <label>Firebase API Key
+              <input id="kulrsFirebaseApiKeySecrets" type="password" />
+            </label>
+            <label>Unsplash Access Key
+              <input id="kulrsUnsplashAccessKeySecrets" type="password" />
+            </label>
+          </div>
+          <div id="kulrsSecretBotsContainer" class="section-list"></div>
+        </div>
+        <div class="card">
+          <div class="split-actions">
+            <div>
+              <span class="pill">gateway-chat-platform</span>
+              <h3>Secret Env Vars</h3>
+            </div>
+            <button id="addGatewayChatSecretButton">Add Secret Env Var</button>
+          </div>
+          <div id="gatewayChatSecretsContainer" class="section-list"></div>
+        </div>
+      </div>
+      </div>
+
       <div class="tab-panel" data-tab-panel="agents" hidden>
       <div class="card">
         <div class="split-actions">
@@ -761,7 +833,7 @@ function htmlPage(basePath: string): string {
         <div class="split-actions">
           <div>
             <span class="pill">Catalog</span>
-            <h3>gateway-api Job Catalog</h3>
+            <h3>Automation Job Catalog</h3>
             <p>Available refs for <code>target.type = gateway-jobs.run</code>.</p>
           </div>
           <button id="reloadJobsButton">Reload Jobs</button>
@@ -771,8 +843,9 @@ function htmlPage(basePath: string): string {
       <div class="card">
         <div class="split-actions">
           <div>
-            <span class="pill">Workflows</span>
-            <h3>gateway-api Scheduled Workflows</h3>
+            <span class="pill">Automations</span>
+            <h3>Scheduled Workflows</h3>
+            <p>These are API-level automations stored and executed by <code>gateway-api</code>. Use this for agentic workflows, not for app deploys.</p>
           </div>
           <div class="toolbar">
             <button id="reloadWorkflowsButton">Reload Workflows</button>
@@ -783,12 +856,105 @@ function htmlPage(basePath: string): string {
       </div>
       </div>
 
+      <div class="tab-panel" data-tab-panel="remote" hidden>
+      <div class="section-list">
+        <div class="card">
+          <div>
+            <span class="pill">Nodes</span>
+            <h3>Worker Nodes and Remote Container Jobs</h3>
+            <p>Use this tab to define remote nodes like your core-node and generic container workloads. Minecraft has its own dedicated tab.</p>
+          </div>
+        </div>
+        <div class="card">
+          <div class="split-actions">
+            <div>
+              <span class="pill">Nodes</span>
+              <h3>Worker Nodes</h3>
+            </div>
+            <button id="addWorkerNodeButton">Add Worker Node</button>
+          </div>
+          <div id="workerNodesContainer" class="section-list"></div>
+        </div>
+        <div class="card">
+          <div class="split-actions">
+            <div>
+              <span class="pill">Remote Workloads</span>
+              <h3>Container Jobs + Bedrock Servers</h3>
+            </div>
+            <div class="toolbar">
+              <button id="addRemoteWorkloadButton">Add Container Job</button>
+              <button id="addBedrockWorkloadButton">Add Bedrock Server</button>
+            </div>
+          </div>
+          <div id="remoteWorkloadsContainer" class="section-list"></div>
+        </div>
+      </div>
+      </div>
+
+      <div class="tab-panel" data-tab-panel="bedrock" hidden>
+      <div class="card">
+        <div class="split-actions">
+          <div>
+            <span class="pill">Bedrock</span>
+            <h3>Minecraft Bedrock Servers</h3>
+            <p>Launch, configure, update, and administer Bedrock servers running on worker nodes.</p>
+            <p>Save the config before deploying or sending live admin commands so the worker node uses the latest settings.</p>
+          </div>
+          <div class="toolbar">
+            <button id="addBedrockServerButton">Add Bedrock Server</button>
+          </div>
+        </div>
+        <div id="bedrockServersContainer" class="section-list"></div>
+      </div>
+      </div>
+
       <div class="tab-panel" data-tab-panel="overview">
       <div class="card">
         <div class="split-actions">
           <div>
-            <span class="pill">Automation</span>
-            <h3>Bruvie-D + Workflow Migration</h3>
+            <span class="pill">Start Here</span>
+            <h3>What Goes Where</h3>
+            <p>This UI manages several different systems. Use the sections below as the map.</p>
+          </div>
+        </div>
+        <div class="section-list">
+          <div class="card">
+            <strong>Minecraft</strong>
+            <p>Bedrock servers, world settings, deploy/start/stop/restart, broadcast, kick, ban, update.</p>
+            <button data-open-tab="bedrock">Open Minecraft</button>
+          </div>
+          <div class="card">
+            <strong>Automations</strong>
+            <p>Scheduled workflows stored in <code>gateway-api</code>. Use this for agentic jobs and workflow records.</p>
+            <button data-open-tab="workflows">Open Automations</button>
+          </div>
+          <div class="card">
+            <strong>Deployments</strong>
+            <p><code>Apps</code> are git-based services deployed by the control-plane. <code>Jobs</code> are host scheduled commands attached to an app.</p>
+            <button data-open-tab="apps">Open Deployments</button>
+          </div>
+          <div class="card">
+            <strong>Runtime</strong>
+            <p>Service profiles, env files, delivery channels, TTS wiring, and runtime integration settings.</p>
+            <button data-open-tab="services">Open Runtime</button>
+          </div>
+          <div class="card">
+            <strong>Secrets</strong>
+            <p>API keys, bot tokens, passwords, KULRS credentials, and secret env vars.</p>
+            <button data-open-tab="secrets">Open Secrets</button>
+          </div>
+          <div class="card">
+            <strong>Nodes</strong>
+            <p>Connection info for worker nodes plus generic remote container jobs.</p>
+            <button data-open-tab="remote">Open Nodes</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="split-actions">
+          <div>
+            <span class="pill">Tools</span>
+            <h3>Agent and Workflow Utilities</h3>
           </div>
           <div class="toolbar">
             <button id="syncGatewayChatAgentsButton">Sync Agents</button>
@@ -828,6 +994,7 @@ function htmlPage(basePath: string): string {
             <div>
               <span class="pill">Apps</span>
               <h3>Managed Apps</h3>
+              <p>Git-based applications deployed by the control-plane, such as <code>gateway-api</code> or <code>gateway-chat-platform</code>.</p>
             </div>
             <button id="addAppButton">Add App</button>
           </div>
@@ -838,7 +1005,8 @@ function htmlPage(basePath: string): string {
           <div class="split-actions">
             <div>
               <span class="pill">Jobs</span>
-              <h3>Scheduled Jobs</h3>
+              <h3>Host Scheduled Jobs</h3>
+              <p>Host-level scheduled commands tied to an app deployment. This is separate from API workflows and remote container jobs.</p>
             </div>
             <button id="addJobButton">Add Job</button>
           </div>
@@ -862,15 +1030,18 @@ function htmlPage(basePath: string): string {
     <aside class="aside-stack">
       <section class="panel nav-card">
         <h2>Dashboard</h2>
-        <p>Focus each part of the gateway config without scrolling through everything at once.</p>
+        <p>Each tab controls a different part of the system. If you are looking for Minecraft, open <strong>Minecraft</strong>.</p>
         <div class="tab-nav">
           <button class="tab-button active" data-tab="overview">Overview</button>
           <button class="tab-button" data-tab="gateway">Gateway</button>
-          <button class="tab-button" data-tab="services">Services</button>
-          <button class="tab-button" data-tab="agents">Agents</button>
-          <button class="tab-button" data-tab="workflows">Workflows</button>
-          <button class="tab-button" data-tab="apps">Apps & Jobs</button>
-          <button class="tab-button" data-tab="raw">Raw Config</button>
+          <button class="tab-button" data-tab="services">Runtime</button>
+          <button class="tab-button" data-tab="secrets">Secrets</button>
+          <button class="tab-button" data-tab="agents">AI Agents</button>
+          <button class="tab-button" data-tab="workflows">Automations</button>
+          <button class="tab-button" data-tab="remote">Nodes</button>
+          <button class="tab-button" data-tab="bedrock">Minecraft</button>
+          <button class="tab-button" data-tab="apps">Deployments</button>
+          <button class="tab-button" data-tab="raw">Advanced JSON</button>
         </div>
       </section>
       <section class="panel">
@@ -887,25 +1058,23 @@ function htmlPage(basePath: string): string {
       <section class="panel tab-panel" data-tab-panel="raw" hidden>
         <div class="split-actions">
           <div>
-            <h2>Raw JSON</h2>
-            <p>Exact config file representation.</p>
+            <h2>Advanced JSON</h2>
+            <p>Exact config file representation. Use this only when the guided tabs are not enough.</p>
           </div>
           <button id="applyRawButton">Apply Raw JSON</button>
         </div>
         <textarea id="rawJson" spellcheck="false"></textarea>
       </section>
       <section class="panel">
-        <h2>Notes</h2>
+        <h2>Definitions</h2>
         <div class="hint-list">
-          <p>Disabled apps are ignored by generated nginx and deploy/build output.</p>
-          <p>Disabled jobs are omitted from generated systemd units.</p>
-          <p>The admin UI route is rendered into nginx when Admin UI is enabled.</p>
-          <p>The control-plane systemd unit is generated into <code>generated/systemd/control-plane/</code>.</p>
-          <p>Service profiles generate env files and chat-agent sync payloads for the real gateway-managed apps.</p>
-          <p>Workflow CRUD in this UI is backed by the live <code>gateway-api</code> workflow endpoints, not the local config file.</p>
-          <p>The job catalog list is also proxied from the live <code>gateway-api</code> runtime so <code>gateway-jobs.run</code> refs stay visible in the UI.</p>
-          <p>The Automation panel can import the OpenClaw workflow seed, sync live chat agents, and run Bruvie-D through <code>gateway-chat-platform</code>.</p>
-          <p>The TTS section configures the external <code>local-tts-service</code> and can probe its health and available voices.</p>
+          <p><strong>Apps</strong> are git-based services deployed by the control-plane.</p>
+          <p><strong>Jobs</strong> are host scheduled commands attached to an app deployment.</p>
+          <p><strong>Automations</strong> are workflow records stored and run by <code>gateway-api</code>.</p>
+          <p><strong>Runtime</strong> is where service profiles and generated env/runtime files are configured.</p>
+          <p><strong>Secrets</strong> is the credential-focused view for keys, passwords, tokens, and secret env vars.</p>
+          <p><strong>Nodes</strong> defines remote worker nodes and generic remote container jobs.</p>
+          <p><strong>Minecraft</strong> is the dedicated Bedrock administration surface.</p>
         </div>
       </section>
     </aside>
@@ -1005,9 +1174,66 @@ function htmlPage(basePath: string): string {
             if (field === 'description' && !input.value) {
               delete entry.description;
             }
+            renderSecrets();
             syncRawJson();
           });
         });
+        container.appendChild(element);
+      });
+    }
+
+    function renderSecretEnvironmentList(containerId, environment, onAddSecret, onRenderFullProfile) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = '';
+      const secrets = environment
+        .map((entry, index) => ({ entry, index }))
+        .filter(({ entry }) => entry.secret);
+
+      if (secrets.length === 0) {
+        container.innerHTML = '<div>No secret env vars configured yet.</div>';
+        return;
+      }
+
+      secrets.forEach(({ entry, index }) => {
+        const element = document.createElement('div');
+        element.className = 'card';
+        element.innerHTML = \`
+          <div class="split-actions">
+            <div><strong>\${entry.key || 'new-secret-env-var'}</strong></div>
+            <button class="danger">Remove</button>
+          </div>
+          <div class="row">
+            <label>Key<input data-field="key" value="\${entry.key}" /></label>
+            <label>Value<input type="password" data-field="value" value="\${entry.value}" /></label>
+            <label class="check"><input type="checkbox" data-field="secret" \${entry.secret ? 'checked' : ''} /> Secret</label>
+          </div>
+          <label>Description<input data-field="description" value="\${entry.description || ''}" /></label>
+        \`;
+
+        element.querySelector('.danger').addEventListener('click', () => {
+          environment.splice(index, 1);
+          onRenderFullProfile();
+          renderSecrets();
+          syncRawJson();
+        });
+
+        element.querySelectorAll('input').forEach((input) => {
+          const isCheckbox = input.type === 'checkbox';
+          input.addEventListener(isCheckbox ? 'change' : 'input', () => {
+            const field = input.dataset.field;
+            if (!field) {
+              return;
+            }
+            entry[field] = isCheckbox ? input.checked : input.value;
+            if (field === 'description' && !input.value) {
+              delete entry.description;
+            }
+            onRenderFullProfile();
+            renderSecrets();
+            syncRawJson();
+          });
+        });
+
         container.appendChild(element);
       });
     }
@@ -1215,6 +1441,7 @@ function htmlPage(basePath: string): string {
       renderEnvironmentList('gatewayApiEnvContainer', profile.environment, (index) => {
         profile.environment.splice(index, 1);
         renderGatewayApiProfile();
+        renderSecrets();
         syncRawJson();
       });
     }
@@ -1263,6 +1490,7 @@ function htmlPage(basePath: string): string {
         element.querySelector('.danger').addEventListener('click', () => {
           runtime.channels.splice(index, 1);
           renderGatewayApiJobRuntimeProfile();
+          renderSecrets();
           syncRawJson();
         });
 
@@ -1288,6 +1516,7 @@ function htmlPage(basePath: string): string {
                 delete channel[field];
               }
             }
+            renderSecrets();
             syncRawJson();
           });
         });
@@ -1338,6 +1567,7 @@ function htmlPage(basePath: string): string {
         element.querySelector('.danger').addEventListener('click', () => {
           kulrs.bots.splice(index, 1);
           renderKulrsActivityProfile();
+          renderSecrets();
           syncRawJson();
         });
 
@@ -1351,6 +1581,7 @@ function htmlPage(basePath: string): string {
             if (field === 'description' && !input.value) {
               delete bot.description;
             }
+            renderSecrets();
             syncRawJson();
           });
         });
@@ -1375,6 +1606,7 @@ function htmlPage(basePath: string): string {
       renderEnvironmentList('gatewayChatEnvContainer', profile.environment, (index) => {
         profile.environment.splice(index, 1);
         renderGatewayChatPlatformProfile();
+        renderSecrets();
         syncRawJson();
       });
 
@@ -1951,8 +2183,148 @@ function htmlPage(basePath: string): string {
             if (field === 'group' || field === 'environmentFile') {
               if (!input.value) {
                 delete state.config.scheduledJobs[index][field];
+      }
+    }
+
+    function renderSecrets() {
+      renderSecretEnvironmentList(
+        'gatewayApiSecretsContainer',
+        state.config.serviceProfiles.gatewayApi.environment,
+        () => undefined,
+        renderGatewayApiProfile
+      );
+      renderGatewayApiSecretsChannels();
+      renderKulrsSecrets();
+      renderSecretEnvironmentList(
+        'gatewayChatSecretsContainer',
+        state.config.serviceProfiles.gatewayChatPlatform.environment,
+        () => undefined,
+        renderGatewayChatPlatformProfile
+      );
+    }
+
+    function renderGatewayApiSecretsChannels() {
+      const runtime = state.config.serviceProfiles.gatewayApi.jobRuntime;
+      const container = document.getElementById('gatewayApiSecretChannelsContainer');
+      container.innerHTML = '';
+
+      if (runtime.channels.length === 0) {
+        container.innerHTML = '<div>No delivery channels configured yet.</div>';
+        return;
+      }
+
+      runtime.channels.forEach((channel, index) => {
+        const element = document.createElement('div');
+        element.className = 'card';
+        element.innerHTML = \`
+          <div class="split-actions">
+            <div><strong>\${channel.id || 'new-channel'}</strong></div>
+            <button class="danger">Remove</button>
+          </div>
+          <div class="row">
+            <label class="check"><input type="checkbox" data-field="enabled" \${channel.enabled ? 'checked' : ''} /> Enabled</label>
+            <label>Channel Id<input data-field="id" value="\${channel.id}" /></label>
+            <label>Type
+              <select data-field="type">
+                <option value="telegram" \${channel.type === 'telegram' ? 'selected' : ''}>telegram</option>
+                <option value="webhook" \${channel.type === 'webhook' ? 'selected' : ''}>webhook</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
+            <label>Telegram Bot Token<input type="password" data-field="botToken" value="\${channel.botToken || ''}" /></label>
+            <label>Telegram Chat Id<input data-field="chatId" value="\${channel.chatId || ''}" /></label>
+            <label>Webhook URL<input type="password" data-field="webhookUrl" value="\${channel.webhookUrl || ''}" /></label>
+          </div>
+        \`;
+
+        element.querySelector('.danger').addEventListener('click', () => {
+          runtime.channels.splice(index, 1);
+          renderGatewayApiJobRuntimeProfile();
+          renderSecrets();
+          syncRawJson();
+        });
+
+        element.querySelectorAll('input, select').forEach((input) => {
+          const isCheckbox = input.type === 'checkbox';
+          const eventName = isCheckbox || input.tagName === 'SELECT' ? 'change' : 'input';
+          input.addEventListener(eventName, () => {
+            const field = input.dataset.field;
+            if (!field) {
+              return;
+            }
+            if (field === 'enabled') {
+              channel.enabled = input.checked;
+            } else {
+              channel[field] = input.value;
+              if ((field === 'botToken' || field === 'chatId' || field === 'webhookUrl') && !input.value) {
+                delete channel[field];
               }
             }
+            renderGatewayApiJobRuntimeProfile();
+            renderSecrets();
+            syncRawJson();
+          });
+        });
+
+        container.appendChild(element);
+      });
+    }
+
+    function renderKulrsSecrets() {
+      const kulrs = state.config.serviceProfiles.gatewayApi.kulrsActivity;
+      document.getElementById('kulrsFirebaseApiKeySecrets').value = kulrs.firebaseApiKey;
+      document.getElementById('kulrsUnsplashAccessKeySecrets').value = kulrs.unsplashAccessKey;
+
+      const container = document.getElementById('kulrsSecretBotsContainer');
+      container.innerHTML = '';
+      if (kulrs.bots.length === 0) {
+        container.innerHTML = '<div>No KULRS bot credentials configured yet.</div>';
+        return;
+      }
+
+      kulrs.bots.forEach((bot, index) => {
+        const element = document.createElement('div');
+        element.className = 'card';
+        element.innerHTML = \`
+          <div class="split-actions">
+            <div><strong>\${bot.id || 'new-kulrs-bot'}</strong></div>
+            <button class="danger">Remove</button>
+          </div>
+          <div class="row">
+            <label>Bot Id<input data-field="id" value="\${bot.id}" /></label>
+            <label>Email<input data-field="email" value="\${bot.email}" /></label>
+            <label>Password<input type="password" data-field="password" value="\${bot.password}" /></label>
+          </div>
+          <label>Description<input data-field="description" value="\${bot.description || ''}" /></label>
+        \`;
+
+        element.querySelector('.danger').addEventListener('click', () => {
+          kulrs.bots.splice(index, 1);
+          renderKulrsActivityProfile();
+          renderSecrets();
+          syncRawJson();
+        });
+
+        element.querySelectorAll('input').forEach((input) => {
+          input.addEventListener('input', () => {
+            const field = input.dataset.field;
+            if (!field) {
+              return;
+            }
+            bot[field] = input.value;
+            if (field === 'description' && !input.value) {
+              delete bot.description;
+            }
+            renderKulrsActivityProfile();
+            renderSecrets();
+            syncRawJson();
+          });
+        });
+
+        container.appendChild(element);
+      });
+    }
             syncRawJson();
           });
         });
@@ -2000,6 +2372,745 @@ function htmlPage(basePath: string): string {
       });
     }
 
+    function workerNodeOptions(selectedNodeId) {
+      return state.config.workerNodes
+        .map((node) => \`<option value="\${node.id}" \${node.id === selectedNodeId ? 'selected' : ''}>\${node.id || '(unset node id)'}</option>\`)
+        .join('');
+    }
+
+    function createDefaultMinecraftPack() {
+      return {
+        id: '',
+        sourcePath: '',
+        manifestUuid: '',
+        manifestVersion: [1, 0, 0]
+      };
+    }
+
+    function createDefaultMinecraftConfig() {
+      return {
+        image: 'itzg/minecraft-bedrock-server:latest',
+        serverName: '',
+        worldName: '',
+        gameMode: 'survival',
+        difficulty: 'normal',
+        worldCopyMode: 'if-missing',
+        allowCheats: false,
+        onlineMode: true,
+        maxPlayers: 10,
+        serverPort: 19132,
+        autoStart: true,
+        autoUpdateEnabled: true,
+        autoUpdateSchedule: '*-*-* 04:00:00',
+        texturepackRequired: false,
+        behaviorPacks: [],
+        resourcePacks: []
+      };
+    }
+
+    function createDefaultBedrockWorkload() {
+      return {
+        id: '',
+        enabled: true,
+        nodeId: state.config.workerNodes[0]?.id || '',
+        description: '',
+        kind: 'minecraft-bedrock-server',
+        minecraft: createDefaultMinecraftConfig()
+      };
+    }
+
+    function createDefaultRemoteJobWorkload() {
+      return {
+        id: '',
+        enabled: true,
+        nodeId: state.config.workerNodes[0]?.id || '',
+        description: '',
+        kind: 'scheduled-container-job',
+        job: {
+          schedule: '*-*-* 03:00:00',
+          timezone: 'America/New_York',
+          build: {
+            strategy: 'generated-node',
+            repoUrl: '',
+            defaultRevision: 'main',
+            contextPath: '.',
+            packageRoot: '.',
+            nodeVersion: '24',
+            installCommand: 'npm ci --omit=dev'
+          },
+          runCommand: '',
+          environment: [],
+          volumeMounts: [],
+          jsonFiles: []
+        }
+      };
+    }
+
+    function parsePackVersion(value) {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return [1, 0, 0];
+      }
+      return trimmed.split('.').map((part) => Number(part.trim())).filter((part) => Number.isInteger(part) && part >= 0);
+    }
+
+    function renderWorkerNodes() {
+      const container = document.getElementById('workerNodesContainer');
+      container.innerHTML = '';
+      if (state.config.workerNodes.length === 0) {
+        container.innerHTML = '<p>No worker nodes configured yet.</p>';
+        return;
+      }
+
+      state.config.workerNodes.forEach((node, index) => {
+        const element = document.createElement('div');
+        element.className = 'card';
+        element.innerHTML = \`
+          <div class="split-actions">
+            <div><strong>\${node.id || 'new-worker-node'}</strong></div>
+            <button class="danger">Remove</button>
+          </div>
+          <div class="row">
+            <label class="check"><input type="checkbox" data-field="enabled" \${node.enabled ? 'checked' : ''} /> Enabled</label>
+            <label>Node Id<input data-field="id" value="\${node.id}" /></label>
+            <label>Description<input data-field="description" value="\${node.description || ''}" /></label>
+            <label>Host<input data-field="host" value="\${node.host}" /></label>
+            <label>SSH User<input data-field="sshUser" value="\${node.sshUser}" /></label>
+            <label>SSH Port<input type="number" data-field="sshPort" value="\${node.sshPort}" /></label>
+          </div>
+          <div class="row">
+            <label>Build Root<input data-field="buildRoot" value="\${node.buildRoot}" /></label>
+            <label>Stack Root<input data-field="stackRoot" value="\${node.stackRoot}" /></label>
+            <label>Volume Root<input data-field="volumeRoot" value="\${node.volumeRoot}" /></label>
+            <label>Worker Poll Seconds<input type="number" data-field="workerPollIntervalSeconds" value="\${node.workerPollIntervalSeconds || 15}" /></label>
+          </div>
+          <div class="row">
+            <label>Node Command<input data-field="nodeCommand" value="\${node.nodeCommand || 'node'}" /></label>
+            <label>Docker Command<input data-field="dockerCommand" value="\${node.dockerCommand}" /></label>
+            <label>Docker Compose Command<input data-field="dockerComposeCommand" value="\${node.dockerComposeCommand}" /></label>
+          </div>
+        \`;
+
+        element.querySelector('.danger').addEventListener('click', () => {
+          state.config.workerNodes.splice(index, 1);
+          renderWorkerNodes();
+          renderRemoteWorkloads();
+          renderBedrockServers();
+          syncRawJson();
+        });
+
+        element.querySelectorAll('input').forEach((input) => {
+          const isCheckbox = input.type === 'checkbox';
+          input.addEventListener(isCheckbox ? 'change' : 'input', () => {
+            const field = input.dataset.field;
+            if (!field) {
+              return;
+            }
+            node[field] = isCheckbox ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
+            renderWorkerNodes();
+            renderRemoteWorkloads();
+            renderBedrockServers();
+            syncRawJson();
+          });
+        });
+
+        container.appendChild(element);
+      });
+    }
+
+    function renderRemoteWorkloads() {
+      const container = document.getElementById('remoteWorkloadsContainer');
+      container.innerHTML = '';
+      if (state.config.remoteWorkloads.length === 0) {
+        container.innerHTML = '<p>No remote workloads configured yet.</p>';
+        return;
+      }
+
+      state.config.remoteWorkloads.forEach((workload, index) => {
+        const isJob = workload.kind === 'scheduled-container-job';
+        const job = workload.job || {
+          schedule: '*-*-* 03:00:00',
+          timezone: 'America/New_York',
+          build: {
+            strategy: 'generated-node',
+            repoUrl: '',
+            defaultRevision: 'main',
+            contextPath: '.',
+            packageRoot: '.',
+            nodeVersion: '24',
+            installCommand: 'npm ci --omit=dev'
+          },
+          runCommand: '',
+          environment: [],
+          volumeMounts: [],
+          jsonFiles: []
+        };
+        const minecraft = workload.minecraft || {
+          image: 'itzg/minecraft-bedrock-server:latest',
+          serverName: '',
+          worldName: '',
+          gameMode: 'survival',
+          difficulty: 'normal',
+          worldCopyMode: 'if-missing',
+          allowCheats: false,
+          onlineMode: true,
+          maxPlayers: 10,
+          serverPort: 19132,
+          autoStart: true,
+          autoUpdateEnabled: true,
+          autoUpdateSchedule: '*-*-* 04:00:00',
+          texturepackRequired: false,
+          behaviorPacks: [],
+          resourcePacks: []
+        };
+        const element = document.createElement('div');
+        element.className = 'card';
+        element.innerHTML = \`
+          <div class="split-actions">
+            <div>
+              <strong>\${workload.id || 'new-remote-workload'}</strong>
+              <p>\${workload.description || 'Remote containerized workload'}</p>
+            </div>
+            <div class="toolbar">
+              <button data-action="deploy">Deploy</button>
+              <button data-action="remove" class="danger">Remove</button>
+            </div>
+          </div>
+          <div class="row">
+            <label class="check"><input type="checkbox" data-field="enabled" \${workload.enabled ? 'checked' : ''} /> Enabled</label>
+            <label>Workload Id<input data-field="id" value="\${workload.id}" /></label>
+            <label>Description<input data-field="description" value="\${workload.description || ''}" /></label>
+            <label>Node<select data-field="nodeId">\${workerNodeOptions(workload.nodeId)}</select></label>
+            <label>Kind
+              <select data-field="kind">
+                <option value="scheduled-container-job" \${isJob ? 'selected' : ''}>scheduled-container-job</option>
+                <option value="minecraft-bedrock-server" \${workload.kind === 'minecraft-bedrock-server' ? 'selected' : ''}>minecraft-bedrock-server</option>
+              </select>
+            </label>
+            <label>Deploy Revision<input data-control="deployRevision" placeholder="optional sha/tag" /></label>
+          </div>
+          \${isJob ? \`
+            <div class="card">
+              <span class="pill">Container Job</span>
+              <div class="row">
+                <label>Schedule<input data-job-field="schedule" value="\${job.schedule}" /></label>
+                <label>Timezone<input data-job-field="timezone" value="\${job.timezone}" /></label>
+                <label>Build Strategy
+                  <select data-job-build-field="strategy">
+                    <option value="generated-node" \${job.build.strategy === 'generated-node' ? 'selected' : ''}>generated-node</option>
+                    <option value="repo-dockerfile" \${job.build.strategy === 'repo-dockerfile' ? 'selected' : ''}>repo-dockerfile</option>
+                  </select>
+                </label>
+                <label>Repo URL<input data-job-build-field="repoUrl" value="\${job.build.repoUrl}" /></label>
+                <label>Default Revision<input data-job-build-field="defaultRevision" value="\${job.build.defaultRevision}" /></label>
+                <label>Context Path<input data-job-build-field="contextPath" value="\${job.build.contextPath}" /></label>
+              </div>
+              <div class="row">
+                <label>Dockerfile Path<input data-job-build-field="dockerfilePath" value="\${job.build.dockerfilePath || ''}" /></label>
+                <label>Package Root<input data-job-build-field="packageRoot" value="\${job.build.packageRoot || ''}" /></label>
+                <label>Node Version<input data-job-build-field="nodeVersion" value="\${job.build.nodeVersion || ''}" /></label>
+                <label>Install Command<input data-job-build-field="installCommand" value="\${job.build.installCommand || ''}" /></label>
+              </div>
+              <label>Run Command<input data-job-field="runCommand" value="\${job.runCommand}" /></label>
+              <label>Environment JSON<textarea data-job-json="environment">\${JSON.stringify(job.environment || [], null, 2)}</textarea></label>
+              <label>Volume Mounts JSON<textarea data-job-json="volumeMounts">\${JSON.stringify(job.volumeMounts || [], null, 2)}</textarea></label>
+              <label>Runtime JSON Files<textarea data-job-json="jsonFiles">\${JSON.stringify(job.jsonFiles || [], null, 2)}</textarea></label>
+            </div>
+          \` : \`
+            <div class="card">
+              <span class="pill">Bedrock</span>
+              <p>Use the Bedrock tab for the streamlined server controls and pack management workflow.</p>
+              <div class="row">
+                <label>Image<input data-mc-field="image" value="\${minecraft.image}" /></label>
+                <label>Server Name<input data-mc-field="serverName" value="\${minecraft.serverName}" /></label>
+                <label>World Name<input data-mc-field="worldName" value="\${minecraft.worldName}" /></label>
+                <label>Game Mode
+                  <select data-mc-field="gameMode">
+                    <option value="survival" \${minecraft.gameMode === 'survival' ? 'selected' : ''}>survival</option>
+                    <option value="creative" \${minecraft.gameMode === 'creative' ? 'selected' : ''}>creative</option>
+                    <option value="adventure" \${minecraft.gameMode === 'adventure' ? 'selected' : ''}>adventure</option>
+                  </select>
+                </label>
+                <label>Difficulty
+                  <select data-mc-field="difficulty">
+                    <option value="peaceful" \${minecraft.difficulty === 'peaceful' ? 'selected' : ''}>peaceful</option>
+                    <option value="easy" \${minecraft.difficulty === 'easy' ? 'selected' : ''}>easy</option>
+                    <option value="normal" \${minecraft.difficulty === 'normal' ? 'selected' : ''}>normal</option>
+                    <option value="hard" \${minecraft.difficulty === 'hard' ? 'selected' : ''}>hard</option>
+                  </select>
+                </label>
+                <label>Seed<input data-mc-field="levelSeed" value="\${minecraft.levelSeed || ''}" /></label>
+                <label>World Source Path<input data-mc-field="worldSourcePath" value="\${minecraft.worldSourcePath || ''}" placeholder="/mnt/storage/docker/shared/worlds/existing-world or .mcworld" /></label>
+              </div>
+              <div class="row">
+                <label>World Copy Mode
+                  <select data-mc-field="worldCopyMode">
+                    <option value="if-missing" \${minecraft.worldCopyMode === 'if-missing' ? 'selected' : ''}>if-missing</option>
+                    <option value="always" \${minecraft.worldCopyMode === 'always' ? 'selected' : ''}>always</option>
+                  </select>
+                </label>
+                <label>Max Players<input type="number" data-mc-field="maxPlayers" value="\${minecraft.maxPlayers}" /></label>
+                <label>Server Port<input type="number" data-mc-field="serverPort" value="\${minecraft.serverPort}" /></label>
+                <label>Auto Update Schedule<input data-mc-field="autoUpdateSchedule" value="\${minecraft.autoUpdateSchedule}" /></label>
+              </div>
+              <div class="row">
+                <label class="check"><input type="checkbox" data-mc-field="allowCheats" \${minecraft.allowCheats ? 'checked' : ''} /> Allow Cheats</label>
+                <label class="check"><input type="checkbox" data-mc-field="onlineMode" \${minecraft.onlineMode ? 'checked' : ''} /> Online Mode</label>
+                <label class="check"><input type="checkbox" data-mc-field="autoStart" \${minecraft.autoStart ? 'checked' : ''} /> Auto Start</label>
+                <label class="check"><input type="checkbox" data-mc-field="autoUpdateEnabled" \${minecraft.autoUpdateEnabled ? 'checked' : ''} /> Auto Update</label>
+                <label class="check"><input type="checkbox" data-mc-field="texturepackRequired" \${minecraft.texturepackRequired ? 'checked' : ''} /> Require Resource Packs</label>
+              </div>
+              <label>Behavior Packs JSON<textarea data-mc-json="behaviorPacks">\${JSON.stringify(minecraft.behaviorPacks || [], null, 2)}</textarea></label>
+              <label>Resource Packs JSON<textarea data-mc-json="resourcePacks">\${JSON.stringify(minecraft.resourcePacks || [], null, 2)}</textarea></label>
+              <div class="row">
+                <label>Broadcast Message<input data-control="broadcastMessage" placeholder="Server message" /></label>
+                <label>Player<input data-control="player" placeholder="player name" /></label>
+                <label>Reason<input data-control="reason" placeholder="optional reason" /></label>
+              </div>
+              <div class="toolbar">
+                <button data-action="mc-start">Start</button>
+                <button data-action="mc-stop">Stop</button>
+                <button data-action="mc-restart">Restart</button>
+                <button data-action="mc-update">Update If Empty</button>
+                <button data-action="mc-broadcast">Broadcast</button>
+                <button data-action="mc-kick">Kick</button>
+                <button data-action="mc-ban">Ban</button>
+              </div>
+            </div>
+          \`}
+        \`;
+
+        element.querySelector('[data-action="remove"]').addEventListener('click', () => {
+          state.config.remoteWorkloads.splice(index, 1);
+          renderRemoteWorkloads();
+          renderBedrockServers();
+          syncRawJson();
+        });
+
+        element.querySelector('[data-action="deploy"]').addEventListener('click', async () => {
+          try {
+            const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
+            await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/deploy\`, revision ? { revision } : {});
+            setStatus(\`Deployed remote workload \${workload.id}\`);
+          } catch (error) {
+            setStatus(error.message, 'error');
+          }
+        });
+
+        element.querySelectorAll('input[data-field], select[data-field]').forEach((input) => {
+          const isCheckbox = input.type === 'checkbox';
+          const eventName = isCheckbox || input.tagName === 'SELECT' ? 'change' : 'input';
+          input.addEventListener(eventName, () => {
+            const field = input.dataset.field;
+            if (!field) return;
+            workload[field] = isCheckbox ? input.checked : input.value;
+            if (field === 'kind') {
+              if (input.value === 'scheduled-container-job') {
+                workload.job = job;
+                delete workload.minecraft;
+              } else {
+                workload.minecraft = minecraft;
+                delete workload.job;
+              }
+              renderRemoteWorkloads();
+              renderBedrockServers();
+            } else if (workload.kind === 'minecraft-bedrock-server') {
+              renderBedrockServers();
+            }
+            syncRawJson();
+          });
+        });
+
+        element.querySelectorAll('input[data-job-field], select[data-job-build-field], input[data-job-build-field]').forEach((input) => {
+          input.addEventListener(input.tagName === 'SELECT' ? 'change' : 'input', () => {
+            workload.job = workload.job || job;
+            if (input.dataset.jobField) {
+              workload.job[input.dataset.jobField] = input.value;
+            }
+            if (input.dataset.jobBuildField) {
+              workload.job.build[input.dataset.jobBuildField] = input.value;
+            }
+            syncRawJson();
+          });
+        });
+
+        element.querySelectorAll('textarea[data-job-json]').forEach((textarea) => {
+          textarea.addEventListener('change', () => {
+            try {
+              workload.job = workload.job || job;
+              workload.job[textarea.dataset.jobJson] = parseJsonField(textarea.value, []);
+              syncRawJson();
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
+        });
+
+        element.querySelectorAll('input[data-mc-field], select[data-mc-field]').forEach((input) => {
+          const isCheckbox = input.type === 'checkbox';
+          const eventName = isCheckbox || input.tagName === 'SELECT' ? 'change' : 'input';
+          input.addEventListener(eventName, () => {
+            workload.minecraft = workload.minecraft || minecraft;
+            const field = input.dataset.mcField;
+            if (!field) return;
+            if (isCheckbox) {
+              workload.minecraft[field] = input.checked;
+            } else if (input.type === 'number') {
+              workload.minecraft[field] = Number(input.value);
+            } else {
+              workload.minecraft[field] = input.value || undefined;
+              if (!input.value) delete workload.minecraft[field];
+            }
+            renderBedrockServers();
+            syncRawJson();
+          });
+        });
+
+        element.querySelectorAll('textarea[data-mc-json]').forEach((textarea) => {
+          textarea.addEventListener('change', () => {
+            try {
+              workload.minecraft = workload.minecraft || minecraft;
+              workload.minecraft[textarea.dataset.mcJson] = parseJsonField(textarea.value, []);
+              renderBedrockServers();
+              syncRawJson();
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
+        });
+
+        if (workload.kind === 'minecraft-bedrock-server') {
+          const controlAction = async (action) => {
+            const message = element.querySelector('[data-control="broadcastMessage"]').value.trim();
+            const player = element.querySelector('[data-control="player"]').value.trim();
+            const reason = element.querySelector('[data-control="reason"]').value.trim();
+            const body = {
+              ...(message ? { message } : {}),
+              ...(player ? { player } : {}),
+              ...(reason ? { reason } : {})
+            };
+            await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/\${action}\`, body);
+          };
+
+          [
+            ['mc-start', 'start'],
+            ['mc-stop', 'stop'],
+            ['mc-restart', 'restart'],
+            ['mc-update', 'update-if-empty'],
+            ['mc-broadcast', 'broadcast'],
+            ['mc-kick', 'kick'],
+            ['mc-ban', 'ban']
+          ].forEach(([buttonAction, action]) => {
+            element.querySelector(\`[data-action="\${buttonAction}"]\`).addEventListener('click', async () => {
+              try {
+                await controlAction(action);
+                setStatus(\`Minecraft action completed: \${action}\`);
+              } catch (error) {
+                setStatus(error.message, 'error');
+              }
+            });
+          });
+        }
+
+        container.appendChild(element);
+      });
+    }
+
+    function renderBedrockServers() {
+      const container = document.getElementById('bedrockServersContainer');
+      container.innerHTML = '';
+      const workloads = state.config.remoteWorkloads.filter((workload) => workload.kind === 'minecraft-bedrock-server');
+      if (workloads.length === 0) {
+        container.innerHTML = '<p>No Bedrock servers configured yet.</p>';
+        return;
+      }
+
+      workloads.forEach((workload) => {
+        const minecraft = workload.minecraft || createDefaultMinecraftConfig();
+        const element = document.createElement('div');
+        element.className = 'card';
+        element.innerHTML = \`
+          <div class="split-actions">
+            <div>
+              <strong>\${minecraft.serverName || workload.id || 'new-bedrock-server'}</strong>
+              <p>\${workload.description || 'Minecraft Bedrock server on a worker node'}</p>
+            </div>
+            <div class="toolbar">
+              <button data-action="deploy">Deploy</button>
+              <button data-action="start">Start</button>
+              <button data-action="stop">Stop</button>
+              <button data-action="restart">Restart</button>
+              <button data-action="update">Update</button>
+              <button data-action="remove" class="danger">Remove</button>
+            </div>
+          </div>
+          <div class="row">
+            <label class="check"><input type="checkbox" data-field="enabled" \${workload.enabled ? 'checked' : ''} /> Enabled</label>
+            <label>Workload Id<input data-field="id" value="\${workload.id}" /></label>
+            <label>Description<input data-field="description" value="\${workload.description || ''}" /></label>
+            <label>Node<select data-field="nodeId">\${workerNodeOptions(workload.nodeId)}</select></label>
+            <label>Image<input data-mc-field="image" value="\${minecraft.image}" /></label>
+            <label>Deploy Revision<input data-control="deployRevision" placeholder="optional sha/tag" /></label>
+          </div>
+          <div class="row">
+            <label>Server Name<input data-mc-field="serverName" value="\${minecraft.serverName}" /></label>
+            <label>World Name<input data-mc-field="worldName" value="\${minecraft.worldName}" /></label>
+            <label>Game Mode
+              <select data-mc-field="gameMode">
+                <option value="survival" \${minecraft.gameMode === 'survival' ? 'selected' : ''}>survival</option>
+                <option value="creative" \${minecraft.gameMode === 'creative' ? 'selected' : ''}>creative</option>
+                <option value="adventure" \${minecraft.gameMode === 'adventure' ? 'selected' : ''}>adventure</option>
+              </select>
+            </label>
+            <label>Difficulty
+              <select data-mc-field="difficulty">
+                <option value="peaceful" \${minecraft.difficulty === 'peaceful' ? 'selected' : ''}>peaceful</option>
+                <option value="easy" \${minecraft.difficulty === 'easy' ? 'selected' : ''}>easy</option>
+                <option value="normal" \${minecraft.difficulty === 'normal' ? 'selected' : ''}>normal</option>
+                <option value="hard" \${minecraft.difficulty === 'hard' ? 'selected' : ''}>hard</option>
+              </select>
+            </label>
+            <label>Seed<input data-mc-field="levelSeed" value="\${minecraft.levelSeed || ''}" /></label>
+          </div>
+          <div class="row">
+            <label>World Source Path<input data-mc-field="worldSourcePath" value="\${minecraft.worldSourcePath || ''}" placeholder="/mnt/storage/docker/shared/worlds/existing-world or .mcworld" /></label>
+            <label>World Copy Mode
+              <select data-mc-field="worldCopyMode">
+                <option value="if-missing" \${minecraft.worldCopyMode === 'if-missing' ? 'selected' : ''}>if-missing</option>
+                <option value="always" \${minecraft.worldCopyMode === 'always' ? 'selected' : ''}>always</option>
+              </select>
+            </label>
+            <label>Max Players<input type="number" data-mc-field="maxPlayers" value="\${minecraft.maxPlayers}" /></label>
+            <label>Server Port<input type="number" data-mc-field="serverPort" value="\${minecraft.serverPort}" /></label>
+            <label>Auto Update Schedule<input data-mc-field="autoUpdateSchedule" value="\${minecraft.autoUpdateSchedule}" /></label>
+          </div>
+          <div class="row">
+            <label class="check"><input type="checkbox" data-mc-field="allowCheats" \${minecraft.allowCheats ? 'checked' : ''} /> Allow Cheats</label>
+            <label class="check"><input type="checkbox" data-mc-field="onlineMode" \${minecraft.onlineMode ? 'checked' : ''} /> Online Mode</label>
+            <label class="check"><input type="checkbox" data-mc-field="autoStart" \${minecraft.autoStart ? 'checked' : ''} /> Auto Start</label>
+            <label class="check"><input type="checkbox" data-mc-field="autoUpdateEnabled" \${minecraft.autoUpdateEnabled ? 'checked' : ''} /> Auto Update</label>
+            <label class="check"><input type="checkbox" data-mc-field="texturepackRequired" \${minecraft.texturepackRequired ? 'checked' : ''} /> Require Resource Packs</label>
+          </div>
+          <div class="card">
+            <div class="split-actions">
+              <div>
+                <span class="pill">Behavior Packs</span>
+                <p>Bedrock behavior packs or add-on logic packages.</p>
+              </div>
+              <button data-action="add-behavior-pack">Add Behavior Pack</button>
+            </div>
+            <div data-pack-container="behavior"></div>
+          </div>
+          <div class="card">
+            <div class="split-actions">
+              <div>
+                <span class="pill">Resource Packs</span>
+                <p>Textures, sounds, and client-side content packs.</p>
+              </div>
+              <button data-action="add-resource-pack">Add Resource Pack</button>
+            </div>
+            <div data-pack-container="resource"></div>
+          </div>
+          <div class="card">
+            <div class="split-actions">
+              <div>
+                <span class="pill">Live Admin</span>
+                <p>Control the running world on the worker node.</p>
+              </div>
+            </div>
+            <div class="row">
+              <label>Broadcast Message<input data-control="broadcastMessage" placeholder="Server message" /></label>
+              <label>Player<input data-control="player" placeholder="player name" /></label>
+              <label>Reason<input data-control="reason" placeholder="optional reason" /></label>
+            </div>
+            <div class="toolbar">
+              <button data-action="broadcast">Broadcast</button>
+              <button data-action="kick">Kick</button>
+              <button data-action="ban">Ban</button>
+            </div>
+          </div>
+        \`;
+
+        const packSpecs = [
+          ['behavior', minecraft.behaviorPacks || []],
+          ['resource', minecraft.resourcePacks || []]
+        ];
+        packSpecs.forEach(([packType, packs]) => {
+          const packContainer = element.querySelector(\`[data-pack-container="\${packType}"]\`);
+          if (packs.length === 0) {
+            packContainer.innerHTML = '<p>No packs configured.</p>';
+            return;
+          }
+          packs.forEach((pack, packIndex) => {
+            const packCard = document.createElement('div');
+            packCard.className = 'card';
+            packCard.innerHTML = \`
+              <div class="split-actions">
+                <div><strong>\${pack.id || 'new-pack'}</strong></div>
+                <button class="danger" data-action="remove-pack" data-pack-type="\${packType}" data-pack-index="\${packIndex}">Remove</button>
+              </div>
+              <div class="row">
+                <label>Pack Id<input data-pack-type="\${packType}" data-pack-index="\${packIndex}" data-pack-field="id" value="\${pack.id || ''}" /></label>
+                <label>Source Path<input data-pack-type="\${packType}" data-pack-index="\${packIndex}" data-pack-field="sourcePath" value="\${pack.sourcePath || ''}" placeholder="/mnt/storage/docker/shared/bedrock-packs/example" /></label>
+                <label>Manifest UUID<input data-pack-type="\${packType}" data-pack-index="\${packIndex}" data-pack-field="manifestUuid" value="\${pack.manifestUuid || ''}" /></label>
+                <label>Manifest Version<input data-pack-type="\${packType}" data-pack-index="\${packIndex}" data-pack-field="manifestVersion" value="\${(pack.manifestVersion || [1, 0, 0]).join('.')}" /></label>
+              </div>
+            \`;
+            packContainer.appendChild(packCard);
+          });
+        });
+
+        const remoteIndex = state.config.remoteWorkloads.findIndex((candidate) => candidate === workload);
+        const updateMinecraftField = (field, value, removeWhenEmpty = false) => {
+          state.config.remoteWorkloads[remoteIndex].minecraft = state.config.remoteWorkloads[remoteIndex].minecraft || createDefaultMinecraftConfig();
+          state.config.remoteWorkloads[remoteIndex].minecraft[field] = value;
+          if (removeWhenEmpty && (value === '' || value === undefined)) {
+            delete state.config.remoteWorkloads[remoteIndex].minecraft[field];
+          }
+          renderRemoteWorkloads();
+          syncRawJson();
+        };
+
+        element.querySelector('[data-action="remove"]').addEventListener('click', () => {
+          state.config.remoteWorkloads.splice(remoteIndex, 1);
+          renderRemoteWorkloads();
+          renderBedrockServers();
+          syncRawJson();
+        });
+
+        element.querySelector('[data-action="deploy"]').addEventListener('click', async () => {
+          try {
+            const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
+            await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/deploy\`, revision ? { revision } : {});
+            setStatus(\`Deployed Bedrock server \${workload.id}\`);
+          } catch (error) {
+            setStatus(error.message, 'error');
+          }
+        });
+
+        [
+          ['start', 'start'],
+          ['stop', 'stop'],
+          ['restart', 'restart'],
+          ['update', 'update-if-empty']
+        ].forEach(([buttonAction, action]) => {
+          element.querySelector(\`[data-action="\${buttonAction}"]\`).addEventListener('click', async () => {
+            try {
+              await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/\${action}\`, {});
+              setStatus(\`Bedrock action completed: \${action}\`);
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
+        });
+
+        ['broadcast', 'kick', 'ban'].forEach((action) => {
+          element.querySelector(\`[data-action="\${action}"]\`).addEventListener('click', async () => {
+            try {
+              const message = element.querySelector('[data-control="broadcastMessage"]').value.trim();
+              const player = element.querySelector('[data-control="player"]').value.trim();
+              const reason = element.querySelector('[data-control="reason"]').value.trim();
+              await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/\${action}\`, {
+                ...(message ? { message } : {}),
+                ...(player ? { player } : {}),
+                ...(reason ? { reason } : {})
+              });
+              setStatus(\`Bedrock action completed: \${action}\`);
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
+        });
+
+        element.querySelectorAll('input[data-field], select[data-field]').forEach((input) => {
+          const isCheckbox = input.type === 'checkbox';
+          const eventName = isCheckbox || input.tagName === 'SELECT' ? 'change' : 'input';
+          input.addEventListener(eventName, () => {
+            const field = input.dataset.field;
+            if (!field) {
+              return;
+            }
+            state.config.remoteWorkloads[remoteIndex][field] = isCheckbox ? input.checked : input.value;
+            renderRemoteWorkloads();
+            syncRawJson();
+          });
+        });
+
+        element.querySelectorAll('input[data-mc-field], select[data-mc-field]').forEach((input) => {
+          const isCheckbox = input.type === 'checkbox';
+          const eventName = isCheckbox || input.tagName === 'SELECT' ? 'change' : 'input';
+          input.addEventListener(eventName, () => {
+            const field = input.dataset.mcField;
+            if (!field) {
+              return;
+            }
+            if (isCheckbox) {
+              updateMinecraftField(field, input.checked);
+              return;
+            }
+            if (input.type === 'number') {
+              updateMinecraftField(field, Number(input.value));
+              return;
+            }
+            updateMinecraftField(field, input.value || undefined, true);
+          });
+        });
+
+        element.querySelector('[data-action="add-behavior-pack"]').addEventListener('click', () => {
+          state.config.remoteWorkloads[remoteIndex].minecraft = state.config.remoteWorkloads[remoteIndex].minecraft || createDefaultMinecraftConfig();
+          state.config.remoteWorkloads[remoteIndex].minecraft.behaviorPacks.push(createDefaultMinecraftPack());
+          renderRemoteWorkloads();
+          renderBedrockServers();
+          syncRawJson();
+        });
+        element.querySelector('[data-action="add-resource-pack"]').addEventListener('click', () => {
+          state.config.remoteWorkloads[remoteIndex].minecraft = state.config.remoteWorkloads[remoteIndex].minecraft || createDefaultMinecraftConfig();
+          state.config.remoteWorkloads[remoteIndex].minecraft.resourcePacks.push(createDefaultMinecraftPack());
+          renderRemoteWorkloads();
+          renderBedrockServers();
+          syncRawJson();
+        });
+
+        element.querySelectorAll('[data-pack-field]').forEach((input) => {
+          const eventName = input.tagName === 'SELECT' ? 'change' : 'input';
+          input.addEventListener(eventName, () => {
+            const packType = input.dataset.packType;
+            const packIndex = Number(input.dataset.packIndex);
+            const field = input.dataset.packField;
+            if (!packType || !field || !Number.isInteger(packIndex)) {
+              return;
+            }
+            const key = packType === 'behavior' ? 'behaviorPacks' : 'resourcePacks';
+            const targetPack = state.config.remoteWorkloads[remoteIndex].minecraft[key][packIndex];
+            if (field === 'manifestVersion') {
+              targetPack.manifestVersion = parsePackVersion(input.value);
+            } else {
+              targetPack[field] = input.value;
+            }
+            renderRemoteWorkloads();
+            syncRawJson();
+          });
+        });
+
+        element.querySelectorAll('[data-action="remove-pack"]').forEach((button) => {
+          button.addEventListener('click', () => {
+            const packType = button.dataset.packType;
+            const packIndex = Number(button.dataset.packIndex);
+            if (!packType || !Number.isInteger(packIndex)) {
+              return;
+            }
+            const key = packType === 'behavior' ? 'behaviorPacks' : 'resourcePacks';
+            state.config.remoteWorkloads[remoteIndex].minecraft[key].splice(packIndex, 1);
+            renderRemoteWorkloads();
+            renderBedrockServers();
+            syncRawJson();
+          });
+        });
+
+        container.appendChild(element);
+      });
+    }
+
     function renderGateway() {
       document.getElementById('gatewayServerNames').value = state.config.gateway.serverNames.join(', ');
       document.getElementById('nginxSiteOutputPath').value = state.config.gateway.nginxSiteOutputPath;
@@ -2027,8 +3138,12 @@ function htmlPage(basePath: string): string {
       renderGatewayApiJobRuntimeProfile();
       renderKulrsActivityProfile();
       renderGatewayChatPlatformProfile();
+      renderSecrets();
       renderJobCatalog();
       renderWorkflows();
+      renderWorkerNodes();
+      renderRemoteWorkloads();
+      renderBedrockServers();
       renderAutomation();
       renderApps();
       renderJobs();
@@ -2144,7 +3259,14 @@ function htmlPage(basePath: string): string {
     document.querySelectorAll('.tab-button').forEach((button) => {
       button.addEventListener('click', () => {
         state.activeTab = button.dataset.tab || 'overview';
-        renderActiveTab();
+        render();
+      });
+    });
+
+    document.querySelectorAll('[data-open-tab]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.activeTab = button.dataset.openTab || 'overview';
+        render();
       });
     });
 
@@ -2195,6 +3317,7 @@ function htmlPage(basePath: string): string {
       element.addEventListener(kind === 'checkbox' ? 'change' : 'input', (event) => {
         const target = event.target;
         state.config.serviceProfiles.gatewayApi[key] = kind === 'checkbox' ? target.checked : target.value;
+        renderSecrets();
         syncRawJson();
       });
     });
@@ -2204,6 +3327,7 @@ function htmlPage(basePath: string): string {
       const element = document.getElementById(id);
       element.addEventListener('input', (event) => {
         state.config.serviceProfiles.gatewayApi.jobRuntime[key] = event.target.value;
+        renderSecrets();
         syncRawJson();
       });
     });
@@ -2229,6 +3353,7 @@ function htmlPage(basePath: string): string {
         if (key === 'group' && !target.value) {
           delete state.config.serviceProfiles.gatewayApi.kulrsActivity.group;
         }
+        renderSecrets();
         syncRawJson();
       });
     });
@@ -2242,6 +3367,7 @@ function htmlPage(basePath: string): string {
       element.addEventListener(kind === 'checkbox' ? 'change' : 'input', (event) => {
         const target = event.target;
         state.config.serviceProfiles.gatewayChatPlatform[key] = kind === 'checkbox' ? target.checked : target.value;
+        renderSecrets();
         syncRawJson();
       });
     });
@@ -2389,6 +3515,41 @@ function htmlPage(basePath: string): string {
       });
       render();
     });
+    document.getElementById('addWorkerNodeButton').addEventListener('click', () => {
+      state.config.workerNodes.push({
+        id: '',
+        enabled: true,
+        description: '',
+        host: '',
+        sshUser: 'deploy',
+        sshPort: 22,
+        buildRoot: '/mnt/fast/builds/gateway-workloads',
+        stackRoot: '/mnt/storage/docker/stacks/gateway-workloads',
+        volumeRoot: '/mnt/storage/docker/volumes/gateway-workloads',
+        workerPollIntervalSeconds: 15,
+        nodeCommand: 'node',
+        dockerCommand: 'docker',
+        dockerComposeCommand: 'docker compose'
+      });
+      renderWorkerNodes();
+      renderRemoteWorkloads();
+      renderBedrockServers();
+      syncRawJson();
+    });
+    document.getElementById('addRemoteWorkloadButton').addEventListener('click', () => {
+      state.config.remoteWorkloads.push(createDefaultRemoteJobWorkload());
+      renderRemoteWorkloads();
+      renderBedrockServers();
+      syncRawJson();
+    });
+    const addBedrockServerWorkload = () => {
+      state.config.remoteWorkloads.push(createDefaultBedrockWorkload());
+      renderRemoteWorkloads();
+      renderBedrockServers();
+      syncRawJson();
+    };
+    document.getElementById('addBedrockWorkloadButton').addEventListener('click', addBedrockServerWorkload);
+    document.getElementById('addBedrockServerButton').addEventListener('click', addBedrockServerWorkload);
     document.getElementById('addGatewayApiEnvButton').addEventListener('click', () => {
       state.config.serviceProfiles.gatewayApi.environment.push({
         key: '',
@@ -2396,6 +3557,7 @@ function htmlPage(basePath: string): string {
         secret: false
       });
       renderGatewayApiProfile();
+      renderSecrets();
       syncRawJson();
     });
     document.getElementById('addGatewayApiChannelButton').addEventListener('click', () => {
@@ -2405,6 +3567,7 @@ function htmlPage(basePath: string): string {
         enabled: true
       });
       renderGatewayApiJobRuntimeProfile();
+      renderSecrets();
       syncRawJson();
     });
     document.getElementById('addKulrsBotButton').addEventListener('click', () => {
@@ -2414,6 +3577,7 @@ function htmlPage(basePath: string): string {
         password: ''
       });
       renderKulrsActivityProfile();
+      renderSecrets();
       syncRawJson();
     });
     document.getElementById('addGatewayChatEnvButton').addEventListener('click', () => {
@@ -2423,7 +3587,58 @@ function htmlPage(basePath: string): string {
         secret: false
       });
       renderGatewayChatPlatformProfile();
+      renderSecrets();
       syncRawJson();
+    });
+    document.getElementById('addGatewayApiSecretButton').addEventListener('click', () => {
+      state.config.serviceProfiles.gatewayApi.environment.push({
+        key: '',
+        value: '',
+        secret: true
+      });
+      renderGatewayApiProfile();
+      renderSecrets();
+      syncRawJson();
+    });
+    document.getElementById('addGatewayApiSecretChannelButton').addEventListener('click', () => {
+      state.config.serviceProfiles.gatewayApi.jobRuntime.channels.push({
+        id: '',
+        type: 'telegram',
+        enabled: true
+      });
+      renderGatewayApiJobRuntimeProfile();
+      renderSecrets();
+      syncRawJson();
+    });
+    document.getElementById('addKulrsSecretBotButton').addEventListener('click', () => {
+      state.config.serviceProfiles.gatewayApi.kulrsActivity.bots.push({
+        id: '',
+        email: '',
+        password: ''
+      });
+      renderKulrsActivityProfile();
+      renderSecrets();
+      syncRawJson();
+    });
+    document.getElementById('addGatewayChatSecretButton').addEventListener('click', () => {
+      state.config.serviceProfiles.gatewayChatPlatform.environment.push({
+        key: '',
+        value: '',
+        secret: true
+      });
+      renderGatewayChatPlatformProfile();
+      renderSecrets();
+      syncRawJson();
+    });
+    ['kulrsFirebaseApiKeySecrets', 'kulrsUnsplashAccessKeySecrets'].forEach((id) => {
+      document.getElementById(id).addEventListener('input', (event) => {
+        const target = event.target;
+        const key = id === 'kulrsFirebaseApiKeySecrets' ? 'firebaseApiKey' : 'unsplashAccessKey';
+        state.config.serviceProfiles.gatewayApi.kulrsActivity[key] = target.value;
+        renderKulrsActivityProfile();
+        renderSecrets();
+        syncRawJson();
+      });
     });
     document.getElementById('addGatewayChatAgentButton').addEventListener('click', () => {
       state.activeTab = 'agents';
@@ -2875,6 +4090,8 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       const workflowIdMatch = path.match(/^\/api\/workflows\/([^/]+)$/);
       const workflowActionMatch = path.match(/^\/api\/workflows\/([^/]+)\/(enable|disable|sleep|resume|run)$/);
       const agentRunMatch = path.match(/^\/api\/chat-platform\/agents\/([^/]+)\/run$/);
+      const remoteWorkloadDeployMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/deploy$/);
+      const remoteMinecraftActionMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/(start|stop|restart|broadcast|kick|ban|update-if-empty)$/);
 
       if (request.method === 'GET' && path === '/') {
         sendHtml(response, htmlPage(basePath));
@@ -3050,6 +4267,35 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           message: `Imported ${result.operations.length} workflow seed entries from ${result.filePath}`,
           operations: result.operations
         });
+        return;
+      }
+
+      if (remoteWorkloadDeployMatch && request.method === 'POST') {
+        const config = await loadGatewayConfig(options.configPath);
+        const body = JSON.parse(await readBody(request) || '{}') as { revision?: string };
+        await buildArtifacts(config, options.buildOutDir);
+        await deployRemoteWorkload(
+          config,
+          decodeURIComponent(remoteWorkloadDeployMatch[1]),
+          options.buildOutDir,
+          typeof body.revision === 'string' && body.revision.trim().length > 0 ? body.revision.trim() : undefined,
+          { dryRun: false, log: () => undefined }
+        );
+        sendJson(response, 200, { message: `Deployed remote workload ${decodeURIComponent(remoteWorkloadDeployMatch[1])}` });
+        return;
+      }
+
+      if (remoteMinecraftActionMatch && request.method === 'POST') {
+        const config = await loadGatewayConfig(options.configPath);
+        const body = JSON.parse(await readBody(request) || '{}') as { message?: string; player?: string; reason?: string };
+        await controlMinecraftWorkload(
+          config,
+          decodeURIComponent(remoteMinecraftActionMatch[1]),
+          remoteMinecraftActionMatch[2] as 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty',
+          body,
+          { dryRun: false, log: () => undefined }
+        );
+        sendJson(response, 200, { message: `Minecraft action completed: ${remoteMinecraftActionMatch[2]}` });
         return;
       }
 

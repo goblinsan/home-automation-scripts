@@ -55,6 +55,8 @@ const config: GatewayConfig = {
       user: 'deploy'
     }
   ],
+  workerNodes: [],
+  remoteWorkloads: [],
   features: [],
   serviceProfiles: {
     gatewayApi: {

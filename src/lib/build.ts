@@ -1,7 +1,9 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { type GatewayConfig, getJobsForApp } from './config.ts';
+import { renderRemoteWorkerFiles } from './remote-worker.ts';
 import { renderActiveUpstream, renderGatewaySite } from './nginx.ts';
+import { renderRemoteWorkloadFiles } from './remote-workloads.ts';
 import {
   renderGatewayApiEnv,
   renderGatewayApiJobChannels,
@@ -17,12 +19,14 @@ export async function buildArtifacts(config: GatewayConfig, outDir: string): Pro
   const upstreamDir = join(nginxDir, 'upstreams');
   const jobsDir = join(outDir, 'systemd', 'jobs');
   const controlPlaneDir = join(outDir, 'systemd', 'control-plane');
+  const nodesDir = join(outDir, 'nodes');
   const servicesDir = join(outDir, 'services');
   const gatewayApiDir = join(servicesDir, 'gateway-api');
   const gatewayChatPlatformDir = join(servicesDir, 'gateway-chat-platform');
   await mkdir(upstreamDir, { recursive: true });
   await mkdir(jobsDir, { recursive: true });
   await mkdir(controlPlaneDir, { recursive: true });
+  await mkdir(nodesDir, { recursive: true });
   await mkdir(gatewayApiDir, { recursive: true });
   await mkdir(gatewayChatPlatformDir, { recursive: true });
 
@@ -37,6 +41,26 @@ export async function buildArtifacts(config: GatewayConfig, outDir: string): Pro
     for (const job of getJobsForApp(config, app.id)) {
       await writeFile(join(jobsDir, `${job.id}.service`), renderJobService(config, app, job), 'utf8');
       await writeFile(join(jobsDir, `${job.id}.timer`), renderJobTimer(job), 'utf8');
+    }
+  }
+
+  for (const node of config.workerNodes.filter((candidate) => candidate.enabled)) {
+    const workerDir = join(nodesDir, node.id, 'worker');
+    await mkdir(workerDir, { recursive: true });
+    for (const file of renderRemoteWorkerFiles(config, node)) {
+      const outputPath = join(workerDir, file.relativePath);
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, file.contents, 'utf8');
+    }
+
+    for (const workload of config.remoteWorkloads.filter((candidate) => candidate.enabled && candidate.nodeId === node.id)) {
+      const workloadDir = join(nodesDir, node.id, 'workloads', workload.id);
+      await mkdir(workloadDir, { recursive: true });
+      for (const file of renderRemoteWorkloadFiles(config, node, workload)) {
+        const outputPath = join(workloadDir, file.relativePath);
+        await mkdir(dirname(outputPath), { recursive: true });
+        await writeFile(outputPath, file.contents, 'utf8');
+      }
     }
   }
 

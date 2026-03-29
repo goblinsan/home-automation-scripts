@@ -65,6 +65,8 @@ function createConfig(root: string): GatewayConfig {
       }
     ],
     scheduledJobs: [],
+    workerNodes: [],
+    remoteWorkloads: [],
     features: [],
     serviceProfiles: {
       gatewayApi: {

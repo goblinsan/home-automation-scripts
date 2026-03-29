@@ -2,7 +2,9 @@ import { readdir, readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { buildArtifacts } from './lib/build.ts';
 import {
+  controlMinecraftWorkload,
   deployApp,
+  deployRemoteWorkload,
   installControlPlaneService,
   installJobs,
   installServiceProfileFiles,
@@ -210,6 +212,37 @@ async function main(): Promise<void> {
       await installControlPlaneService(config, { dryRun, log: console.log });
       return;
     }
+    case 'deploy-remote-workload': {
+      const workloadId = requireStringArg(args, 'workload');
+      const revision = typeof args.revision === 'string' ? args.revision : undefined;
+      const dryRun = args['dry-run'] === true;
+      const outDir = typeof args.out === 'string' ? args.out : 'generated';
+      const config = await loadGatewayConfig(configPath);
+      await buildArtifacts(config, outDir);
+      await deployRemoteWorkload(config, workloadId, outDir, revision, { dryRun, log: console.log });
+      return;
+    }
+    case 'control-minecraft': {
+      const workloadId = requireStringArg(args, 'workload');
+      const action = requireStringArg(args, 'action');
+      if (!['start', 'stop', 'restart', 'broadcast', 'kick', 'ban', 'update-if-empty'].includes(action)) {
+        throw new Error(`Invalid minecraft action: ${action}`);
+      }
+      const dryRun = args['dry-run'] === true;
+      const config = await loadGatewayConfig(configPath);
+      await controlMinecraftWorkload(
+        config,
+        workloadId,
+        action as 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty',
+        {
+          message: typeof args.message === 'string' ? args.message : undefined,
+          player: typeof args.player === 'string' ? args.player : undefined,
+          reason: typeof args.reason === 'string' ? args.reason : undefined
+        },
+        { dryRun, log: console.log }
+      );
+      return;
+    }
     case 'smoke-test': {
       const url = requireStringArg(args, 'url');
       await smokeTest(url);
@@ -241,6 +274,8 @@ async function main(): Promise<void> {
   run-agent --config <path> --app <id> --agent <id> --prompt <text> [--context <json>] [--delivery <json>] [--base-url <url>] [--dry-run]
   import-workflow-seed --base-url <url> [--file <path>] [--dry-run]
   install-control-plane-service --config <path> [--dry-run]
+  deploy-remote-workload --config <path> --workload <id> [--revision <sha>] [--out <dir>] [--dry-run]
+  control-minecraft --config <path> --workload <id> --action <start|stop|restart|broadcast|kick|ban|update-if-empty> [--message <text>] [--player <name>] [--reason <text>] [--dry-run]
   smoke-test --url <url>`);
   }
 }

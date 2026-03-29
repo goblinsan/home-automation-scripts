@@ -3,8 +3,26 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { getApp, getJobsForApp, type AppConfig, type GatewayConfig, type ScheduledJobConfig, type Slot } from './config.ts';
+import {
+  getApp,
+  getJobsForApp,
+  getRemoteWorkload,
+  getWorkerNode,
+  type AppConfig,
+  type GatewayConfig,
+  type RemoteWorkloadConfig,
+  type ScheduledJobConfig,
+  type Slot,
+  type WorkerNodeConfig
+} from './config.ts';
 import { renderActiveUpstream } from './nginx.ts';
+import {
+  getRemoteWorkloadDataDir,
+  getRemoteWorkloadProjectName,
+  getRemoteWorkloadSourceDir,
+  getRemoteWorkloadStackDir
+} from './remote-workloads.ts';
+import { getRemoteWorkerRuntimeDir } from './remote-worker.ts';
 import {
   renderGatewayApiEnv,
   renderGatewayApiJobChannels,
@@ -125,6 +143,22 @@ async function ensureDirectory(path: string, context: CommandContext): Promise<v
   if (!context.dryRun) {
     await mkdir(path, { recursive: true });
   }
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function sshTarget(node: WorkerNodeConfig): string {
+  return `${node.sshUser}@${node.host}`;
+}
+
+async function runRemoteShell(node: WorkerNodeConfig, command: string, context: CommandContext): Promise<void> {
+  await runShell(`ssh -p ${node.sshPort} ${sshTarget(node)} ${shellQuote(command)}`, process.cwd(), context);
+}
+
+async function copyDirectoryToRemote(node: WorkerNodeConfig, localDir: string, remoteDir: string, context: CommandContext): Promise<void> {
+  await runShell(`scp -P ${node.sshPort} -r ${localDir}/. ${sshTarget(node)}:${remoteDir}/`, process.cwd(), context);
 }
 
 export async function readCurrentSlot(app: AppConfig): Promise<Slot> {
@@ -502,4 +536,173 @@ export async function rollbackApp(config: GatewayConfig, appId: string, context:
   await writeActiveUpstream(app, target, context);
   await runShell(config.gateway.nginxReloadCommand, process.cwd(), context);
   await setCurrentPointers(app, target, context);
+}
+
+export interface MinecraftControlPayload {
+  message?: string;
+  player?: string;
+  reason?: string;
+}
+
+type MinecraftControlAction = 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty';
+
+function requireRemoteWorkloadEnabled(workload: RemoteWorkloadConfig): void {
+  if (!workload.enabled) {
+    throw new Error(`Remote workload is disabled: ${workload.id}`);
+  }
+}
+
+function buildMinecraftComposeCommand(node: WorkerNodeConfig, workload: RemoteWorkloadConfig): string {
+  return `${node.dockerComposeCommand} -f ${getRemoteWorkloadStackDir(node, workload)}/compose.yml --project-name ${getRemoteWorkloadProjectName(workload)}`;
+}
+
+async function bootstrapMinecraftWorld(node: WorkerNodeConfig, workload: RemoteWorkloadConfig, context: CommandContext): Promise<void> {
+  await runRemoteShell(node, `chmod +x ${shellQuote(`${getRemoteWorkloadStackDir(node, workload)}/scripts/bootstrap-world.sh`)}`, context);
+  await runRemoteShell(node, `${getRemoteWorkloadStackDir(node, workload)}/scripts/bootstrap-world.sh`, context);
+}
+
+async function syncRemoteWorkloadFiles(
+  node: WorkerNodeConfig,
+  workload: RemoteWorkloadConfig,
+  outDir: string,
+  context: CommandContext
+): Promise<void> {
+  const localDir = join(outDir, 'nodes', node.id, 'workloads', workload.id);
+  if (!existsSync(localDir)) {
+    throw new Error(`Missing rendered workload artifacts at ${localDir}. Run build first or use the build command with --out ${outDir}.`);
+  }
+
+  const stackDir = getRemoteWorkloadStackDir(node, workload);
+  await runRemoteShell(node, `mkdir -p ${shellQuote(stackDir)}`, context);
+  await copyDirectoryToRemote(node, localDir, stackDir, context);
+}
+
+async function syncRemoteWorkerFiles(node: WorkerNodeConfig, outDir: string, context: CommandContext): Promise<void> {
+  const localDir = join(outDir, 'nodes', node.id, 'worker');
+  if (!existsSync(localDir)) {
+    throw new Error(`Missing rendered worker artifacts at ${localDir}. Run build first or use the build command with --out ${outDir}.`);
+  }
+
+  const runtimeDir = getRemoteWorkerRuntimeDir(node);
+  await runRemoteShell(node, `mkdir -p ${shellQuote(runtimeDir)}`, context);
+  await copyDirectoryToRemote(node, localDir, runtimeDir, context);
+  await runRemoteShell(node, `chmod +x ${shellQuote(`${runtimeDir}/gateway-worker.mjs`)}`, context);
+}
+
+async function prepareScheduledContainerJobSource(
+  node: WorkerNodeConfig,
+  workload: RemoteWorkloadConfig,
+  revisionOverride: string | undefined,
+  context: CommandContext
+): Promise<void> {
+  if (!(workload.kind === 'scheduled-container-job' && workload.job)) {
+    return;
+  }
+
+  const sourceDir = getRemoteWorkloadSourceDir(node, workload);
+  const revision = revisionOverride ?? workload.job.build.defaultRevision;
+  const repoUrl = workload.job.build.repoUrl;
+
+  await runRemoteShell(node, `mkdir -p ${shellQuote(join(sourceDir, '..'))}`, context);
+  await runRemoteShell(
+    node,
+    `[ -d ${shellQuote(join(sourceDir, '.git'))} ] || git clone ${shellQuote(repoUrl)} ${shellQuote(sourceDir)}`,
+    context
+  );
+  await runRemoteShell(node, `git -C ${shellQuote(sourceDir)} fetch --all --tags --prune`, context);
+  await runRemoteShell(node, `git -C ${shellQuote(sourceDir)} checkout --force ${shellQuote(revision)}`, context);
+}
+
+async function restartRemoteWorker(node: WorkerNodeConfig, context: CommandContext): Promise<void> {
+  const runtimeDir = getRemoteWorkerRuntimeDir(node);
+  const pidFile = `${runtimeDir}/gateway-worker.pid`;
+  const logFile = `${runtimeDir}/gateway-worker.log`;
+  await runRemoteShell(
+    node,
+    `mkdir -p ${shellQuote(runtimeDir)} && if [ -f ${shellQuote(pidFile)} ] && kill -0 "$(cat ${shellQuote(pidFile)})" 2>/dev/null; then kill "$(cat ${shellQuote(pidFile)})" || true; sleep 1; fi`,
+    context
+  );
+  await runRemoteShell(
+    node,
+    `nohup ${node.nodeCommand} ${shellQuote(`${runtimeDir}/gateway-worker.mjs`)} run --config ${shellQuote(`${runtimeDir}/worker-config.json`)} >> ${shellQuote(logFile)} 2>&1 < /dev/null & echo $! > ${shellQuote(pidFile)}`,
+    context
+  );
+}
+
+async function invokeRemoteWorkerControl(
+  node: WorkerNodeConfig,
+  workloadId: string,
+  action: MinecraftControlAction,
+  payload: MinecraftControlPayload,
+  context: CommandContext
+): Promise<void> {
+  const runtimeDir = getRemoteWorkerRuntimeDir(node);
+  await runRemoteShell(
+    node,
+    `${node.nodeCommand} ${shellQuote(`${runtimeDir}/gateway-worker.mjs`)} control --config ${shellQuote(`${runtimeDir}/worker-config.json`)} --workload ${shellQuote(workloadId)} --action ${shellQuote(action)} --payload ${shellQuote(JSON.stringify(payload))}`,
+    context
+  );
+}
+
+export async function deployRemoteWorkload(
+  config: GatewayConfig,
+  workloadId: string,
+  outDir: string,
+  revisionOverride: string | undefined,
+  context: CommandContext
+): Promise<void> {
+  const workload = getRemoteWorkload(config, workloadId);
+  requireRemoteWorkloadEnabled(workload);
+  const node = getWorkerNode(config, workload.nodeId);
+  const stackDir = getRemoteWorkloadStackDir(node, workload);
+
+  await syncRemoteWorkerFiles(node, outDir, context);
+  await syncRemoteWorkloadFiles(node, workload, outDir, context);
+
+  if (workload.kind === 'scheduled-container-job' && workload.job) {
+    await prepareScheduledContainerJobSource(node, workload, revisionOverride, context);
+    await runRemoteShell(
+      node,
+      `mkdir -p ${shellQuote(getRemoteWorkloadDataDir(node, workload))} ${shellQuote(`${stackDir}/runtime`)}`,
+      context
+    );
+    if (workload.job.build.strategy === 'generated-node') {
+      await runRemoteShell(
+        node,
+        `cp ${shellQuote(`${stackDir}/Dockerfile`)} ${shellQuote(`${node.buildRoot}/${workload.id}/Dockerfile`)}`,
+        context
+      );
+    }
+    await runRemoteShell(
+      node,
+      `${node.dockerComposeCommand} -f ${shellQuote(`${stackDir}/compose.yml`)} --project-name ${shellQuote(getRemoteWorkloadProjectName(workload))} build runner`,
+      context
+    );
+    await restartRemoteWorker(node, context);
+    return;
+  }
+
+  if (workload.kind === 'minecraft-bedrock-server' && workload.minecraft) {
+    await runRemoteShell(node, `mkdir -p ${shellQuote(`${getRemoteWorkloadDataDir(node, workload)}/data`)}`, context);
+    await restartRemoteWorker(node, context);
+    if (workload.minecraft.autoStart) {
+      await invokeRemoteWorkerControl(node, workload.id, 'start', {}, context);
+    }
+  }
+}
+
+export async function controlMinecraftWorkload(
+  config: GatewayConfig,
+  workloadId: string,
+  action: MinecraftControlAction,
+  payload: MinecraftControlPayload,
+  context: CommandContext
+): Promise<void> {
+  const workload = getRemoteWorkload(config, workloadId);
+  if (!(workload.kind === 'minecraft-bedrock-server' && workload.minecraft)) {
+    throw new Error(`Remote workload ${workloadId} is not a minecraft-bedrock-server workload`);
+  }
+
+  const node = getWorkerNode(config, workload.nodeId);
+  await invokeRemoteWorkerControl(node, workload.id, action, payload, context);
 }

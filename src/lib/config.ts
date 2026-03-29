@@ -62,6 +62,96 @@ export interface ScheduledJobConfig {
   environmentFile?: string;
 }
 
+export interface WorkerNodeConfig {
+  id: string;
+  enabled: boolean;
+  description: string;
+  host: string;
+  sshUser: string;
+  sshPort: number;
+  buildRoot: string;
+  stackRoot: string;
+  volumeRoot: string;
+  workerPollIntervalSeconds: number;
+  nodeCommand: string;
+  systemdUnitDirectory?: string;
+  systemdReloadCommand?: string;
+  systemdEnableTimerCommand?: string;
+  dockerCommand: string;
+  dockerComposeCommand: string;
+}
+
+export interface VolumeMountConfig {
+  source: string;
+  target: string;
+  readOnly: boolean;
+}
+
+export interface JsonFileConfig {
+  relativePath: string;
+  payload: Record<string, unknown>;
+  description?: string;
+}
+
+export interface ScheduledContainerJobBuildConfig {
+  strategy: 'repo-dockerfile' | 'generated-node';
+  repoUrl: string;
+  defaultRevision: string;
+  contextPath: string;
+  dockerfilePath?: string;
+  packageRoot?: string;
+  nodeVersion?: string;
+  installCommand?: string;
+}
+
+export interface ScheduledContainerJobWorkloadConfig {
+  schedule: string;
+  timezone: string;
+  build: ScheduledContainerJobBuildConfig;
+  runCommand: string;
+  environment: EnvironmentVariableConfig[];
+  volumeMounts: VolumeMountConfig[];
+  jsonFiles: JsonFileConfig[];
+}
+
+export interface MinecraftBedrockWorkloadConfig {
+  image: string;
+  serverName: string;
+  worldName: string;
+  gameMode: 'survival' | 'creative' | 'adventure';
+  difficulty: 'peaceful' | 'easy' | 'normal' | 'hard';
+  levelSeed?: string;
+  worldSourcePath?: string;
+  worldCopyMode: 'if-missing' | 'always';
+  allowCheats: boolean;
+  onlineMode: boolean;
+  maxPlayers: number;
+  serverPort: number;
+  autoStart: boolean;
+  autoUpdateEnabled: boolean;
+  autoUpdateSchedule: string;
+  texturepackRequired: boolean;
+  behaviorPacks: MinecraftBedrockPackConfig[];
+  resourcePacks: MinecraftBedrockPackConfig[];
+}
+
+export interface MinecraftBedrockPackConfig {
+  id: string;
+  sourcePath: string;
+  manifestUuid: string;
+  manifestVersion: number[];
+}
+
+export interface RemoteWorkloadConfig {
+  id: string;
+  enabled: boolean;
+  nodeId: string;
+  description: string;
+  kind: 'scheduled-container-job' | 'minecraft-bedrock-server';
+  job?: ScheduledContainerJobWorkloadConfig;
+  minecraft?: MinecraftBedrockWorkloadConfig;
+}
+
 export interface FeatureFlagConfig {
   id: string;
   enabled: boolean;
@@ -193,6 +283,8 @@ export interface GatewayConfig {
   gateway: GatewaySettings;
   apps: AppConfig[];
   scheduledJobs: ScheduledJobConfig[];
+  workerNodes: WorkerNodeConfig[];
+  remoteWorkloads: RemoteWorkloadConfig[];
   features: FeatureFlagConfig[];
   serviceProfiles: ServiceProfiles;
 }
@@ -232,6 +324,13 @@ function assertPositiveInteger(value: unknown, field: string): number {
 function assertNumber(value: unknown, field: string): number {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     throw new Error(`Expected number for ${field}`);
+  }
+  return value;
+}
+
+function assertNonNegativeIntegerArray(value: unknown, field: string): number[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'number' || !Number.isInteger(item) || item < 0)) {
+    throw new Error(`Expected non-negative integer[] for ${field}`);
   }
   return value;
 }
@@ -322,6 +421,33 @@ function parseScheduledJobConfig(value: unknown, index: number): ScheduledJobCon
   };
 }
 
+function parseWorkerNodeConfig(value: unknown, index: number): WorkerNodeConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for workerNodes[${index}]`);
+  }
+
+  return {
+    id: assertString(value.id, `workerNodes[${index}].id`),
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
+    description: typeof value.description === 'string' ? value.description : '',
+    host: assertString(value.host, `workerNodes[${index}].host`),
+    sshUser: assertString(value.sshUser, `workerNodes[${index}].sshUser`),
+    sshPort: value.sshPort === undefined ? 22 : assertPositiveInteger(value.sshPort, `workerNodes[${index}].sshPort`),
+    buildRoot: assertString(value.buildRoot, `workerNodes[${index}].buildRoot`),
+    stackRoot: assertString(value.stackRoot, `workerNodes[${index}].stackRoot`),
+    volumeRoot: assertString(value.volumeRoot, `workerNodes[${index}].volumeRoot`),
+    workerPollIntervalSeconds: value.workerPollIntervalSeconds === undefined
+      ? 15
+      : assertPositiveInteger(value.workerPollIntervalSeconds, `workerNodes[${index}].workerPollIntervalSeconds`),
+    nodeCommand: typeof value.nodeCommand === 'string' ? value.nodeCommand : 'node',
+    systemdUnitDirectory: typeof value.systemdUnitDirectory === 'string' ? value.systemdUnitDirectory : undefined,
+    systemdReloadCommand: typeof value.systemdReloadCommand === 'string' ? value.systemdReloadCommand : undefined,
+    systemdEnableTimerCommand: typeof value.systemdEnableTimerCommand === 'string' ? value.systemdEnableTimerCommand : undefined,
+    dockerCommand: typeof value.dockerCommand === 'string' ? value.dockerCommand : 'docker',
+    dockerComposeCommand: typeof value.dockerComposeCommand === 'string' ? value.dockerComposeCommand : 'docker compose'
+  };
+}
+
 function parseFeatureFlagConfig(value: unknown, index: number): FeatureFlagConfig {
   if (!isRecord(value)) {
     throw new Error(`Expected object for features[${index}]`);
@@ -344,6 +470,160 @@ function parseEnvironmentVariableConfig(value: unknown, field: string): Environm
     value: typeof value.value === 'string' ? value.value : '',
     secret: typeof value.secret === 'boolean' ? value.secret : false,
     description: typeof value.description === 'string' ? value.description : undefined
+  };
+}
+
+function parseVolumeMountConfig(value: unknown, field: string): VolumeMountConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  return {
+    source: assertString(value.source, `${field}.source`),
+    target: assertString(value.target, `${field}.target`),
+    readOnly: typeof value.readOnly === 'boolean' ? value.readOnly : false
+  };
+}
+
+function parseJsonFileConfig(value: unknown, field: string): JsonFileConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  const payload = value.payload;
+  if (!isRecord(payload)) {
+    throw new Error(`Expected object for ${field}.payload`);
+  }
+
+  return {
+    relativePath: assertString(value.relativePath, `${field}.relativePath`),
+    payload,
+    description: typeof value.description === 'string' ? value.description : undefined
+  };
+}
+
+function parseScheduledContainerJobBuildConfig(value: unknown, field: string): ScheduledContainerJobBuildConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  const strategy = value.strategy;
+  if (strategy !== 'repo-dockerfile' && strategy !== 'generated-node') {
+    throw new Error(`Invalid strategy for ${field}.strategy`);
+  }
+
+  return {
+    strategy,
+    repoUrl: assertString(value.repoUrl, `${field}.repoUrl`),
+    defaultRevision: typeof value.defaultRevision === 'string' ? value.defaultRevision : 'main',
+    contextPath: typeof value.contextPath === 'string' ? value.contextPath : '.',
+    dockerfilePath: typeof value.dockerfilePath === 'string' ? value.dockerfilePath : undefined,
+    packageRoot: typeof value.packageRoot === 'string' ? value.packageRoot : '.',
+    nodeVersion: typeof value.nodeVersion === 'string' ? value.nodeVersion : '24',
+    installCommand: typeof value.installCommand === 'string' ? value.installCommand : 'npm ci --omit=dev'
+  };
+}
+
+function parseScheduledContainerJobWorkloadConfig(value: unknown, field: string): ScheduledContainerJobWorkloadConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  return {
+    schedule: assertString(value.schedule, `${field}.schedule`),
+    timezone: typeof value.timezone === 'string' ? value.timezone : 'America/New_York',
+    build: parseScheduledContainerJobBuildConfig(value.build, `${field}.build`),
+    runCommand: assertString(value.runCommand, `${field}.runCommand`),
+    environment: Array.isArray(value.environment)
+      ? value.environment.map((entry, index) => parseEnvironmentVariableConfig(entry, `${field}.environment[${index}]`))
+      : [],
+    volumeMounts: Array.isArray(value.volumeMounts)
+      ? value.volumeMounts.map((entry, index) => parseVolumeMountConfig(entry, `${field}.volumeMounts[${index}]`))
+      : [],
+    jsonFiles: Array.isArray(value.jsonFiles)
+      ? value.jsonFiles.map((entry, index) => parseJsonFileConfig(entry, `${field}.jsonFiles[${index}]`))
+      : []
+    };
+}
+
+function parseMinecraftBedrockPackConfig(value: unknown, field: string): MinecraftBedrockPackConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  return {
+    id: assertString(value.id, `${field}.id`),
+    sourcePath: assertString(value.sourcePath, `${field}.sourcePath`),
+    manifestUuid: assertString(value.manifestUuid, `${field}.manifestUuid`),
+    manifestVersion: value.manifestVersion === undefined
+      ? [1, 0, 0]
+      : assertNonNegativeIntegerArray(value.manifestVersion, `${field}.manifestVersion`)
+  };
+}
+
+function parseMinecraftBedrockWorkloadConfig(value: unknown, field: string): MinecraftBedrockWorkloadConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  const gameMode = value.gameMode;
+  if (gameMode !== 'survival' && gameMode !== 'creative' && gameMode !== 'adventure') {
+    throw new Error(`Invalid gameMode for ${field}.gameMode`);
+  }
+
+  const difficulty = value.difficulty;
+  if (difficulty !== 'peaceful' && difficulty !== 'easy' && difficulty !== 'normal' && difficulty !== 'hard') {
+    throw new Error(`Invalid difficulty for ${field}.difficulty`);
+  }
+
+  return {
+    image: typeof value.image === 'string' ? value.image : 'itzg/minecraft-bedrock-server:latest',
+    serverName: assertString(value.serverName, `${field}.serverName`),
+    worldName: assertString(value.worldName, `${field}.worldName`),
+    gameMode,
+    difficulty,
+    levelSeed: typeof value.levelSeed === 'string' ? value.levelSeed : undefined,
+    worldSourcePath: typeof value.worldSourcePath === 'string' ? value.worldSourcePath : undefined,
+    worldCopyMode: value.worldCopyMode === 'always' ? 'always' : 'if-missing',
+    allowCheats: typeof value.allowCheats === 'boolean' ? value.allowCheats : false,
+    onlineMode: typeof value.onlineMode === 'boolean' ? value.onlineMode : true,
+    maxPlayers: value.maxPlayers === undefined ? 10 : assertPositiveInteger(value.maxPlayers, `${field}.maxPlayers`),
+    serverPort: value.serverPort === undefined ? 19132 : assertPositiveInteger(value.serverPort, `${field}.serverPort`),
+    autoStart: typeof value.autoStart === 'boolean' ? value.autoStart : true,
+    autoUpdateEnabled: typeof value.autoUpdateEnabled === 'boolean' ? value.autoUpdateEnabled : true,
+    autoUpdateSchedule: typeof value.autoUpdateSchedule === 'string' ? value.autoUpdateSchedule : '*-*-* 04:00:00',
+    texturepackRequired: typeof value.texturepackRequired === 'boolean' ? value.texturepackRequired : false,
+    behaviorPacks: Array.isArray(value.behaviorPacks)
+      ? value.behaviorPacks.map((entry, index) => parseMinecraftBedrockPackConfig(entry, `${field}.behaviorPacks[${index}]`))
+      : [],
+    resourcePacks: Array.isArray(value.resourcePacks)
+      ? value.resourcePacks.map((entry, index) => parseMinecraftBedrockPackConfig(entry, `${field}.resourcePacks[${index}]`))
+      : []
+  };
+}
+
+function parseRemoteWorkloadConfig(value: unknown, index: number): RemoteWorkloadConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for remoteWorkloads[${index}]`);
+  }
+
+  const kind = value.kind;
+  if (kind !== 'scheduled-container-job' && kind !== 'minecraft-bedrock-server') {
+    throw new Error(`Invalid kind for remoteWorkloads[${index}].kind`);
+  }
+
+  return {
+    id: assertString(value.id, `remoteWorkloads[${index}].id`),
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
+    nodeId: assertString(value.nodeId, `remoteWorkloads[${index}].nodeId`),
+    description: typeof value.description === 'string' ? value.description : '',
+    kind,
+    job: kind === 'scheduled-container-job'
+      ? parseScheduledContainerJobWorkloadConfig(value.job, `remoteWorkloads[${index}].job`)
+      : undefined,
+    minecraft: kind === 'minecraft-bedrock-server'
+      ? parseMinecraftBedrockWorkloadConfig(value.minecraft, `remoteWorkloads[${index}].minecraft`)
+      : undefined
   };
 }
 
@@ -687,6 +967,14 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
     throw new Error('scheduledJobs must be an array');
   }
 
+  if (raw.workerNodes !== undefined && !Array.isArray(raw.workerNodes)) {
+    throw new Error('workerNodes must be an array');
+  }
+
+  if (raw.remoteWorkloads !== undefined && !Array.isArray(raw.remoteWorkloads)) {
+    throw new Error('remoteWorkloads must be an array');
+  }
+
   if (raw.features !== undefined && !Array.isArray(raw.features)) {
     throw new Error('features must be an array');
   }
@@ -708,6 +996,8 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
 
   const apps = raw.apps.map(parseAppConfig);
   const scheduledJobs = raw.scheduledJobs.map(parseScheduledJobConfig);
+  const workerNodes = Array.isArray(raw.workerNodes) ? raw.workerNodes.map(parseWorkerNodeConfig) : [];
+  const remoteWorkloads = Array.isArray(raw.remoteWorkloads) ? raw.remoteWorkloads.map(parseRemoteWorkloadConfig) : [];
   const features = Array.isArray(raw.features) ? raw.features.map(parseFeatureFlagConfig) : [];
   const serviceProfilesRaw = isRecord(raw.serviceProfiles) ? raw.serviceProfiles : {};
   const serviceProfiles: ServiceProfiles = {
@@ -718,6 +1008,12 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
   for (const job of scheduledJobs) {
     if (!apps.find((app) => app.id === job.appId)) {
       throw new Error(`scheduled job ${job.id} references unknown app ${job.appId}`);
+    }
+  }
+
+  for (const workload of remoteWorkloads) {
+    if (!workerNodes.find((node) => node.id === workload.nodeId)) {
+      throw new Error(`remote workload ${workload.id} references unknown worker node ${workload.nodeId}`);
     }
   }
 
@@ -734,7 +1030,7 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
     );
   }
 
-  return { gateway, apps, scheduledJobs, features, serviceProfiles };
+  return { gateway, apps, scheduledJobs, workerNodes, remoteWorkloads, features, serviceProfiles };
 }
 
 export async function loadGatewayConfig(configPath: string): Promise<GatewayConfig> {
@@ -763,6 +1059,25 @@ export function getApp(config: GatewayConfig, appId: string): AppConfig {
 
 export function getJobsForApp(config: GatewayConfig, appId: string): ScheduledJobConfig[] {
   return getAllScheduledJobs(config).filter((job) => job.appId === appId && job.enabled);
+}
+
+export function getWorkerNode(config: GatewayConfig, nodeId: string): WorkerNodeConfig {
+  const node = config.workerNodes.find((candidate) => candidate.id === nodeId);
+  if (!node) {
+    throw new Error(`Unknown worker node id: ${nodeId}`);
+  }
+  if (!node.enabled) {
+    throw new Error(`Worker node is disabled: ${nodeId}`);
+  }
+  return node;
+}
+
+export function getRemoteWorkload(config: GatewayConfig, workloadId: string): RemoteWorkloadConfig {
+  const workload = config.remoteWorkloads.find((candidate) => candidate.id === workloadId);
+  if (!workload) {
+    throw new Error(`Unknown remote workload id: ${workloadId}`);
+  }
+  return workload;
 }
 
 export function getAllScheduledJobs(config: GatewayConfig): ScheduledJobConfig[] {

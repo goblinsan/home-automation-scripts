@@ -7,6 +7,7 @@ It exists to define and maintain:
 - reverse-proxy routing on the gateway host
 - blue/green deployment mechanics for apps deployed on the gateway
 - source-controlled scheduled jobs
+- remote worker-node workload orchestration for container jobs and Bedrock servers
 - service-specific runtime config, env files, and secrets
 - chat-agent definitions for the local chat platform
 - deployment and rollback tooling
@@ -56,7 +57,8 @@ The intended stable checkout path on the gateway host is:
 │   ├── architecture.md
 │   ├── bootstrap.md
 │   ├── deployment.md
-│   └── ci-cd.md
+│   ├── ci-cd.md
+│   └── remote-workloads.md
 ├── infra/
 │   ├── nginx/
 │   └── systemd/
@@ -85,6 +87,8 @@ deploy/bin/install-control-plane-service.sh --config configs/gateway.config.json
 deploy/bin/apply-service-profiles.sh --config configs/gateway.config.json --app gateway-chat-platform
 deploy/bin/import-workflow-seed.sh --base-url http://127.0.0.1:3000
 node src/cli.ts run-agent --config configs/gateway.config.json --app gateway-chat-platform --agent bruvie-d --prompt "Give me a quick readiness check."
+node src/cli.ts deploy-remote-workload --config configs/gateway.config.json --workload kulrs-palette
+node src/cli.ts control-minecraft --config configs/gateway.config.json --workload bedrock-main --action broadcast --message "Restart in 5 minutes"
 ```
 
 ## What The Build Produces
@@ -102,6 +106,11 @@ node src/cli.ts run-agent --config configs/gateway.config.json --app gateway-cha
 - `generated/services/gateway-api/kulrs.json`
 - `generated/services/gateway-chat-platform/chat-api.env`
 - `generated/services/gateway-chat-platform/agents.json`
+- `generated/nodes/<node>/worker/worker-config.json`
+- `generated/nodes/<node>/worker/gateway-worker.mjs`
+- `generated/nodes/<node>/workloads/<workload>/compose.yml`
+- `generated/nodes/<node>/workloads/<workload>/scripts/*`
+- `generated/nodes/<node>/workloads/<workload>/runtime/*`
 
 These are generated from `configs/gateway.config.example.json`.
 
@@ -127,6 +136,10 @@ It exposes the same config shape used by the CLI, including:
 - `gateway-api` named delivery channels for job runtime
 - `gateway-api` KULRS credentials, schedule, and enable/disable state
 - `gateway-api` workflow management through the live workflow API
+- worker node definitions for remote Docker hosts
+- remote workload definitions for scheduled container jobs and Minecraft Bedrock servers
+- remote deploy actions for worker-node workloads
+- Minecraft Bedrock control actions: start, stop, restart, broadcast, kick, ban, and update-if-empty
 - `gateway-chat-platform` env, provider keys, and agent definitions
 - `gateway-chat-platform` local TTS service configuration
 - local TTS voice browsing, transcript-aware voice creation, and agent-to-voice mapping

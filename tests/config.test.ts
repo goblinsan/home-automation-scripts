@@ -55,6 +55,53 @@ test('parseGatewayConfig accepts the example shape', () => {
         user: 'deploy'
       }
     ],
+    workerNodes: [
+      {
+        id: 'core-node',
+        enabled: true,
+        description: 'Core Debian service node',
+        host: '198.51.100.42',
+        sshUser: 'deploy',
+        sshPort: 22,
+        buildRoot: '/mnt/fast/builds/gateway-workloads',
+        stackRoot: '/mnt/storage/docker/stacks/gateway-workloads',
+        volumeRoot: '/mnt/storage/docker/volumes/gateway-workloads',
+        workerPollIntervalSeconds: 15,
+        nodeCommand: 'node',
+        systemdUnitDirectory: '/etc/systemd/system',
+        systemdReloadCommand: 'sudo systemctl daemon-reload',
+        systemdEnableTimerCommand: 'sudo systemctl enable --now',
+        dockerCommand: 'docker',
+        dockerComposeCommand: 'docker compose'
+      }
+    ],
+    remoteWorkloads: [
+      {
+        id: 'bedrock-main',
+        enabled: true,
+        nodeId: 'core-node',
+        description: 'Main Bedrock world',
+        kind: 'minecraft-bedrock-server',
+        minecraft: {
+          image: 'itzg/minecraft-bedrock-server:latest',
+          serverName: 'Gateway Bedrock',
+          worldName: 'gateway-main',
+          gameMode: 'survival',
+          difficulty: 'normal',
+          worldCopyMode: 'if-missing',
+          allowCheats: false,
+          onlineMode: true,
+          maxPlayers: 10,
+          serverPort: 19132,
+          autoStart: true,
+          autoUpdateEnabled: true,
+          autoUpdateSchedule: '*-*-* 04:00:00',
+          texturepackRequired: false,
+          behaviorPacks: [],
+          resourcePacks: []
+        }
+      }
+    ],
     features: [
       {
         id: 'chat-router-public-route',
@@ -146,6 +193,8 @@ test('parseGatewayConfig accepts the example shape', () => {
   assert.equal(config.scheduledJobs[0].appId, 'chat-router');
   assert.equal(config.features[0].id, 'chat-router-public-route');
   assert.equal(config.gateway.adminUi.routePath, '/admin/');
+  assert.equal(config.workerNodes[0].id, 'core-node');
+  assert.equal(config.remoteWorkloads[0].id, 'bedrock-main');
   assert.equal(config.serviceProfiles.gatewayApi.jobRuntime.channels[0].id, 'jim-telegram');
   assert.equal(config.serviceProfiles.gatewayApi.kulrsActivity.bots[0].id, 'mireille');
   assert.equal(config.serviceProfiles.gatewayChatPlatform.agents[0].id, 'marvin');
@@ -190,13 +239,17 @@ test('parseGatewayConfig defaults enabled flags when omitted', () => {
         execStart: '/usr/bin/bash __CURRENT__/job.sh',
         user: 'deploy'
       }
-    ]
+    ],
+    workerNodes: [],
+    remoteWorkloads: []
   });
 
   assert.equal(config.apps[0].enabled, true);
   assert.deepEqual(config.apps[0].hostnames, []);
   assert.equal(config.scheduledJobs[0].enabled, true);
   assert.deepEqual(config.features, []);
+  assert.deepEqual(config.workerNodes, []);
+  assert.deepEqual(config.remoteWorkloads, []);
   assert.equal(config.gateway.adminUi.enabled, false);
   assert.equal(config.gateway.adminUi.port, 4173);
   assert.equal(config.serviceProfiles.gatewayApi.enabled, false);

@@ -45,6 +45,8 @@ const config: GatewayConfig = {
     }
   ],
   scheduledJobs: [],
+  workerNodes: [],
+  remoteWorkloads: [],
   features: [],
   serviceProfiles: {
     gatewayApi: {

@@ -106,6 +106,119 @@
     }
   ],
   "scheduledJobs": [],
+  "workerNodes": [
+    {
+      "id": "core-node",
+      "enabled": true,
+      "description": "Core Debian service node for container workloads",
+      "host": "198.51.100.42",
+      "sshUser": "deploy",
+      "sshPort": 22,
+      "buildRoot": "/mnt/fast/builds/gateway-workloads",
+      "stackRoot": "/mnt/storage/docker/stacks/gateway-workloads",
+      "volumeRoot": "/mnt/storage/docker/volumes/gateway-workloads",
+      "workerPollIntervalSeconds": 15,
+      "nodeCommand": "node",
+      "dockerCommand": "docker",
+      "dockerComposeCommand": "docker compose"
+    }
+  ],
+  "remoteWorkloads": [
+    {
+      "id": "kulrs-palette",
+      "enabled": false,
+      "nodeId": "core-node",
+      "description": "KULRS palette creation container job",
+      "kind": "scheduled-container-job",
+      "job": {
+        "schedule": "*:0/30",
+        "timezone": "America/New_York",
+        "build": {
+          "strategy": "generated-node",
+          "repoUrl": "git@github.com:goblinsan/gateway-api.git",
+          "defaultRevision": "main",
+          "contextPath": ".",
+          "packageRoot": ".",
+          "nodeVersion": "24",
+          "installCommand": "npm ci --omit=dev"
+        },
+        "runCommand": "node jobs/kulrs_activity.js",
+        "environment": [
+          {
+            "key": "KULRS_WORKSPACE_DIR",
+            "value": "/workspace-data",
+            "secret": false,
+            "description": "Persistent workspace for KULRS logs and cache"
+          },
+          {
+            "key": "KULRS_CREDS_PATH",
+            "value": "/runtime/kulrs.json",
+            "secret": false,
+            "description": "Generated credentials JSON mounted into the container"
+          },
+          {
+            "key": "KULRS_TIMEZONE",
+            "value": "America/New_York",
+            "secret": false,
+            "description": "Timezone used for KULRS run gating"
+          },
+          {
+            "key": "UNSPLASH_ACCESS_KEY",
+            "value": "",
+            "secret": true,
+            "description": "Unsplash access key for palette image selection"
+          }
+        ],
+        "volumeMounts": [
+          {
+            "source": "/mnt/storage/docker/volumes/gateway-workloads/kulrs-palette/workspace",
+            "target": "/workspace-data",
+            "readOnly": false
+          }
+        ],
+        "jsonFiles": [
+          {
+            "relativePath": "kulrs.json",
+            "payload": {
+              "firebaseApiKey": "",
+              "mireille": {
+                "email": "",
+                "password": ""
+              }
+            },
+            "description": "Runtime credential payload mounted into the KULRS job container"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bedrock-main",
+      "enabled": false,
+      "nodeId": "core-node",
+      "description": "Main Minecraft Bedrock server",
+      "kind": "minecraft-bedrock-server",
+      "minecraft": {
+        "image": "itzg/minecraft-bedrock-server:latest",
+        "serverName": "Gateway Bedrock",
+        "worldName": "gateway-main",
+        "gameMode": "survival",
+        "difficulty": "normal",
+        "levelSeed": "",
+        "worldSourcePath": "",
+        "worldCopyMode": "if-missing",
+        "allowCheats": false,
+        "onlineMode": true,
+        "maxPlayers": 10,
+        "serverPort": 19132,
+        "autoStart": true,
+        "autoUpdateEnabled": true,
+        "autoUpdateSchedule": "*-*-* 04:00:00",
+        "texturepackRequired": false,
+        "behaviorPacks": [],
+        "resourcePacks": []
+      }
+    }
+  ],
   "features": [
     {
       "id": "gateway-api-enabled",
