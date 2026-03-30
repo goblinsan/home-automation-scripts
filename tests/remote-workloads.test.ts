@@ -209,6 +209,8 @@ test('buildArtifacts renders remote workload bundles for core nodes', async () =
   const jobJson = await readFile(join(outDir, 'nodes', 'core-node', 'workloads', 'kulrs-palette', 'runtime', 'kulrs.json'), 'utf8');
   const workerConfig = await readFile(join(outDir, 'nodes', 'core-node', 'worker', 'worker-config.json'), 'utf8');
   const workerScript = await readFile(join(outDir, 'nodes', 'core-node', 'worker', 'gateway-worker.mjs'), 'utf8');
+  const workerDockerfile = await readFile(join(outDir, 'nodes', 'core-node', 'worker', 'Dockerfile'), 'utf8');
+  const workerCompose = await readFile(join(outDir, 'nodes', 'core-node', 'worker', 'compose.yml'), 'utf8');
   const minecraftCompose = await readFile(join(outDir, 'nodes', 'core-node', 'workloads', 'bedrock-main', 'compose.yml'), 'utf8');
   const minecraftUpdateScript = await readFile(join(outDir, 'nodes', 'core-node', 'workloads', 'bedrock-main', 'scripts', 'update-if-empty.sh'), 'utf8');
   const minecraftBootstrapScript = await readFile(join(outDir, 'nodes', 'core-node', 'workloads', 'bedrock-main', 'scripts', 'bootstrap-world.sh'), 'utf8');
@@ -218,9 +220,15 @@ test('buildArtifacts renders remote workload bundles for core nodes', async () =
   assert.match(jobCompose, /\/runtime:ro/);
   assert.match(jobDockerfile, /FROM node:24-bookworm-slim/);
   assert.match(jobJson, /firebase-test/);
+  assert.match(workerConfig, /"\s*runtimeDir": "\/runtime"/);
   assert.match(workerConfig, /"\s*pollIntervalSeconds": 15/);
   assert.match(workerConfig, /"\s*schedule": "\*:0\/30"/);
   assert.match(workerScript, /runScheduledJob/);
+  assert.match(workerDockerfile, /FROM docker:28-cli/);
+  assert.match(workerDockerfile, /apk add --no-cache nodejs unzip/);
+  assert.match(workerCompose, /gateway-worker:/);
+  assert.match(workerCompose, /\/var\/run\/docker\.sock:\/var\/run\/docker\.sock/);
+  assert.match(workerCompose, /\/runtime\/worker-config\.json/);
   assert.match(minecraftCompose, /itzg\/minecraft-bedrock-server:latest/);
   assert.match(minecraftCompose, /TEXTUREPACK_REQUIRED/);
   assert.match(minecraftUpdateScript, /send-command list/);

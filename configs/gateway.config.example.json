@@ -118,7 +118,6 @@
       "stackRoot": "/mnt/storage/docker/stacks/gateway-workloads",
       "volumeRoot": "/mnt/storage/docker/volumes/gateway-workloads",
       "workerPollIntervalSeconds": 15,
-      "nodeCommand": "node",
       "dockerCommand": "docker",
       "dockerComposeCommand": "docker compose"
     }

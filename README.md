@@ -108,6 +108,8 @@ node src/cli.ts control-minecraft --config configs/gateway.config.json --workloa
 - `generated/services/gateway-chat-platform/agents.json`
 - `generated/nodes/<node>/worker/worker-config.json`
 - `generated/nodes/<node>/worker/gateway-worker.mjs`
+- `generated/nodes/<node>/worker/Dockerfile`
+- `generated/nodes/<node>/worker/compose.yml`
 - `generated/nodes/<node>/workloads/<workload>/compose.yml`
 - `generated/nodes/<node>/workloads/<workload>/scripts/*`
 - `generated/nodes/<node>/workloads/<workload>/runtime/*`
@@ -139,6 +141,7 @@ It exposes the same config shape used by the CLI, including:
 - worker node definitions for remote Docker hosts
 - remote workload definitions for scheduled container jobs and Minecraft Bedrock servers
 - remote deploy actions for worker-node workloads
+- a containerized remote `gateway-worker`, so worker nodes only need Docker plus SSH access
 - Minecraft Bedrock control actions: start, stop, restart, broadcast, kick, ban, and update-if-empty
 - `gateway-chat-platform` env, provider keys, and agent definitions
 - `gateway-chat-platform` local TTS service configuration

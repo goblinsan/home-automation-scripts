@@ -22,7 +22,7 @@ import {
   getRemoteWorkloadSourceDir,
   getRemoteWorkloadStackDir
 } from './remote-workloads.ts';
-import { getRemoteWorkerRuntimeDir } from './remote-worker.ts';
+import { getRemoteWorkerProjectName, getRemoteWorkerRuntimeDir } from './remote-worker.ts';
 import {
   renderGatewayApiEnv,
   renderGatewayApiJobChannels,
@@ -586,7 +586,6 @@ async function syncRemoteWorkerFiles(node: WorkerNodeConfig, outDir: string, con
   const runtimeDir = getRemoteWorkerRuntimeDir(node);
   await runRemoteShell(node, `mkdir -p ${shellQuote(runtimeDir)}`, context);
   await copyDirectoryToRemote(node, localDir, runtimeDir, context);
-  await runRemoteShell(node, `chmod +x ${shellQuote(`${runtimeDir}/gateway-worker.mjs`)}`, context);
 }
 
 async function prepareScheduledContainerJobSource(
@@ -614,17 +613,10 @@ async function prepareScheduledContainerJobSource(
 }
 
 async function restartRemoteWorker(node: WorkerNodeConfig, context: CommandContext): Promise<void> {
-  const runtimeDir = getRemoteWorkerRuntimeDir(node);
-  const pidFile = `${runtimeDir}/gateway-worker.pid`;
-  const logFile = `${runtimeDir}/gateway-worker.log`;
+  const composeCommand = `${node.dockerComposeCommand} -f ${shellQuote(`${getRemoteWorkerRuntimeDir(node)}/compose.yml`)} --project-name ${shellQuote(getRemoteWorkerProjectName(node))}`;
   await runRemoteShell(
     node,
-    `mkdir -p ${shellQuote(runtimeDir)} && if [ -f ${shellQuote(pidFile)} ] && kill -0 "$(cat ${shellQuote(pidFile)})" 2>/dev/null; then kill "$(cat ${shellQuote(pidFile)})" || true; sleep 1; fi`,
-    context
-  );
-  await runRemoteShell(
-    node,
-    `nohup ${node.nodeCommand} ${shellQuote(`${runtimeDir}/gateway-worker.mjs`)} run --config ${shellQuote(`${runtimeDir}/worker-config.json`)} >> ${shellQuote(logFile)} 2>&1 < /dev/null & echo $! > ${shellQuote(pidFile)}`,
+    `${composeCommand} up -d --build gateway-worker`,
     context
   );
 }
@@ -636,10 +628,10 @@ async function invokeRemoteWorkerControl(
   payload: MinecraftControlPayload,
   context: CommandContext
 ): Promise<void> {
-  const runtimeDir = getRemoteWorkerRuntimeDir(node);
+  const composeCommand = `${node.dockerComposeCommand} -f ${shellQuote(`${getRemoteWorkerRuntimeDir(node)}/compose.yml`)} --project-name ${shellQuote(getRemoteWorkerProjectName(node))}`;
   await runRemoteShell(
     node,
-    `${node.nodeCommand} ${shellQuote(`${runtimeDir}/gateway-worker.mjs`)} control --config ${shellQuote(`${runtimeDir}/worker-config.json`)} --workload ${shellQuote(workloadId)} --action ${shellQuote(action)} --payload ${shellQuote(JSON.stringify(payload))}`,
+    `${composeCommand} run --rm gateway-worker control --config ${shellQuote('/runtime/worker-config.json')} --workload ${shellQuote(workloadId)} --action ${shellQuote(action)} --payload ${shellQuote(JSON.stringify(payload))}`,
     context
   );
 }

@@ -12,15 +12,15 @@ The config adds two new top-level sections:
 - `workerNodes`
 - `remoteWorkloads`
 
-`workerNodes` defines the remote host, its SSH identity, Docker and worker
-runtime commands, and where stack/build/volume data live on that machine.
+`workerNodes` defines the remote host, its SSH identity, Docker runtime
+commands, and where stack/build/volume data live on that machine.
 
 `remoteWorkloads` defines workload bundles that are rendered locally by the
 control plane and then copied to a worker node for deployment.
 
-Each worker node also gets a generated `gateway-worker` runtime that runs as a
-regular user. It evaluates workload schedules in-process and handles Bedrock
-control actions without installing host-level timer units.
+Each worker node also gets a generated `gateway-worker` container runtime. It
+evaluates workload schedules in-process and handles Bedrock control actions
+without installing host-level timer units or requiring Node on the worker host.
 
 The first supported workload kinds are:
 
@@ -39,6 +39,8 @@ Depending on workload kind, the bundle can include:
 
 - `worker/worker-config.json`
 - `worker/gateway-worker.mjs`
+- `worker/Dockerfile`
+- `worker/compose.yml`
 - `compose.yml`
 - `job.env`
 - `Dockerfile`
@@ -53,7 +55,7 @@ Depending on workload kind, the bundle can include:
 2. copies the node worker bundle and workload bundle to the worker node over `scp`
 3. prepares source checkout/build state on the worker node
 4. builds or starts the remote container workload
-5. restarts the user-space `gateway-worker` so the latest schedules and actions are active
+5. rebuilds/restarts the `gateway-worker` container so the latest schedules and actions are active
 
 ## Bedrock Control
 

@@ -2558,7 +2558,6 @@ function htmlPage(basePath: string): string {
             <label>Worker Poll Seconds<input type="number" data-field="workerPollIntervalSeconds" value="\${node.workerPollIntervalSeconds || 15}" /></label>
           </div>
           <div class="row">
-            <label>Node Command<input data-field="nodeCommand" value="\${node.nodeCommand || 'node'}" /></label>
             <label>Docker Command<input data-field="dockerCommand" value="\${node.dockerCommand}" /></label>
             <label>Docker Compose Command<input data-field="dockerComposeCommand" value="\${node.dockerComposeCommand}" /></label>
           </div>

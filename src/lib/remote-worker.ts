@@ -18,6 +18,56 @@ export function getRemoteWorkerRuntimeDir(node: WorkerNodeConfig): string {
   return `${node.stackRoot}/_gateway-worker`;
 }
 
+function sanitizeWorkerName(value: string): string {
+  return value.toLowerCase().replaceAll(/[^a-z0-9-]+/g, '-').replaceAll(/^-+|-+$/g, '') || 'worker';
+}
+
+export function getRemoteWorkerProjectName(node: WorkerNodeConfig): string {
+  return `gateway-worker-${sanitizeWorkerName(node.id)}`;
+}
+
+interface WorkerRuntimeMount {
+  source: string;
+  target: string;
+  readOnly: boolean;
+}
+
+function addWorkerMount(mounts: Map<string, WorkerRuntimeMount>, source: string | undefined, readOnly: boolean): void {
+  if (!source || source.trim().length === 0) {
+    return;
+  }
+  const existing = mounts.get(source);
+  if (!existing) {
+    mounts.set(source, { source, target: source, readOnly });
+    return;
+  }
+  if (!readOnly) {
+    existing.readOnly = false;
+  }
+}
+
+function collectWorkerRuntimeMounts(config: GatewayConfig, node: WorkerNodeConfig): WorkerRuntimeMount[] {
+  const mounts = new Map<string, WorkerRuntimeMount>();
+  addWorkerMount(mounts, node.buildRoot, false);
+  addWorkerMount(mounts, node.stackRoot, false);
+  addWorkerMount(mounts, node.volumeRoot, false);
+
+  for (const workload of config.remoteWorkloads.filter((candidate) => candidate.enabled && candidate.nodeId === node.id)) {
+    if (workload.kind !== 'minecraft-bedrock-server' || !workload.minecraft) {
+      continue;
+    }
+    addWorkerMount(mounts, workload.minecraft.worldSourcePath, true);
+    for (const pack of workload.minecraft.behaviorPacks) {
+      addWorkerMount(mounts, pack.sourcePath, true);
+    }
+    for (const pack of workload.minecraft.resourcePacks) {
+      addWorkerMount(mounts, pack.sourcePath, true);
+    }
+  }
+
+  return Array.from(mounts.values()).sort((left, right) => left.source.localeCompare(right.source));
+}
+
 function renderRemoteWorkerConfig(config: GatewayConfig, node: WorkerNodeConfig): string {
   const workloads = config.remoteWorkloads
     .filter((candidate) => candidate.enabled && candidate.nodeId === node.id)
@@ -61,11 +111,49 @@ function renderRemoteWorkerConfig(config: GatewayConfig, node: WorkerNodeConfig)
   return jsonString({
     version: 1,
     nodeId: node.id,
-    runtimeDir: getRemoteWorkerRuntimeDir(node),
+    runtimeDir: '/runtime',
     pollIntervalSeconds: node.workerPollIntervalSeconds,
-    dockerComposeCommand: node.dockerComposeCommand,
+    dockerComposeCommand: 'docker compose',
     workloads
   });
+}
+
+function renderRemoteWorkerDockerfile(): string {
+  return `FROM docker:28-cli
+RUN apk add --no-cache nodejs unzip
+WORKDIR /app
+COPY gateway-worker.mjs ./gateway-worker.mjs
+ENTRYPOINT ["node", "/app/gateway-worker.mjs"]
+CMD ["run", "--config", "/runtime/worker-config.json"]
+`;
+}
+
+function renderRemoteWorkerCompose(config: GatewayConfig, node: WorkerNodeConfig): string {
+  const runtimeDir = getRemoteWorkerRuntimeDir(node);
+  const mounts = [
+    '/var/run/docker.sock:/var/run/docker.sock',
+    `${runtimeDir}:/runtime`,
+    ...collectWorkerRuntimeMounts(config, node).map((mount) =>
+      `${mount.source}:${mount.target}${mount.readOnly ? ':ro' : ''}`
+    )
+  ];
+
+  return [
+    'services:',
+    '  gateway-worker:',
+    '    build:',
+    `      context: ${JSON.stringify(runtimeDir)}`,
+    `      dockerfile: ${JSON.stringify(`${runtimeDir}/Dockerfile`)}`,
+    '    command:',
+    `      - ${JSON.stringify('run')}`,
+    `      - ${JSON.stringify('--config')}`,
+    `      - ${JSON.stringify('/runtime/worker-config.json')}`,
+    '    restart: unless-stopped',
+    `    container_name: ${JSON.stringify(`${getRemoteWorkerProjectName(node)}-service`)}`,
+    '    volumes:',
+    ...mounts.map((mount) => `      - ${JSON.stringify(mount)}`),
+    ''
+  ].join('\n');
 }
 
 function renderRemoteWorkerScript(): string {
@@ -355,6 +443,14 @@ export function renderRemoteWorkerFiles(config: GatewayConfig, node: WorkerNodeC
     {
       relativePath: 'gateway-worker.mjs',
       contents: renderRemoteWorkerScript()
+    },
+    {
+      relativePath: 'Dockerfile',
+      contents: renderRemoteWorkerDockerfile()
+    },
+    {
+      relativePath: 'compose.yml',
+      contents: renderRemoteWorkerCompose(config, node)
     }
   ];
 }
