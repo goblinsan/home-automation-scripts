@@ -192,6 +192,9 @@ chmod -R a+rwX ${yamlString(dataDir)}
 function renderMinecraftCompose(node: WorkerNodeConfig, workload: RemoteWorkloadConfig, minecraft: MinecraftBedrockWorkloadConfig): string {
   const dataDir = getRemoteWorkloadDataDir(node, workload);
   const volumeLines = [`      - ${yamlString(`${dataDir}/data:/data`)}`];
+  const networkLines = minecraft.networkMode === 'host'
+    ? ['    network_mode: "host"']
+    : ['    ports:', `      - ${yamlString(`${minecraft.serverPort}:${minecraft.serverPort}/udp`)}`];
   const environmentLines = [
     `      EULA: ${yamlString('TRUE')}`,
     `      SERVER_NAME: ${yamlString(minecraft.serverName)}`,
@@ -216,10 +219,9 @@ function renderMinecraftCompose(node: WorkerNodeConfig, workload: RemoteWorkload
     `    image: ${yamlString(minecraft.image)}`,
     '    stdin_open: true',
     '    tty: true',
+    ...networkLines,
     '    environment:',
     ...environmentLines,
-    '    ports:',
-    `      - ${yamlString(`${minecraft.serverPort}:${minecraft.serverPort}/udp`)}`,
     '    volumes:',
     ...volumeLines,
     `    container_name: ${yamlString(`${getRemoteWorkloadProjectName(workload)}-server`)}`,

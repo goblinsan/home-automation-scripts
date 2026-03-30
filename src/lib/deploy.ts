@@ -592,6 +592,7 @@ export interface RemoteContainerStatus {
   exists: boolean;
   status: string;
   running: boolean;
+  networkMode?: string;
   startedAt?: string;
   ports?: Record<string, unknown> | null;
   error?: string;
@@ -676,7 +677,7 @@ async function prepareScheduledContainerJobSource(
 async function inspectRemoteContainer(node: WorkerNodeConfig, containerName: string): Promise<RemoteContainerStatus> {
   const inspectCommand = [
     `if ${node.dockerCommand} inspect ${shellQuote(containerName)} >/dev/null 2>&1; then`,
-    `${node.dockerCommand} inspect ${shellQuote(containerName)} --format ${shellQuote('{{json .State}}@@{{json .NetworkSettings.Ports}}')};`,
+    `${node.dockerCommand} inspect ${shellQuote(containerName)} --format ${shellQuote('{{json .State}}@@{{json .NetworkSettings.Ports}}@@{{.HostConfig.NetworkMode}}')};`,
     'else',
     `printf '__MISSING__';`,
     'fi'
@@ -702,7 +703,7 @@ async function inspectRemoteContainer(node: WorkerNodeConfig, containerName: str
     };
   }
 
-  const [stateJson = '{}', portsJson = 'null'] = output.split('@@');
+  const [stateJson = '{}', portsJson = 'null', networkMode = ''] = output.split('@@');
   try {
     const state = JSON.parse(stateJson) as { Status?: string; Running?: boolean; StartedAt?: string };
     const ports = JSON.parse(portsJson) as Record<string, unknown> | null;
@@ -711,6 +712,7 @@ async function inspectRemoteContainer(node: WorkerNodeConfig, containerName: str
       exists: true,
       status: typeof state.Status === 'string' ? state.Status : 'unknown',
       running: Boolean(state.Running),
+      networkMode: networkMode || undefined,
       startedAt: typeof state.StartedAt === 'string' ? state.StartedAt : undefined,
       ports
     };

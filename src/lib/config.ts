@@ -116,6 +116,7 @@ export interface ScheduledContainerJobWorkloadConfig {
 
 export interface MinecraftBedrockWorkloadConfig {
   image: string;
+  networkMode: 'host' | 'bridge';
   serverName: string;
   worldName: string;
   gameMode: 'survival' | 'creative' | 'adventure';
@@ -578,6 +579,7 @@ function parseMinecraftBedrockWorkloadConfig(value: unknown, field: string): Min
 
   return {
     image: typeof value.image === 'string' ? value.image : 'itzg/minecraft-bedrock-server:latest',
+    networkMode: value.networkMode === 'bridge' ? 'bridge' : 'host',
     serverName: assertString(value.serverName, `${field}.serverName`),
     worldName: assertString(value.worldName, `${field}.worldName`),
     gameMode,

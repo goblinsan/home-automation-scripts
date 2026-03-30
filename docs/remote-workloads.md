@@ -27,6 +27,10 @@ The first supported workload kinds are:
 - `scheduled-container-job`
 - `minecraft-bedrock-server`
 
+For Bedrock on consoles, `networkMode: "host"` is the recommended setting when
+you want LAN discovery to work from Xbox clients. Bridge mode can still be used
+for direct UDP exposure, but it is less reliable for console LAN visibility.
+
 ## Rendered Bundle
 
 `npm run build` now emits per-node workload bundles under:

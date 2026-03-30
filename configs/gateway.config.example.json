@@ -198,6 +198,7 @@
       "kind": "minecraft-bedrock-server",
       "minecraft": {
         "image": "itzg/minecraft-bedrock-server:latest",
+        "networkMode": "host",
         "serverName": "Gateway Bedrock",
         "worldName": "gateway-main",
         "gameMode": "survival",

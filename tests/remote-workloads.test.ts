@@ -114,6 +114,7 @@ function createConfig(root: string): GatewayConfig {
         kind: 'minecraft-bedrock-server',
         minecraft: {
           image: 'itzg/minecraft-bedrock-server:latest',
+          networkMode: 'host',
           serverName: 'Gateway Bedrock',
           worldName: 'gateway-main',
           gameMode: 'survival',
@@ -230,6 +231,8 @@ test('buildArtifacts renders remote workload bundles for core nodes', async () =
   assert.match(workerCompose, /\/var\/run\/docker\.sock:\/var\/run\/docker\.sock/);
   assert.match(workerCompose, /\/runtime\/worker-config\.json/);
   assert.match(minecraftCompose, /itzg\/minecraft-bedrock-server:latest/);
+  assert.match(minecraftCompose, /network_mode: "host"/);
+  assert.doesNotMatch(minecraftCompose, /19132:19132\/udp/);
   assert.match(minecraftCompose, /TEXTUREPACK_REQUIRED/);
   assert.match(minecraftUpdateScript, /send-command list/);
   assert.match(minecraftUpdateScript, /bootstrap-world\.sh/);

@@ -2434,6 +2434,7 @@ function htmlPage(basePath: string): string {
     function createDefaultMinecraftConfig() {
       return {
         image: 'itzg/minecraft-bedrock-server:latest',
+        networkMode: 'host',
         serverName: '',
         worldName: '',
         gameMode: 'survival',
@@ -2911,7 +2912,7 @@ function htmlPage(basePath: string): string {
         const workerSummary = describeContainerStatus(minecraftStatus?.worker);
         const serverSummary = describeContainerStatus(minecraftStatus?.server);
         const portSummary = minecraftStatus
-          ? formatPortMappings(minecraftStatus.server?.ports)
+          ? formatPortMappings(minecraftStatus.server?.ports, minecraftStatus.server?.networkMode)
           : 'not checked yet';
         const startedLine = minecraftStatus?.server?.startedAt
           ? '<p><strong>Started:</strong> ' + minecraftStatus.server.startedAt + '</p>'
@@ -2943,6 +2944,7 @@ function htmlPage(basePath: string): string {
                 <span class="pill">Live Status</span>
                 <p><strong>Worker:</strong> \${workerSummary}</p>
                 <p><strong>Server:</strong> \${serverSummary}</p>
+                <p><strong>Network Mode:</strong> \${minecraftStatus?.server?.networkMode || minecraft.networkMode}</p>
                 <p><strong>Configured Port:</strong> \${minecraftStatus?.configuredServerPort || minecraft.serverPort}</p>
                 <p><strong>Docker Port Mapping:</strong> \${portSummary}</p>
                 \${startedLine}
@@ -2983,6 +2985,12 @@ function htmlPage(basePath: string): string {
             <div class="row">
               <label>Seed<input data-mc-field="levelSeed" value="\${minecraft.levelSeed || ''}" /></label>
             <label>World Source Path<input data-mc-field="worldSourcePath" value="\${minecraft.worldSourcePath || ''}" placeholder="/mnt/storage/docker/shared/worlds/existing-world or .mcworld" /></label>
+            <label>Network Mode
+              <select data-mc-field="networkMode">
+                <option value="host" \${minecraft.networkMode === 'host' ? 'selected' : ''}>host (recommended for Xbox LAN)</option>
+                <option value="bridge" \${minecraft.networkMode === 'bridge' ? 'selected' : ''}>bridge</option>
+              </select>
+            </label>
             <label>World Copy Mode
               <select data-mc-field="worldCopyMode">
                 <option value="if-missing" \${minecraft.worldCopyMode === 'if-missing' ? 'selected' : ''}>if-missing</option>
@@ -3427,7 +3435,10 @@ function htmlPage(basePath: string): string {
       return container.status || 'stopped';
     }
 
-    function formatPortMappings(ports) {
+    function formatPortMappings(ports, networkMode) {
+      if (networkMode === 'host') {
+        return 'host network';
+      }
       if (!ports || typeof ports !== 'object') {
         return 'none';
       }

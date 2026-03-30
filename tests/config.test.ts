@@ -84,6 +84,7 @@ test('parseGatewayConfig accepts the example shape', () => {
         kind: 'minecraft-bedrock-server',
         minecraft: {
           image: 'itzg/minecraft-bedrock-server:latest',
+          networkMode: 'host',
           serverName: 'Gateway Bedrock',
           worldName: 'gateway-main',
           gameMode: 'survival',
@@ -195,6 +196,7 @@ test('parseGatewayConfig accepts the example shape', () => {
   assert.equal(config.gateway.adminUi.routePath, '/admin/');
   assert.equal(config.workerNodes[0].id, 'core-node');
   assert.equal(config.remoteWorkloads[0].id, 'bedrock-main');
+  assert.equal(config.remoteWorkloads[0].minecraft?.networkMode, 'host');
   assert.equal(config.serviceProfiles.gatewayApi.jobRuntime.channels[0].id, 'jim-telegram');
   assert.equal(config.serviceProfiles.gatewayApi.kulrsActivity.bots[0].id, 'mireille');
   assert.equal(config.serviceProfiles.gatewayChatPlatform.agents[0].id, 'marvin');
