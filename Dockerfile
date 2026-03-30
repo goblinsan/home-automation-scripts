@@ -2,6 +2,8 @@ FROM node:24-alpine
 
 WORKDIR /app
 
+RUN apk add --no-cache openssh-client
+
 COPY package.json ./
 COPY src ./src
 COPY configs ./configs

@@ -9,3 +9,4 @@ services:
     volumes:
       - "${GATEWAY_CONFIG_PATH:-./configs/gateway.config.json}:/config/gateway.config.json"
       - "${GATEWAY_BUILD_OUT_DIR:-./generated}:/data/generated"
+      - "${GATEWAY_SSH_DIR:-/home/deploy/.ssh}:/root/.ssh:ro"
