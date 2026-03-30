@@ -1,0 +1,112 @@
+[
+  {
+    "name": "ancr-coach-morning",
+    "schedule": "0 8 * * *",
+    "enabled": true,
+    "target": {
+      "type": "gateway-jobs.run",
+      "ref": "plan_progress_coach"
+    },
+    "input": {
+      "mode": "check-in",
+      "phase": "morning",
+      "timeZone": "America/New_York",
+      "agentId": "bruvie-d",
+      "planFilePath": "/opt/gateway-control-plane/docs/ancr-2-week-plan.md",
+      "notesRepoPath": "/srv/example-notes",
+      "notesSearchDirs": ["daily", "notes", "inbox"],
+      "recentNotesLimit": 8,
+      "delivery": {
+        "channel": "jim-telegram"
+      },
+      "noteLog": {
+        "enabled": true,
+        "commit": true
+      }
+    },
+    "timeoutSeconds": 120
+  },
+  {
+    "name": "ancr-coach-midday",
+    "schedule": "30 12 * * *",
+    "enabled": true,
+    "target": {
+      "type": "gateway-jobs.run",
+      "ref": "plan_progress_coach"
+    },
+    "input": {
+      "mode": "check-in",
+      "phase": "midday",
+      "timeZone": "America/New_York",
+      "agentId": "bruvie-d",
+      "planFilePath": "/opt/gateway-control-plane/docs/ancr-2-week-plan.md",
+      "notesRepoPath": "/srv/example-notes",
+      "notesSearchDirs": ["daily", "notes", "inbox"],
+      "recentNotesLimit": 8,
+      "delivery": {
+        "channel": "jim-telegram"
+      },
+      "noteLog": {
+        "enabled": true,
+        "commit": true
+      }
+    },
+    "timeoutSeconds": 120
+  },
+  {
+    "name": "ancr-coach-evening",
+    "schedule": "30 18 * * *",
+    "enabled": true,
+    "target": {
+      "type": "gateway-jobs.run",
+      "ref": "plan_progress_coach"
+    },
+    "input": {
+      "mode": "check-in",
+      "phase": "evening",
+      "timeZone": "America/New_York",
+      "agentId": "bruvie-d",
+      "planFilePath": "/opt/gateway-control-plane/docs/ancr-2-week-plan.md",
+      "notesRepoPath": "/srv/example-notes",
+      "notesSearchDirs": ["daily", "notes", "inbox"],
+      "recentNotesLimit": 8,
+      "delivery": {
+        "channel": "jim-telegram"
+      },
+      "noteLog": {
+        "enabled": true,
+        "commit": true
+      }
+    },
+    "timeoutSeconds": 120
+  },
+  {
+    "name": "ancr-coach-log-progress",
+    "schedule": "59 23 * * *",
+    "enabled": false,
+    "target": {
+      "type": "gateway-jobs.run",
+      "ref": "plan_progress_coach"
+    },
+    "input": {
+      "mode": "log-progress",
+      "timeZone": "America/New_York",
+      "agentId": "bruvie-d",
+      "planFilePath": "/opt/gateway-control-plane/docs/ancr-2-week-plan.md",
+      "notesRepoPath": "/srv/example-notes",
+      "notesSearchDirs": ["daily", "notes", "inbox"],
+      "recentNotesLimit": 8,
+      "progressSource": "manual-workflow-run",
+      "progressEntry": "Replace this text in the workflow input before clicking Run.",
+      "includeReflection": true,
+      "delivery": {
+        "channel": "jim-telegram"
+      },
+      "noteLog": {
+        "enabled": true,
+        "commit": true
+      }
+    },
+    "timeoutSeconds": 120
+  }
+]
