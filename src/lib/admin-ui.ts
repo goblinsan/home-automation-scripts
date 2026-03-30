@@ -249,7 +249,7 @@ function htmlPage(basePath: string): string {
       color: var(--text);
     }
     header {
-      padding: 24px 28px 12px;
+      padding: 20px 24px 14px;
       border-bottom: 1px solid rgba(30, 39, 64, 0.08);
       background: rgba(255, 255, 255, 0.72);
       backdrop-filter: blur(10px);
@@ -258,8 +258,8 @@ function htmlPage(basePath: string): string {
     p { margin: 0 0 10px; color: var(--muted); }
     main {
       display: grid;
-      grid-template-columns: 290px minmax(0, 1fr);
-      gap: 20px;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 18px;
       padding: 20px 24px 28px;
       align-items: start;
     }
@@ -270,9 +270,7 @@ function htmlPage(basePath: string): string {
       padding: 18px;
       box-shadow: 0 16px 40px var(--shadow);
     }
-    .editor-panel {
-      order: 2;
-    }
+    .editor-panel { order: 1; }
     .toolbar {
       display: flex;
       gap: 10px;
@@ -287,6 +285,18 @@ function htmlPage(basePath: string): string {
       padding: 10px 14px;
       font: inherit;
       cursor: pointer;
+      transition: opacity 120ms ease, transform 120ms ease, background 120ms ease, border-color 120ms ease;
+    }
+    button.button-tapped,
+    button:active {
+      transform: translateY(1px);
+      opacity: 0.82;
+    }
+    button:disabled,
+    button.is-busy {
+      cursor: progress;
+      opacity: 0.56;
+      filter: grayscale(0.15);
     }
     button.primary {
       background: var(--accent);
@@ -361,11 +371,64 @@ function htmlPage(basePath: string): string {
     .status-ok { color: var(--ok); }
     .status-error { color: var(--danger); }
     .aside-stack {
-      order: 1;
+      order: 2;
       display: grid;
       gap: 18px;
-      position: sticky;
-      top: 18px;
+    }
+    .header-shell {
+      display: grid;
+      gap: 14px;
+    }
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .advanced-actions {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.85);
+      padding: 6px 10px 10px;
+    }
+    .advanced-actions summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 14px;
+      padding: 4px 0;
+      user-select: none;
+    }
+    .advanced-actions .toolbar {
+      margin-top: 10px;
+    }
+    .top-tab-nav {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .top-tab-nav .tab-button {
+      width: auto;
+      min-width: max-content;
+      text-align: center;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--muted);
+      padding: 12px 16px;
+      font-size: 15px;
+    }
+    .top-tab-nav .tab-button:hover,
+    .top-tab-nav .tab-button.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: rgba(12, 120, 142, 0.24);
     }
     .nav-card {
       background: linear-gradient(180deg, var(--sidebar) 0%, #214c44 100%);
@@ -457,21 +520,45 @@ function htmlPage(basePath: string): string {
     }
     @media (max-width: 980px) {
       main { grid-template-columns: 1fr; }
-      .aside-stack { position: static; }
-      .editor-panel { order: 2; }
+      .editor-panel { order: 1; }
+      .aside-stack { order: 2; }
+      .header-row { align-items: stretch; }
     }
   </style>
 </head>
 <body>
   <header>
-    <h1>Gateway Config Admin</h1>
-    <p>Configure gateway services, agents, workflows, and deployment state from one control surface.</p>
-    <div class="toolbar">
-      <button id="reloadButton">Reload</button>
-      <button id="validateButton">Validate</button>
-      <button id="saveButton" class="primary">Save</button>
-      <button id="buildButton">Save + Build</button>
-      <button id="refreshRuntimeButton">Refresh Runtime</button>
+    <div class="header-shell">
+      <div class="header-row">
+        <div>
+          <h1>Gateway Config Admin</h1>
+          <p>Configure gateway services, agents, workflows, and deployment state from one control surface.</p>
+        </div>
+        <div class="header-actions">
+          <button id="saveButton" class="primary">Save Config</button>
+          <button id="buildButton">Save + Build</button>
+          <details class="advanced-actions">
+            <summary>Advanced Actions</summary>
+            <div class="toolbar">
+              <button id="reloadButton">Reload From Disk</button>
+              <button id="validateButton">Validate Draft</button>
+              <button id="refreshRuntimeButton">Refresh Runtime</button>
+            </div>
+          </details>
+        </div>
+      </div>
+      <nav class="top-tab-nav" aria-label="Sections">
+        <button class="tab-button active" data-tab="overview">Overview</button>
+        <button class="tab-button" data-tab="gateway">Gateway</button>
+        <button class="tab-button" data-tab="services">Runtime</button>
+        <button class="tab-button" data-tab="secrets">Secrets</button>
+        <button class="tab-button" data-tab="agents">AI Agents</button>
+        <button class="tab-button" data-tab="workflows">Automations</button>
+        <button class="tab-button" data-tab="remote">Nodes</button>
+        <button class="tab-button" data-tab="bedrock">Minecraft</button>
+        <button class="tab-button" data-tab="apps">Deployments</button>
+        <button class="tab-button" data-tab="raw">Advanced JSON</button>
+      </nav>
     </div>
     <div id="status"></div>
   </header>
@@ -480,7 +567,7 @@ function htmlPage(basePath: string): string {
       <div class="split-actions">
         <div>
           <h2>Config Workspace</h2>
-          <p>Use the left navigation to focus one config area at a time. Changes stay in memory until you save.</p>
+          <p>Use the tabs above to focus one config area at a time. Changes stay in memory until you save.</p>
         </div>
       </div>
 
@@ -1029,22 +1116,6 @@ function htmlPage(basePath: string): string {
     </section>
 
     <aside class="aside-stack">
-      <section class="panel nav-card">
-        <h2>Dashboard</h2>
-        <p>Each tab controls a different part of the system. If you are looking for Minecraft, open <strong>Minecraft</strong>.</p>
-        <div class="tab-nav">
-          <button class="tab-button active" data-tab="overview">Overview</button>
-          <button class="tab-button" data-tab="gateway">Gateway</button>
-          <button class="tab-button" data-tab="services">Runtime</button>
-          <button class="tab-button" data-tab="secrets">Secrets</button>
-          <button class="tab-button" data-tab="agents">AI Agents</button>
-          <button class="tab-button" data-tab="workflows">Automations</button>
-          <button class="tab-button" data-tab="remote">Nodes</button>
-          <button class="tab-button" data-tab="bedrock">Minecraft</button>
-          <button class="tab-button" data-tab="apps">Deployments</button>
-          <button class="tab-button" data-tab="raw">Advanced JSON</button>
-        </div>
-      </section>
       <section class="panel">
         <div class="split-actions">
           <div>
@@ -1107,6 +1178,28 @@ function htmlPage(basePath: string): string {
       const status = document.getElementById('status');
       status.textContent = message;
       status.className = kind === 'error' ? 'status-error' : 'status-ok';
+    }
+
+    async function withBusyButton(button, pendingLabel, task) {
+      if (!button) {
+        return await task();
+      }
+      const originalLabel = button.dataset.originalLabel || button.textContent || '';
+      button.dataset.originalLabel = originalLabel;
+      button.disabled = true;
+      button.classList.add('is-busy');
+      button.setAttribute('aria-busy', 'true');
+      if (pendingLabel) {
+        button.textContent = pendingLabel;
+      }
+      try {
+        return await task();
+      } finally {
+        button.disabled = false;
+        button.classList.remove('is-busy');
+        button.removeAttribute('aria-busy');
+        button.textContent = originalLabel;
+      }
     }
 
     function joinBase(path) {
@@ -3110,12 +3203,15 @@ function htmlPage(basePath: string): string {
         });
 
         element.querySelector('[data-action="refresh-status"]').addEventListener('click', async () => {
-          try {
-            await refreshMinecraftStatus(workload.id);
-            setStatus('Refreshed Bedrock status for ' + workload.id);
-          } catch (error) {
-            setStatus(error.message, 'error');
-          }
+          const button = element.querySelector('[data-action="refresh-status"]');
+          await withBusyButton(button, 'Refreshing…', async () => {
+            try {
+              await refreshMinecraftStatus(workload.id);
+              setStatus('Refreshed Bedrock status for ' + workload.id);
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
         });
 
         const deployBedrockWorkload = async () => {
@@ -3135,21 +3231,27 @@ function htmlPage(basePath: string): string {
         };
 
         element.querySelector('[data-action="deploy"]').addEventListener('click', async () => {
-          try {
-            const workloadId = await deployBedrockWorkload();
-            setStatus(\`Saved and deployed Bedrock server \${workloadId}\`);
-          } catch (error) {
-            setStatus(error.message, 'error');
-          }
+          const button = element.querySelector('[data-action="deploy"]');
+          await withBusyButton(button, 'Deploying…', async () => {
+            try {
+              const workloadId = await deployBedrockWorkload();
+              setStatus(\`Saved and deployed Bedrock server \${workloadId}\`);
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
         });
 
         element.querySelector('[data-action="redeploy"]').addEventListener('click', async () => {
-          try {
-            const workloadId = await deployBedrockWorkload();
-            setStatus(\`Redeployed Bedrock server \${workloadId}\`);
-          } catch (error) {
-            setStatus(error.message, 'error');
-          }
+          const button = element.querySelector('[data-action="redeploy"]');
+          await withBusyButton(button, 'Redeploying…', async () => {
+            try {
+              const workloadId = await deployBedrockWorkload();
+              setStatus(\`Redeployed Bedrock server \${workloadId}\`);
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
         });
 
         [
@@ -3159,32 +3261,38 @@ function htmlPage(basePath: string): string {
           ['update', 'update-if-empty']
         ].forEach(([buttonAction, action]) => {
           element.querySelector(\`[data-action="\${buttonAction}"]\`).addEventListener('click', async () => {
-            try {
-              await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/\${action}\`, {});
-              await refreshMinecraftStatus(workload.id);
-              setStatus(\`Bedrock action completed: \${action}\`);
-            } catch (error) {
-              setStatus(error.message, 'error');
-            }
+            const button = element.querySelector(\`[data-action="\${buttonAction}"]\`);
+            await withBusyButton(button, 'Working…', async () => {
+              try {
+                await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/\${action}\`, {});
+                await refreshMinecraftStatus(workload.id);
+                setStatus(\`Bedrock action completed: \${action}\`);
+              } catch (error) {
+                setStatus(error.message, 'error');
+              }
+            });
           });
         });
 
         ['broadcast', 'kick', 'ban'].forEach((action) => {
           element.querySelector(\`[data-action="\${action}"]\`).addEventListener('click', async () => {
-            try {
-              const message = element.querySelector('[data-control="broadcastMessage"]').value.trim();
-              const player = element.querySelector('[data-control="player"]').value.trim();
-              const reason = element.querySelector('[data-control="reason"]').value.trim();
-              await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/\${action}\`, {
-                ...(message ? { message } : {}),
-                ...(player ? { player } : {}),
-                ...(reason ? { reason } : {})
-              });
-              await refreshMinecraftStatus(workload.id);
-              setStatus(\`Bedrock action completed: \${action}\`);
-            } catch (error) {
-              setStatus(error.message, 'error');
-            }
+            const button = element.querySelector(\`[data-action="\${action}"]\`);
+            await withBusyButton(button, 'Working…', async () => {
+              try {
+                const message = element.querySelector('[data-control="broadcastMessage"]').value.trim();
+                const player = element.querySelector('[data-control="player"]').value.trim();
+                const reason = element.querySelector('[data-control="reason"]').value.trim();
+                await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/\${action}\`, {
+                  ...(message ? { message } : {}),
+                  ...(player ? { player } : {}),
+                  ...(reason ? { reason } : {})
+                });
+                await refreshMinecraftStatus(workload.id);
+                setStatus(\`Bedrock action completed: \${action}\`);
+              } catch (error) {
+                setStatus(error.message, 'error');
+              }
+            });
           });
         });
 
@@ -3512,6 +3620,15 @@ function htmlPage(basePath: string): string {
       });
     });
 
+    document.addEventListener('click', (event) => {
+      const button = event.target.closest('button');
+      if (!button) {
+        return;
+      }
+      button.classList.add('button-tapped');
+      setTimeout(() => button.classList.remove('button-tapped'), 180);
+    }, true);
+
     document.querySelectorAll('[data-open-tab]').forEach((button) => {
       button.addEventListener('click', () => {
         state.activeTab = button.dataset.openTab || 'overview';
@@ -3638,59 +3755,77 @@ function htmlPage(basePath: string): string {
     });
 
     document.getElementById('reloadButton').addEventListener('click', async () => {
-      try {
-        await fetchConfig();
-        await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime()]);
-      } catch (error) {
-        setStatus(error.message, 'error');
-      }
+      const button = document.getElementById('reloadButton');
+      await withBusyButton(button, 'Reloading…', async () => {
+        try {
+          await fetchConfig();
+          await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime()]);
+        } catch (error) {
+          setStatus(error.message, 'error');
+        }
+      });
     });
 
     document.getElementById('validateButton').addEventListener('click', async () => {
-      try {
-        const result = await requestJson('POST', '/api/validate', state.config);
-        setStatus(result.message || 'Config is valid');
-      } catch (error) {
-        setStatus(error.message, 'error');
-      }
+      const button = document.getElementById('validateButton');
+      await withBusyButton(button, 'Validating…', async () => {
+        try {
+          const result = await requestJson('POST', '/api/validate', state.config);
+          setStatus(result.message || 'Config is valid');
+        } catch (error) {
+          setStatus(error.message, 'error');
+        }
+      });
     });
 
     document.getElementById('saveButton').addEventListener('click', async () => {
-      try {
-        const result = await persistConfigState();
-        setStatus(result.message || 'Saved');
-      } catch (error) {
-        setStatus(error.message, 'error');
-      }
+      const button = document.getElementById('saveButton');
+      await withBusyButton(button, 'Saving…', async () => {
+        try {
+          const result = await persistConfigState();
+          setStatus(result.message || 'Saved');
+        } catch (error) {
+          setStatus(error.message, 'error');
+        }
+      });
     });
 
     document.getElementById('buildButton').addEventListener('click', async () => {
-      try {
-        const result = await requestJson('POST', '/api/build', state.config);
-        state.config = result.config;
-        render();
-        await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime()]);
-        setStatus(result.message || 'Saved and built');
-      } catch (error) {
-        setStatus(error.message, 'error');
-      }
+      const button = document.getElementById('buildButton');
+      await withBusyButton(button, 'Building…', async () => {
+        try {
+          const result = await requestJson('POST', '/api/build', state.config);
+          state.config = result.config;
+          render();
+          await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime(), refreshAllMinecraftStatuses({ silent: true })]);
+          setStatus(result.message || 'Saved and built');
+        } catch (error) {
+          setStatus(error.message, 'error');
+        }
+      });
     });
 
     document.getElementById('refreshRuntimeButton').addEventListener('click', async () => {
-      try {
-        await fetchRuntime();
-        setStatus('Runtime refreshed');
-      } catch (error) {
-        setStatus(error.message, 'error');
-      }
+      const button = document.getElementById('refreshRuntimeButton');
+      await withBusyButton(button, 'Refreshing…', async () => {
+        try {
+          await fetchRuntime();
+          setStatus('Runtime refreshed');
+        } catch (error) {
+          setStatus(error.message, 'error');
+        }
+      });
     });
     document.getElementById('refreshRuntimeButtonSecondary').addEventListener('click', async () => {
-      try {
-        await fetchRuntime();
-        setStatus('Runtime refreshed');
-      } catch (error) {
-        setStatus(error.message, 'error');
-      }
+      const button = document.getElementById('refreshRuntimeButtonSecondary');
+      await withBusyButton(button, 'Refreshing…', async () => {
+        try {
+          await fetchRuntime();
+          setStatus('Runtime refreshed');
+        } catch (error) {
+          setStatus(error.message, 'error');
+        }
+      });
     });
     document.getElementById('reloadWorkflowsButton').addEventListener('click', async () => {
       try {
