@@ -16,9 +16,6 @@
       "notesRepoPath": "/srv/example-notes",
       "notesSearchDirs": ["daily", "notes", "inbox"],
       "recentNotesLimit": 8,
-      "delivery": {
-        "channel": "jim-telegram"
-      },
       "noteLog": {
         "enabled": true,
         "commit": true
@@ -43,9 +40,6 @@
       "notesRepoPath": "/srv/example-notes",
       "notesSearchDirs": ["daily", "notes", "inbox"],
       "recentNotesLimit": 8,
-      "delivery": {
-        "channel": "jim-telegram"
-      },
       "noteLog": {
         "enabled": true,
         "commit": true
@@ -70,9 +64,6 @@
       "notesRepoPath": "/srv/example-notes",
       "notesSearchDirs": ["daily", "notes", "inbox"],
       "recentNotesLimit": 8,
-      "delivery": {
-        "channel": "jim-telegram"
-      },
       "noteLog": {
         "enabled": true,
         "commit": true
@@ -99,9 +90,6 @@
       "progressSource": "manual-workflow-run",
       "progressEntry": "Replace this text in the workflow input before clicking Run.",
       "includeReflection": true,
-      "delivery": {
-        "channel": "jim-telegram"
-      },
       "noteLog": {
         "enabled": true,
         "commit": true
