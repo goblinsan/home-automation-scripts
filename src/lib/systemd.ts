@@ -37,6 +37,7 @@ WantedBy=timers.target
 
 export function renderControlPlaneService(adminUi: AdminUiSettings): string {
   const groupLine = adminUi.group ? `Group=${adminUi.group}\n` : '';
+  const pathLine = 'Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n';
 
   return `[Unit]
 Description=Gateway control plane admin UI
@@ -45,7 +46,7 @@ After=network.target
 [Service]
 Type=simple
 User=${adminUi.user}
-${groupLine}WorkingDirectory=${adminUi.workingDirectory}
+${groupLine}${pathLine}WorkingDirectory=${adminUi.workingDirectory}
 ExecStart=${adminUi.nodeExecutable} ${adminUi.workingDirectory}/src/cli.ts serve-ui --config ${adminUi.configPath} --host ${adminUi.host} --port ${adminUi.port} --out ${adminUi.buildOutDir}
 Restart=on-failure
 RestartSec=5

@@ -120,6 +120,7 @@ test('renderJobTimer includes schedule and unit name', () => {
 test('renderControlPlaneService produces a restartable admin ui unit', () => {
   const output = renderControlPlaneService(config.gateway.adminUi);
   assert.match(output, /Description=Gateway control plane admin UI/);
+  assert.match(output, /Environment=PATH=\/usr\/local\/sbin:\/usr\/local\/bin:\/usr\/sbin:\/usr\/bin:\/sbin:\/bin/);
   assert.match(output, /ExecStart=\/usr\/bin\/node \/opt\/gateway-control-plane\/src\/cli\.ts serve-ui/);
   assert.match(output, /--config \/opt\/gateway-control-plane\/configs\/gateway\.config\.json/);
   assert.match(output, /Restart=on-failure/);
