@@ -372,13 +372,24 @@ function htmlPage(basePath: string): string {
       margin-bottom: 10px;
     }
     #status {
-      min-height: 24px;
-      font-size: 14px;
-      margin-top: 12px;
-      color: rgba(255, 255, 255, 0.86);
+      min-height: 0;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.06);
+      padding: 10px 12px;
+      min-width: 180px;
+      max-width: 420px;
     }
-    .status-ok { color: var(--ok); }
-    .status-error { color: var(--danger); }
+    .status-ok {
+      color: rgba(255, 255, 255, 0.92);
+      border-color: rgba(255, 255, 255, 0.18);
+    }
+    .status-error {
+      color: #ffd7d7;
+      border-color: rgba(143, 48, 48, 0.65);
+      background: rgba(143, 48, 48, 0.18);
+    }
     .aside-stack {
       order: 2;
       display: grid;
@@ -400,6 +411,7 @@ function htmlPage(basePath: string): string {
       align-items: center;
       gap: 10px;
       flex-wrap: wrap;
+      justify-content: flex-end;
     }
     .header-row h1,
     .header-row p {
@@ -409,37 +421,24 @@ function htmlPage(basePath: string): string {
       color: rgba(255, 255, 255, 0.72);
       max-width: 760px;
     }
-    .advanced-actions {
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      border-radius: 0;
-      background: transparent;
-      padding: 6px 10px 10px;
-    }
-    .advanced-actions summary {
-      cursor: pointer;
-      color: rgba(255, 255, 255, 0.78);
-      font-size: 14px;
-      padding: 4px 0;
-      user-select: none;
-    }
-    .advanced-actions .toolbar {
-      margin-top: 10px;
-    }
     .top-tab-nav {
-      display: flex;
+      display: grid;
+      grid-template-columns: repeat(10, minmax(0, 1fr));
       gap: 8px;
-      overflow-x: auto;
       padding-bottom: 2px;
+      width: min(1120px, 100%);
+      margin: 0 auto;
     }
     .top-tab-nav .tab-button {
-      width: auto;
-      min-width: max-content;
+      width: 100%;
+      min-width: 0;
       text-align: center;
       border: 1px solid transparent;
       background: transparent;
       color: rgba(255, 255, 255, 0.82);
       padding: 12px 18px;
       font-size: 15px;
+      white-space: nowrap;
     }
     .top-tab-nav .tab-button:hover,
     .top-tab-nav .tab-button.active {
@@ -589,22 +588,47 @@ function htmlPage(basePath: string): string {
     .card-quiet {
       background: #fcfcfa;
     }
-    details:not(.section-card):not(.advanced-actions) > summary {
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .overview-card {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+      min-height: 180px;
+    }
+    .overview-card strong {
+      font-size: 20px;
+      font-weight: 600;
+    }
+    .overview-card button {
+      width: 100%;
+      margin-top: auto;
+    }
+    .disclosure-card > summary {
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    details:not(.section-card) > summary {
       list-style: none;
       cursor: pointer;
       user-select: none;
     }
-    details:not(.section-card):not(.advanced-actions) > summary::-webkit-details-marker {
+    details:not(.section-card) > summary::-webkit-details-marker {
       display: none;
     }
-    details:not(.section-card):not(.advanced-actions) > summary::before {
+    details:not(.section-card) > summary::before {
       content: "+";
       display: inline-block;
       width: 16px;
       margin-right: 8px;
       color: var(--muted);
     }
-    details[open]:not(.section-card):not(.advanced-actions) > summary::before {
+    details[open]:not(.section-card) > summary::before {
       content: "−";
     }
     .aside-stack > details.panel {
@@ -615,6 +639,17 @@ function htmlPage(basePath: string): string {
       .editor-panel { order: 1; }
       .aside-stack { order: 2; }
       .header-row { align-items: stretch; }
+      .top-tab-nav {
+        display: flex;
+        overflow-x: auto;
+        width: 100%;
+      }
+      .top-tab-nav .tab-button {
+        min-width: max-content;
+      }
+      .overview-grid {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -627,16 +662,9 @@ function htmlPage(basePath: string): string {
           <p>Configure gateway services, agents, workflows, and deployment state from one control surface.</p>
         </div>
         <div class="header-actions">
-          <button id="saveButton" class="primary">Save Config</button>
-          <button id="buildButton">Save + Build</button>
-          <details class="advanced-actions">
-            <summary>Advanced Actions</summary>
-            <div class="toolbar">
-              <button id="reloadButton">Reload From Disk</button>
-              <button id="validateButton">Validate Draft</button>
-              <button id="refreshRuntimeButton">Refresh Runtime</button>
-            </div>
-          </details>
+          <div id="status">Current</div>
+          <button id="refreshButton">Refresh</button>
+          <button id="saveButton" class="primary">Save</button>
         </div>
       </div>
       <nav class="top-tab-nav" aria-label="Sections">
@@ -652,7 +680,6 @@ function htmlPage(basePath: string): string {
         <button class="tab-button" data-tab="raw">Advanced JSON</button>
       </nav>
     </div>
-    <div id="status"></div>
   </header>
   <main>
     <section class="panel editor-panel">
@@ -1189,33 +1216,33 @@ function htmlPage(basePath: string): string {
             <p>This UI manages several different systems. Use the sections below as the map.</p>
           </div>
         </div>
-        <div class="section-list">
-          <div class="card">
+        <div class="overview-grid">
+          <div class="card overview-card">
             <strong>Minecraft</strong>
             <p>Bedrock servers, world settings, deploy/start/stop/restart, broadcast, kick, ban, update.</p>
             <button data-open-tab="bedrock">Open Minecraft</button>
           </div>
-          <div class="card">
+          <div class="card overview-card">
             <strong>Automations</strong>
             <p>Scheduled workflows stored in <code>gateway-api</code>. Use this for agentic jobs and workflow records.</p>
             <button data-open-tab="workflows">Open Automations</button>
           </div>
-          <div class="card">
+          <div class="card overview-card">
             <strong>Deployments</strong>
             <p><code>Apps</code> are git-based services deployed by the control-plane. <code>Jobs</code> are host scheduled commands attached to an app.</p>
             <button data-open-tab="apps">Open Deployments</button>
           </div>
-          <div class="card">
+          <div class="card overview-card">
             <strong>Runtime</strong>
             <p>Service profiles, env files, delivery channels, TTS wiring, and runtime integration settings.</p>
             <button data-open-tab="services">Open Runtime</button>
           </div>
-          <div class="card">
+          <div class="card overview-card">
             <strong>Secrets</strong>
             <p>API keys, bot tokens, passwords, KULRS credentials, and secret env vars.</p>
             <button data-open-tab="secrets">Open Secrets</button>
           </div>
-          <div class="card">
+          <div class="card overview-card">
             <strong>Nodes</strong>
             <p>Connection info for worker nodes plus generic remote container jobs.</p>
             <button data-open-tab="remote">Open Nodes</button>
@@ -3271,7 +3298,7 @@ function htmlPage(basePath: string): string {
               </select>
             </label>
           </div>
-          <details class="card">
+          <details class="card disclosure-card">
             <summary><strong>Advanced Options</strong></summary>
             <div class="row">
             <label class="check"><input type="checkbox" data-field="enabled" \${workload.enabled ? 'checked' : ''} /> Enabled</label>
@@ -3642,7 +3669,7 @@ function htmlPage(basePath: string): string {
       render();
       await refreshAllMinecraftStatuses({ silent: true });
       renderBedrockServers();
-      setStatus('Config loaded');
+      setStatus('Current');
     }
 
     async function fetchRuntime() {
@@ -3960,35 +3987,14 @@ function htmlPage(basePath: string): string {
       });
     });
 
-    document.getElementById('reloadButton').addEventListener('click', async () => {
-      const button = document.getElementById('reloadButton');
-      await withBusyButton(button, 'Reloading…', async () => {
-        try {
-          await fetchConfig();
-          await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime()]);
-        } catch (error) {
-          setStatus(error.message, 'error');
-        }
-      });
-    });
-
-    document.getElementById('validateButton').addEventListener('click', async () => {
-      const button = document.getElementById('validateButton');
-      await withBusyButton(button, 'Validating…', async () => {
-        try {
-          const result = await requestJson('POST', '/api/validate', state.config);
-          setStatus(result.message || 'Config is valid');
-        } catch (error) {
-          setStatus(error.message, 'error');
-        }
-      });
-    });
-
     document.getElementById('saveButton').addEventListener('click', async () => {
       const button = document.getElementById('saveButton');
       await withBusyButton(button, 'Saving…', async () => {
         try {
-          const result = await persistConfigState();
+          const result = await requestJson('POST', '/api/build', state.config);
+          state.config = result.config;
+          render();
+          await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime(), refreshAllMinecraftStatuses({ silent: true })]);
           setStatus(result.message || 'Saved');
         } catch (error) {
           setStatus(error.message, 'error');
@@ -3996,27 +4002,13 @@ function htmlPage(basePath: string): string {
       });
     });
 
-    document.getElementById('buildButton').addEventListener('click', async () => {
-      const button = document.getElementById('buildButton');
-      await withBusyButton(button, 'Building…', async () => {
-        try {
-          const result = await requestJson('POST', '/api/build', state.config);
-          state.config = result.config;
-          render();
-          await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime(), refreshAllMinecraftStatuses({ silent: true })]);
-          setStatus(result.message || 'Saved and built');
-        } catch (error) {
-          setStatus(error.message, 'error');
-        }
-      });
-    });
-
-    document.getElementById('refreshRuntimeButton').addEventListener('click', async () => {
-      const button = document.getElementById('refreshRuntimeButton');
+    document.getElementById('refreshButton').addEventListener('click', async () => {
+      const button = document.getElementById('refreshButton');
       await withBusyButton(button, 'Refreshing…', async () => {
         try {
-          await fetchRuntime();
-          setStatus('Runtime refreshed');
+          await fetchConfig();
+          await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime()]);
+          setStatus('Current');
         } catch (error) {
           setStatus(error.message, 'error');
         }
