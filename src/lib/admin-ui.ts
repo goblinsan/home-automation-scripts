@@ -2373,9 +2373,51 @@ function htmlPage(basePath: string): string {
     }
 
     function workerNodeOptions(selectedNodeId) {
+      if (state.config.workerNodes.length === 0) {
+        return '<option value="">No worker nodes configured</option>';
+      }
       return state.config.workerNodes
         .map((node) => \`<option value="\${node.id}" \${node.id === selectedNodeId ? 'selected' : ''}>\${node.id || '(unset node id)'}</option>\`)
         .join('');
+    }
+
+    function firstWorkerNodeId() {
+      const namedNode = state.config.workerNodes.find((node) => typeof node.id === 'string' && node.id.trim().length > 0);
+      return namedNode ? namedNode.id : '';
+    }
+
+    function nextWorkerNodeId() {
+      if (!state.config.workerNodes.some((node) => node.id === 'core-node')) {
+        return 'core-node';
+      }
+      let index = 1;
+      while (state.config.workerNodes.some((node) => node.id === \`worker-node-\${index}\`)) {
+        index += 1;
+      }
+      return \`worker-node-\${index}\`;
+    }
+
+    function ensureRemoteWorkloadNodeId(workload) {
+      if (typeof workload.nodeId === 'string' && workload.nodeId.trim().length > 0) {
+        return workload.nodeId;
+      }
+      const fallbackNodeId = firstWorkerNodeId();
+      if (!fallbackNodeId) {
+        throw new Error('Add a worker node in Nodes first. Give it a Node Id and host, then come back to Minecraft.');
+      }
+      workload.nodeId = fallbackNodeId;
+      return fallbackNodeId;
+    }
+
+    function normalizeRemoteWorkloadNodeIds() {
+      state.config.remoteWorkloads.forEach((workload) => {
+        if (!workload.nodeId) {
+          const fallbackNodeId = firstWorkerNodeId();
+          if (fallbackNodeId) {
+            workload.nodeId = fallbackNodeId;
+          }
+        }
+      });
     }
 
     function createDefaultMinecraftPack() {
@@ -2412,7 +2454,7 @@ function htmlPage(basePath: string): string {
       return {
         id: '',
         enabled: true,
-        nodeId: state.config.workerNodes[0]?.id || '',
+        nodeId: firstWorkerNodeId(),
         description: '',
         kind: 'minecraft-bedrock-server',
         minecraft: createDefaultMinecraftConfig()
@@ -2423,7 +2465,7 @@ function htmlPage(basePath: string): string {
       return {
         id: '',
         enabled: true,
-        nodeId: state.config.workerNodes[0]?.id || '',
+        nodeId: firstWorkerNodeId(),
         description: '',
         kind: 'scheduled-container-job',
         job: {
@@ -2719,6 +2761,7 @@ function htmlPage(basePath: string): string {
 
         element.querySelector('[data-action="deploy"]').addEventListener('click', async () => {
           try {
+            ensureRemoteWorkloadNodeId(workload);
             const workloadId = workload.id;
             await persistConfigState();
             const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
@@ -2851,6 +2894,10 @@ function htmlPage(basePath: string): string {
     function renderBedrockServers() {
       const container = document.getElementById('bedrockServersContainer');
       container.innerHTML = '';
+      if (!firstWorkerNodeId()) {
+        container.innerHTML = '<div class="card"><strong>Worker Node Required</strong><p>Add a worker node in the <strong>Nodes</strong> tab first. Set a Node Id and host, then come back here to create a Bedrock server.</p></div>';
+        return;
+      }
       const workloads = state.config.remoteWorkloads.filter((workload) => workload.kind === 'minecraft-bedrock-server');
       if (workloads.length === 0) {
         container.innerHTML = '<p>No Bedrock servers configured yet.</p>';
@@ -3026,6 +3073,7 @@ function htmlPage(basePath: string): string {
             const targetWorkload = state.config.remoteWorkloads[remoteIndex];
             targetWorkload.minecraft = targetWorkload.minecraft || createDefaultMinecraftConfig();
             applyBedrockIdentityDefaults(targetWorkload, targetWorkload.minecraft, targetWorkload.minecraft);
+            ensureRemoteWorkloadNodeId(targetWorkload);
             renderRemoteWorkloads();
             renderBedrockServers();
             syncRawJson();
@@ -3303,6 +3351,7 @@ function htmlPage(basePath: string): string {
     }
 
     async function persistConfigState() {
+      normalizeRemoteWorkloadNodeIds();
       const result = await requestJson('POST', '/api/config', state.config);
       state.config = result.config;
       render();
@@ -3573,9 +3622,9 @@ function htmlPage(basePath: string): string {
     });
     document.getElementById('addWorkerNodeButton').addEventListener('click', () => {
       state.config.workerNodes.push({
-        id: '',
+        id: nextWorkerNodeId(),
         enabled: true,
-        description: '',
+        description: 'Remote worker node',
         host: '',
         sshUser: 'deploy',
         sshPort: 22,
@@ -3587,6 +3636,7 @@ function htmlPage(basePath: string): string {
         dockerCommand: 'docker',
         dockerComposeCommand: 'docker compose'
       });
+      normalizeRemoteWorkloadNodeIds();
       renderWorkerNodes();
       renderRemoteWorkloads();
       renderBedrockServers();
@@ -3599,6 +3649,12 @@ function htmlPage(basePath: string): string {
       syncRawJson();
     });
     const addBedrockServerWorkload = () => {
+      if (!firstWorkerNodeId()) {
+        state.activeTab = 'nodes';
+        render();
+        setStatus('Add a worker node first. Set a Node Id and host in Nodes, then come back to Minecraft.', 'error');
+        return;
+      }
       state.config.remoteWorkloads.push(createDefaultBedrockWorkload());
       renderRemoteWorkloads();
       renderBedrockServers();
