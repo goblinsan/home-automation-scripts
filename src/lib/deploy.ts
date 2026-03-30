@@ -85,6 +85,29 @@ async function runShell(command: string, cwd: string, context: CommandContext): 
   });
 }
 
+async function runShellCapture(command: string, cwd: string): Promise<{ code: number; stdout: string; stderr: string }> {
+  const { spawn } = await import('node:child_process');
+  return await new Promise((resolve, reject) => {
+    const child = spawn(command, { cwd, shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      stdout += String(chunk);
+    });
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderr += String(chunk);
+    });
+    child.on('exit', (code) => {
+      resolve({
+        code: code ?? 1,
+        stdout,
+        stderr
+      });
+    });
+    child.on('error', reject);
+  });
+}
+
 async function runCommandCapture(command: string, args: string[], cwd: string): Promise<{ code: number; stdout: string; stderr: string }> {
   const { spawn } = await import('node:child_process');
 
@@ -155,6 +178,10 @@ function sshTarget(node: WorkerNodeConfig): string {
 
 async function runRemoteShell(node: WorkerNodeConfig, command: string, context: CommandContext): Promise<void> {
   await runShell(`ssh -p ${node.sshPort} ${sshTarget(node)} ${shellQuote(command)}`, process.cwd(), context);
+}
+
+async function runRemoteShellCapture(node: WorkerNodeConfig, command: string): Promise<{ code: number; stdout: string; stderr: string }> {
+  return await runShellCapture(`ssh -p ${node.sshPort} ${sshTarget(node)} ${shellQuote(command)}`, process.cwd());
 }
 
 async function copyDirectoryToRemote(node: WorkerNodeConfig, localDir: string, remoteDir: string, context: CommandContext): Promise<void> {
@@ -544,6 +571,24 @@ export interface MinecraftControlPayload {
   reason?: string;
 }
 
+export interface RemoteContainerStatus {
+  containerName: string;
+  exists: boolean;
+  status: string;
+  running: boolean;
+  startedAt?: string;
+  ports?: Record<string, unknown> | null;
+  error?: string;
+}
+
+export interface MinecraftWorkloadStatus {
+  workloadId: string;
+  nodeId: string;
+  configuredServerPort: number | null;
+  worker: RemoteContainerStatus;
+  server: RemoteContainerStatus;
+}
+
 type MinecraftControlAction = 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty';
 
 function requireRemoteWorkloadEnabled(workload: RemoteWorkloadConfig): void {
@@ -610,6 +655,58 @@ async function prepareScheduledContainerJobSource(
   );
   await runRemoteShell(node, `git -C ${shellQuote(sourceDir)} fetch --all --tags --prune`, context);
   await runRemoteShell(node, `git -C ${shellQuote(sourceDir)} checkout --force ${shellQuote(revision)}`, context);
+}
+
+async function inspectRemoteContainer(node: WorkerNodeConfig, containerName: string): Promise<RemoteContainerStatus> {
+  const inspectCommand = [
+    `if ${node.dockerCommand} inspect ${shellQuote(containerName)} >/dev/null 2>&1; then`,
+    `${node.dockerCommand} inspect ${shellQuote(containerName)} --format ${shellQuote('{{json .State}}@@{{json .NetworkSettings.Ports}}')}`,
+    'else',
+    `printf '__MISSING__'`,
+    'fi'
+  ].join(' ');
+  const result = await runRemoteShellCapture(node, inspectCommand);
+  if (result.code !== 0) {
+    return {
+      containerName,
+      exists: false,
+      status: 'error',
+      running: false,
+      error: result.stderr.trim() || result.stdout.trim() || `inspect failed (${result.code})`
+    };
+  }
+
+  const output = result.stdout.trim();
+  if (output === '__MISSING__') {
+    return {
+      containerName,
+      exists: false,
+      status: 'missing',
+      running: false
+    };
+  }
+
+  const [stateJson = '{}', portsJson = 'null'] = output.split('@@');
+  try {
+    const state = JSON.parse(stateJson) as { Status?: string; Running?: boolean; StartedAt?: string };
+    const ports = JSON.parse(portsJson) as Record<string, unknown> | null;
+    return {
+      containerName,
+      exists: true,
+      status: typeof state.Status === 'string' ? state.Status : 'unknown',
+      running: Boolean(state.Running),
+      startedAt: typeof state.StartedAt === 'string' ? state.StartedAt : undefined,
+      ports
+    };
+  } catch (error) {
+    return {
+      containerName,
+      exists: false,
+      status: 'error',
+      running: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
 }
 
 async function restartRemoteWorker(node: WorkerNodeConfig, context: CommandContext): Promise<void> {
@@ -697,4 +794,27 @@ export async function controlMinecraftWorkload(
 
   const node = getWorkerNode(config, workload.nodeId);
   await invokeRemoteWorkerControl(node, workload.id, action, payload, context);
+}
+
+export async function getMinecraftWorkloadStatus(config: GatewayConfig, workloadId: string): Promise<MinecraftWorkloadStatus> {
+  const workload = getRemoteWorkload(config, workloadId);
+  if (!(workload.kind === 'minecraft-bedrock-server' && workload.minecraft)) {
+    throw new Error(`Remote workload ${workloadId} is not a minecraft-bedrock-server workload`);
+  }
+
+  const node = getWorkerNode(config, workload.nodeId);
+  const workerContainerName = `${getRemoteWorkerProjectName(node)}-service`;
+  const serverContainerName = `${getRemoteWorkloadProjectName(workload)}-server`;
+  const [worker, server] = await Promise.all([
+    inspectRemoteContainer(node, workerContainerName),
+    inspectRemoteContainer(node, serverContainerName)
+  ]);
+
+  return {
+    workloadId: workload.id,
+    nodeId: node.id,
+    configuredServerPort: workload.minecraft.serverPort ?? null,
+    worker,
+    server
+  };
 }

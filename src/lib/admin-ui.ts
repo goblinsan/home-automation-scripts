@@ -6,6 +6,7 @@ import { getAllScheduledJobs, loadGatewayConfig, parseGatewayConfig, saveGateway
 import {
   controlMinecraftWorkload,
   deployRemoteWorkload,
+  getMinecraftWorkloadStatus,
   runServiceProfileAgent,
   syncServiceProfileRuntime,
   type AgentRunPayload,
@@ -1085,6 +1086,7 @@ function htmlPage(basePath: string): string {
       runtime: null,
       workflows: [],
       jobsCatalog: [],
+      minecraftStatuses: {},
       chatProviders: [],
       providerModels: {},
       ttsStatus: null,
@@ -2905,6 +2907,21 @@ function htmlPage(basePath: string): string {
 
       workloads.forEach((workload) => {
         const minecraft = workload.minecraft || createDefaultMinecraftConfig();
+        const minecraftStatus = state.minecraftStatuses[workload.id];
+        const workerSummary = describeContainerStatus(minecraftStatus?.worker);
+        const serverSummary = describeContainerStatus(minecraftStatus?.server);
+        const portSummary = minecraftStatus
+          ? formatPortMappings(minecraftStatus.server?.ports)
+          : 'not checked yet';
+        const startedLine = minecraftStatus?.server?.startedAt
+          ? '<p><strong>Started:</strong> ' + minecraftStatus.server.startedAt + '</p>'
+          : '';
+        const workerErrorLine = minecraftStatus?.worker?.error
+          ? '<p><strong>Worker Error:</strong> ' + minecraftStatus.worker.error + '</p>'
+          : '';
+        const serverErrorLine = minecraftStatus?.server?.error
+          ? '<p><strong>Server Error:</strong> ' + minecraftStatus.server.error + '</p>'
+          : '';
         const element = document.createElement('div');
         element.className = 'card';
         element.innerHTML = \`
@@ -2916,7 +2933,22 @@ function htmlPage(basePath: string): string {
             </div>
             <div class="toolbar">
               <button data-action="deploy" class="primary">Apply Server</button>
+              <button data-action="refresh-status">Refresh Status</button>
               <button data-action="remove" class="danger">Remove</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="split-actions">
+              <div>
+                <span class="pill">Live Status</span>
+                <p><strong>Worker:</strong> \${workerSummary}</p>
+                <p><strong>Server:</strong> \${serverSummary}</p>
+                <p><strong>Configured Port:</strong> \${minecraftStatus?.configuredServerPort || minecraft.serverPort}</p>
+                <p><strong>Docker Port Mapping:</strong> \${portSummary}</p>
+                \${startedLine}
+                \${workerErrorLine}
+                \${serverErrorLine}
+              </div>
             </div>
           </div>
           <div class="row">
@@ -3062,9 +3094,19 @@ function htmlPage(basePath: string): string {
 
         element.querySelector('[data-action="remove"]').addEventListener('click', () => {
           state.config.remoteWorkloads.splice(remoteIndex, 1);
+          delete state.minecraftStatuses[workload.id];
           renderRemoteWorkloads();
           renderBedrockServers();
           syncRawJson();
+        });
+
+        element.querySelector('[data-action="refresh-status"]').addEventListener('click', async () => {
+          try {
+            await refreshMinecraftStatus(workload.id);
+            setStatus('Refreshed Bedrock status for ' + workload.id);
+          } catch (error) {
+            setStatus(error.message, 'error');
+          }
         });
 
         element.querySelector('[data-action="deploy"]').addEventListener('click', async () => {
@@ -3080,6 +3122,7 @@ function htmlPage(basePath: string): string {
             await persistConfigState();
             const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
             await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {});
+            await refreshMinecraftStatus(workloadId);
             setStatus(\`Applied Bedrock server \${workloadId}\`);
           } catch (error) {
             setStatus(error.message, 'error');
@@ -3095,6 +3138,7 @@ function htmlPage(basePath: string): string {
           element.querySelector(\`[data-action="\${buttonAction}"]\`).addEventListener('click', async () => {
             try {
               await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/\${action}\`, {});
+              await refreshMinecraftStatus(workload.id);
               setStatus(\`Bedrock action completed: \${action}\`);
             } catch (error) {
               setStatus(error.message, 'error');
@@ -3113,6 +3157,7 @@ function htmlPage(basePath: string): string {
                 ...(player ? { player } : {}),
                 ...(reason ? { reason } : {})
               });
+              await refreshMinecraftStatus(workload.id);
               setStatus(\`Bedrock action completed: \${action}\`);
             } catch (error) {
               setStatus(error.message, 'error');
@@ -3258,6 +3303,8 @@ function htmlPage(basePath: string): string {
       }
       state.config = await response.json();
       render();
+      await refreshAllMinecraftStatuses({ silent: true });
+      renderBedrockServers();
       setStatus('Config loaded');
     }
 
@@ -3349,12 +3396,81 @@ function htmlPage(basePath: string): string {
       return data;
     }
 
+    function describeContainerStatus(container) {
+      if (!container) {
+        return 'unknown';
+      }
+      if (container.error) {
+        return 'error';
+      }
+      if (!container.exists) {
+        return 'missing';
+      }
+      if (container.running) {
+        return 'running';
+      }
+      return container.status || 'stopped';
+    }
+
+    function formatPortMappings(ports) {
+      if (!ports || typeof ports !== 'object') {
+        return 'none';
+      }
+      const entries = Object.entries(ports);
+      if (entries.length === 0) {
+        return 'none';
+      }
+      return entries.map(([containerPort, bindings]) => {
+        if (!Array.isArray(bindings) || bindings.length === 0) {
+          return containerPort + ' unpublished';
+        }
+        const mapped = bindings
+          .map((binding) => binding && typeof binding === 'object'
+            ? [binding.HostIp || '0.0.0.0', binding.HostPort || '?'].join(':')
+            : '?')
+          .join(', ');
+        return containerPort + ' -> ' + mapped;
+      }).join('; ');
+    }
+
+    async function refreshMinecraftStatus(workloadId, options = {}) {
+      const status = await requestJson('GET', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/status');
+      state.minecraftStatuses[workloadId] = status;
+      if (!options.silent) {
+        renderBedrockServers();
+      }
+      return status;
+    }
+
+    async function refreshAllMinecraftStatuses(options = {}) {
+      const workloads = state.config
+        ? state.config.remoteWorkloads.filter((workload) => workload.kind === 'minecraft-bedrock-server' && workload.id)
+        : [];
+      await Promise.all(workloads.map(async (workload) => {
+        try {
+          await refreshMinecraftStatus(workload.id, { silent: true });
+        } catch (error) {
+          const message = error && typeof error === 'object' && 'message' in error ? error.message : String(error);
+          state.minecraftStatuses[workload.id] = {
+            workloadId: workload.id,
+            nodeId: workload.nodeId,
+            configuredServerPort: workload.minecraft?.serverPort || null,
+            worker: { containerName: 'gateway-worker', exists: false, status: 'error', running: false, error: message },
+            server: { containerName: workload.id + '-server', exists: false, status: 'error', running: false, error: message }
+          };
+        }
+      }));
+      if (!options.silent) {
+        renderBedrockServers();
+      }
+    }
+
     async function persistConfigState() {
       normalizeRemoteWorkloadNodeIds();
       const result = await requestJson('POST', '/api/config', state.config);
       state.config = result.config;
       render();
-      await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime()]);
+      await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime(), refreshAllMinecraftStatuses({ silent: true })]);
       return result;
     }
 
@@ -4202,6 +4318,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       const workflowActionMatch = path.match(/^\/api\/workflows\/([^/]+)\/(enable|disable|sleep|resume|run)$/);
       const agentRunMatch = path.match(/^\/api\/chat-platform\/agents\/([^/]+)\/run$/);
       const remoteWorkloadDeployMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/deploy$/);
+      const remoteWorkloadStatusMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/status$/);
       const remoteMinecraftActionMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/(start|stop|restart|broadcast|kick|ban|update-if-empty)$/);
 
       if (request.method === 'GET' && path === '/') {
@@ -4393,6 +4510,16 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           { dryRun: false, log: () => undefined }
         );
         sendJson(response, 200, { message: `Deployed remote workload ${decodeURIComponent(remoteWorkloadDeployMatch[1])}` });
+        return;
+      }
+
+      if (remoteWorkloadStatusMatch && request.method === 'GET') {
+        const config = await loadGatewayConfig(options.configPath);
+        const status = await getMinecraftWorkloadStatus(
+          config,
+          decodeURIComponent(remoteWorkloadStatusMatch[1])
+        );
+        sendJson(response, 200, status);
         return;
       }
 
