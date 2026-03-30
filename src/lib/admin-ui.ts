@@ -378,8 +378,10 @@ function htmlPage(basePath: string): string {
       border: 1px solid rgba(255, 255, 255, 0.18);
       background: rgba(255, 255, 255, 0.06);
       padding: 10px 12px;
-      min-width: 180px;
-      max-width: 420px;
+      width: 260px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .status-ok {
       color: rgba(255, 255, 255, 0.92);
@@ -423,10 +425,10 @@ function htmlPage(basePath: string): string {
     }
     .top-tab-nav {
       display: grid;
-      grid-template-columns: repeat(10, minmax(0, 1fr));
+      grid-template-columns: repeat(10, minmax(132px, 1fr));
       gap: 8px;
       padding-bottom: 2px;
-      width: min(1120px, 100%);
+      width: min(1380px, 100%);
       margin: 0 auto;
     }
     .top-tab-nav .tab-button {
@@ -591,27 +593,38 @@ function htmlPage(basePath: string): string {
     .overview-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-auto-rows: 1fr;
       gap: 16px;
       margin-top: 18px;
     }
     .overview-card {
-      display: grid;
+      display: flex;
+      flex-direction: column;
       gap: 14px;
-      align-content: start;
       min-height: 180px;
     }
     .overview-card strong {
       font-size: 20px;
       font-weight: 600;
     }
+    .overview-card p {
+      flex: 1 1 auto;
+    }
     .overview-card button {
       width: 100%;
       margin-top: auto;
     }
     .disclosure-card > summary {
+      display: block;
       padding-bottom: 12px;
       margin-bottom: 14px;
       border-bottom: 1px solid var(--line);
+    }
+    .disclosure-card {
+      margin-top: 20px;
+    }
+    .disclosure-card .row:first-of-type {
+      margin-top: 16px;
     }
     details:not(.section-card) > summary {
       list-style: none;
@@ -1196,7 +1209,7 @@ function htmlPage(basePath: string): string {
         <div class="section-body">
           <div class="split-actions">
             <div>
-              <p>Use Save + Deploy or Redeploy inside a server card when you want the live node updated with the latest config.</p>
+              <p>Use <strong>Apply Server</strong> to save the config and push the latest server bundle to the node.</p>
             </div>
             <div class="toolbar">
               <button id="addBedrockServerButton">Add Bedrock Server</button>
@@ -1410,6 +1423,7 @@ function htmlPage(basePath: string): string {
     function setStatus(message, kind = 'ok') {
       const status = document.getElementById('status');
       status.textContent = message;
+      status.title = message;
       status.className = kind === 'error' ? 'status-error' : 'status-ok';
     }
 
@@ -1419,6 +1433,10 @@ function htmlPage(basePath: string): string {
       }
       const originalLabel = button.dataset.originalLabel || button.textContent || '';
       button.dataset.originalLabel = originalLabel;
+      const lockedWidth = button.offsetWidth;
+      if (lockedWidth > 0) {
+        button.style.width = lockedWidth + 'px';
+      }
       button.disabled = true;
       button.classList.add('is-busy');
       button.setAttribute('aria-busy', 'true');
@@ -1432,6 +1450,7 @@ function htmlPage(basePath: string): string {
         button.classList.remove('is-busy');
         button.removeAttribute('aria-busy');
         button.textContent = originalLabel;
+        button.style.removeProperty('width');
       }
     }
 
@@ -3256,12 +3275,10 @@ function htmlPage(basePath: string): string {
             <div>
               <strong>\${minecraft.serverName || workload.id || 'new-bedrock-server'}</strong>
               <p>\${workload.description || 'Minecraft Bedrock server on a worker node'}</p>
-              <p>For a new server, fill out the four basic fields below and click <strong>Save + Deploy</strong>. For an existing server, use <strong>Redeploy</strong> to push updated scripts and config to the core node. <strong>Restart</strong> only restarts the existing container.</p>
+              <p>For a new server, fill out the basic fields below and click <strong>Apply Server</strong>. That saves the config and updates the node in one step.</p>
             </div>
             <div class="toolbar">
-              <button data-action="deploy" class="primary">Save + Deploy</button>
-              <button data-action="refresh-status">Refresh Status</button>
-              <button data-action="remove" class="danger">Remove</button>
+              <button data-action="apply" class="primary">Apply Server</button>
             </div>
           </div>
           <div class="card">
@@ -3354,6 +3371,9 @@ function htmlPage(basePath: string): string {
             </div>
             <div data-pack-container="resource"></div>
           </div>
+          <div class="toolbar">
+            <button data-action="remove" class="danger">Remove Server</button>
+          </div>
           </details>
           <div class="card">
             <div class="split-actions">
@@ -3435,18 +3455,6 @@ function htmlPage(basePath: string): string {
           syncRawJson();
         });
 
-        element.querySelector('[data-action="refresh-status"]').addEventListener('click', async () => {
-          const button = element.querySelector('[data-action="refresh-status"]');
-          await withBusyButton(button, 'Refreshing…', async () => {
-            try {
-              await refreshMinecraftStatus(workload.id);
-              setStatus('Refreshed Bedrock status for ' + workload.id);
-            } catch (error) {
-              setStatus(error.message, 'error');
-            }
-          });
-        });
-
         const deployBedrockWorkload = async () => {
           const targetWorkload = state.config.remoteWorkloads[remoteIndex];
           targetWorkload.minecraft = targetWorkload.minecraft || createDefaultMinecraftConfig();
@@ -3463,12 +3471,12 @@ function htmlPage(basePath: string): string {
           return workloadId;
         };
 
-        element.querySelector('[data-action="deploy"]').addEventListener('click', async () => {
-          const button = element.querySelector('[data-action="deploy"]');
-          await withBusyButton(button, 'Deploying…', async () => {
+        element.querySelector('[data-action="apply"]').addEventListener('click', async () => {
+          const button = element.querySelector('[data-action="apply"]');
+          await withBusyButton(button, 'Applying…', async () => {
             try {
               const workloadId = await deployBedrockWorkload();
-              setStatus(\`Saved and deployed Bedrock server \${workloadId}\`);
+              setStatus(\`Applied Bedrock server \${workloadId}\`);
             } catch (error) {
               setStatus(error.message, 'error');
             }
