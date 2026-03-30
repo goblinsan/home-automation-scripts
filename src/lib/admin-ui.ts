@@ -2929,10 +2929,10 @@ function htmlPage(basePath: string): string {
             <div>
               <strong>\${minecraft.serverName || workload.id || 'new-bedrock-server'}</strong>
               <p>\${workload.description || 'Minecraft Bedrock server on a worker node'}</p>
-              <p>For a new server, fill out the four basic fields below and click <strong>Apply Server</strong>. If <code>Auto Start</code> is enabled, deploy will also start it.</p>
+              <p>For a new server, fill out the four basic fields below and click <strong>Save + Deploy</strong>. For an existing server, use <strong>Redeploy</strong> to push updated scripts and config to the core node. <strong>Restart</strong> only restarts the existing container.</p>
             </div>
             <div class="toolbar">
-              <button data-action="deploy" class="primary">Apply Server</button>
+              <button data-action="deploy" class="primary">Save + Deploy</button>
               <button data-action="refresh-status">Refresh Status</button>
               <button data-action="remove" class="danger">Remove</button>
             </div>
@@ -3032,6 +3032,7 @@ function htmlPage(basePath: string): string {
               <button data-action="start">Start</button>
               <button data-action="stop">Stop</button>
               <button data-action="restart">Restart</button>
+              <button data-action="redeploy">Redeploy</button>
               <button data-action="update">Update</button>
             </div>
             <div class="row">
@@ -3109,21 +3110,35 @@ function htmlPage(basePath: string): string {
           }
         });
 
+        const deployBedrockWorkload = async () => {
+          const targetWorkload = state.config.remoteWorkloads[remoteIndex];
+          targetWorkload.minecraft = targetWorkload.minecraft || createDefaultMinecraftConfig();
+          applyBedrockIdentityDefaults(targetWorkload, targetWorkload.minecraft, targetWorkload.minecraft);
+          ensureRemoteWorkloadNodeId(targetWorkload);
+          renderRemoteWorkloads();
+          renderBedrockServers();
+          syncRawJson();
+          const workloadId = targetWorkload.id;
+          await persistConfigState();
+          const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
+          await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {});
+          await refreshMinecraftStatus(workloadId);
+          return workloadId;
+        };
+
         element.querySelector('[data-action="deploy"]').addEventListener('click', async () => {
           try {
-            const targetWorkload = state.config.remoteWorkloads[remoteIndex];
-            targetWorkload.minecraft = targetWorkload.minecraft || createDefaultMinecraftConfig();
-            applyBedrockIdentityDefaults(targetWorkload, targetWorkload.minecraft, targetWorkload.minecraft);
-            ensureRemoteWorkloadNodeId(targetWorkload);
-            renderRemoteWorkloads();
-            renderBedrockServers();
-            syncRawJson();
-            const workloadId = targetWorkload.id;
-            await persistConfigState();
-            const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
-            await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {});
-            await refreshMinecraftStatus(workloadId);
-            setStatus(\`Applied Bedrock server \${workloadId}\`);
+            const workloadId = await deployBedrockWorkload();
+            setStatus(\`Saved and deployed Bedrock server \${workloadId}\`);
+          } catch (error) {
+            setStatus(error.message, 'error');
+          }
+        });
+
+        element.querySelector('[data-action="redeploy"]').addEventListener('click', async () => {
+          try {
+            const workloadId = await deployBedrockWorkload();
+            setStatus(\`Redeployed Bedrock server \${workloadId}\`);
           } catch (error) {
             setStatus(error.message, 'error');
           }
