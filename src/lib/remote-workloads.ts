@@ -185,6 +185,7 @@ ${worldCopyBlock}
 
 ${packCopyLines || 'true'}
 ${manifestLines}
+chmod -R a+rwX ${yamlString(dataDir)}
 `;
 }
 
