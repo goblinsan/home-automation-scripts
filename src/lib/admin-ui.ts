@@ -227,32 +227,32 @@ function htmlPage(basePath: string): string {
   <style>
     :root {
       color-scheme: light;
-      --bg: #edf2f2;
+      --bg: #f3f4f1;
       --panel: #ffffff;
-      --line: #d8e2e3;
-      --text: #1e2740;
-      --muted: #6b7890;
-      --accent: #0c788e;
-      --accent-soft: rgba(12, 120, 142, 0.12);
-      --sidebar: #25544b;
-      --sidebar-soft: rgba(255, 255, 255, 0.14);
-      --highlight: #f5b100;
-      --danger: #9b3131;
-      --ok: #1f6b43;
-      --shadow: rgba(30, 39, 64, 0.08);
+      --line: #d7ddd9;
+      --text: #111515;
+      --muted: #69716d;
+      --accent: #0d7a5c;
+      --accent-soft: rgba(13, 122, 92, 0.09);
+      --sidebar: #171a19;
+      --sidebar-soft: rgba(255, 255, 255, 0.08);
+      --highlight: #d7b34d;
+      --danger: #8f3030;
+      --ok: #216247;
+      --shadow: rgba(17, 21, 21, 0.05);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
-      background: linear-gradient(180deg, #f4f6f7 0%, var(--bg) 100%);
+      font-family: "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
+      background: var(--bg);
       color: var(--text);
     }
     header {
-      padding: 20px 24px 14px;
-      border-bottom: 1px solid rgba(30, 39, 64, 0.08);
-      background: rgba(255, 255, 255, 0.72);
-      backdrop-filter: blur(10px);
+      padding: 20px 28px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--sidebar);
+      color: #f6f6f3;
     }
     h1, h2, h3 { margin: 0 0 10px; font-weight: 600; }
     p { margin: 0 0 10px; color: var(--muted); }
@@ -260,15 +260,17 @@ function htmlPage(basePath: string): string {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
       gap: 18px;
-      padding: 20px 24px 28px;
+      padding: 28px;
       align-items: start;
+      max-width: 1460px;
+      margin: 0 auto;
     }
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 18px;
-      box-shadow: 0 16px 40px var(--shadow);
+      border-radius: 2px;
+      padding: 24px;
+      box-shadow: 0 12px 32px var(--shadow);
     }
     .editor-panel { order: 1; }
     .toolbar {
@@ -278,14 +280,14 @@ function htmlPage(basePath: string): string {
       margin-top: 14px;
     }
     button {
-      border: 1px solid rgba(30, 39, 64, 0.12);
+      border: 1px solid #1b1f1e;
       background: var(--panel);
       color: var(--text);
-      border-radius: 999px;
-      padding: 10px 14px;
+      border-radius: 0;
+      padding: 11px 16px;
       font: inherit;
       cursor: pointer;
-      transition: opacity 120ms ease, transform 120ms ease, background 120ms ease, border-color 120ms ease;
+      transition: opacity 120ms ease, transform 120ms ease, background 120ms ease, border-color 120ms ease, color 120ms ease;
     }
     button.button-tapped,
     button:active {
@@ -299,9 +301,13 @@ function htmlPage(basePath: string): string {
       filter: grayscale(0.15);
     }
     button.primary {
-      background: var(--accent);
-      border-color: var(--accent);
+      background: #171a19;
+      border-color: #171a19;
       color: #fff;
+    }
+    button.primary:hover:not(:disabled) {
+      background: #2a302e;
+      border-color: #2a302e;
     }
     button.danger {
       border-color: var(--danger);
@@ -309,14 +315,14 @@ function htmlPage(basePath: string): string {
     }
     .section-list {
       display: grid;
-      gap: 14px;
-      margin-top: 16px;
+      gap: 16px;
+      margin-top: 18px;
     }
     .card {
       border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 14px;
-      background: #fbfdfd;
+      border-radius: 0;
+      padding: 18px;
+      background: #fff;
     }
     .row {
       display: grid;
@@ -333,7 +339,7 @@ function htmlPage(basePath: string): string {
     input, textarea, select {
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 12px;
+      border-radius: 0;
       padding: 10px 12px;
       font: inherit;
       background: white;
@@ -356,17 +362,20 @@ function htmlPage(basePath: string): string {
     }
     .pill {
       display: inline-block;
-      border-radius: 999px;
-      padding: 4px 10px;
-      background: var(--accent-soft);
-      color: var(--accent);
-      font-size: 12px;
-      margin-bottom: 8px;
+      border-radius: 0;
+      padding: 3px 8px;
+      background: #eef4f1;
+      color: #35614f;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
     }
     #status {
       min-height: 24px;
       font-size: 14px;
       margin-top: 12px;
+      color: rgba(255, 255, 255, 0.86);
     }
     .status-ok { color: var(--ok); }
     .status-error { color: var(--danger); }
@@ -377,7 +386,7 @@ function htmlPage(basePath: string): string {
     }
     .header-shell {
       display: grid;
-      gap: 14px;
+      gap: 18px;
     }
     .header-row {
       display: flex;
@@ -392,15 +401,23 @@ function htmlPage(basePath: string): string {
       gap: 10px;
       flex-wrap: wrap;
     }
+    .header-row h1,
+    .header-row p {
+      color: inherit;
+    }
+    .header-row p {
+      color: rgba(255, 255, 255, 0.72);
+      max-width: 760px;
+    }
     .advanced-actions {
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 0;
+      background: transparent;
       padding: 6px 10px 10px;
     }
     .advanced-actions summary {
       cursor: pointer;
-      color: var(--muted);
+      color: rgba(255, 255, 255, 0.78);
       font-size: 14px;
       padding: 4px 0;
       user-select: none;
@@ -410,7 +427,7 @@ function htmlPage(basePath: string): string {
     }
     .top-tab-nav {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       overflow-x: auto;
       padding-bottom: 2px;
     }
@@ -418,17 +435,17 @@ function htmlPage(basePath: string): string {
       width: auto;
       min-width: max-content;
       text-align: center;
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.72);
-      color: var(--muted);
-      padding: 12px 16px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.82);
+      padding: 12px 18px;
       font-size: 15px;
     }
     .top-tab-nav .tab-button:hover,
     .top-tab-nav .tab-button.active {
-      background: var(--accent-soft);
-      color: var(--accent);
-      border-color: rgba(12, 120, 142, 0.24);
+      background: #ffffff;
+      color: #171a19;
+      border-color: #ffffff;
     }
     .nav-card {
       background: linear-gradient(180deg, var(--sidebar) 0%, #214c44 100%);
@@ -454,7 +471,7 @@ function htmlPage(basePath: string): string {
       border: 0;
       background: transparent;
       color: rgba(255, 255, 255, 0.82);
-      border-radius: 16px;
+      border-radius: 0;
       padding: 14px 16px;
       font: inherit;
       font-size: 16px;
@@ -482,7 +499,7 @@ function htmlPage(basePath: string): string {
     }
     .metric {
       border: 1px solid var(--line);
-      border-radius: 14px;
+      border-radius: 0;
       padding: 12px;
       background: white;
       position: relative;
@@ -517,6 +534,81 @@ function htmlPage(basePath: string): string {
       display: grid;
       gap: 6px;
       color: var(--muted);
+    }
+    .section-card {
+      padding: 0;
+      overflow: hidden;
+    }
+    .section-card summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 18px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .section-card summary::-webkit-details-marker {
+      display: none;
+    }
+    .section-card summary::after {
+      content: "+";
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 20px;
+      line-height: 1;
+      margin-top: 2px;
+    }
+    .section-card[open] summary::after {
+      content: "−";
+    }
+    .section-card summary p {
+      margin-bottom: 0;
+    }
+    .section-card .section-body {
+      border-top: 1px solid var(--line);
+      padding: 18px;
+      background: #fcfcfa;
+    }
+    .section-card .section-body > :first-child {
+      margin-top: 0;
+    }
+    .section-card .section-body .card {
+      background: #fff;
+    }
+    .section-summary-copy {
+      display: grid;
+      gap: 6px;
+    }
+    .section-summary-copy h3 {
+      margin-bottom: 0;
+    }
+    .section-summary-copy p {
+      font-size: 14px;
+    }
+    .card-quiet {
+      background: #fcfcfa;
+    }
+    details:not(.section-card):not(.advanced-actions) > summary {
+      list-style: none;
+      cursor: pointer;
+      user-select: none;
+    }
+    details:not(.section-card):not(.advanced-actions) > summary::-webkit-details-marker {
+      display: none;
+    }
+    details:not(.section-card):not(.advanced-actions) > summary::before {
+      content: "+";
+      display: inline-block;
+      width: 16px;
+      margin-right: 8px;
+      color: var(--muted);
+    }
+    details[open]:not(.section-card):not(.advanced-actions) > summary::before {
+      content: "−";
+    }
+    .aside-stack > details.panel {
+      padding: 18px 20px;
     }
     @media (max-width: 980px) {
       main { grid-template-columns: 1fr; }
@@ -572,273 +664,309 @@ function htmlPage(basePath: string): string {
       </div>
 
       <div class="tab-panel" data-tab-panel="gateway">
-      <div class="card">
-        <span class="pill">Gateway</span>
-        <div class="row">
-          <label>Server Names (comma separated)
-            <input id="gatewayServerNames" />
-          </label>
-          <label>nginx Site Output
-            <input id="nginxSiteOutputPath" />
-          </label>
-          <label>Upstream Directory
-            <input id="upstreamDirectory" />
-          </label>
-          <label>nginx Reload Command
-            <input id="nginxReloadCommand" />
-          </label>
-          <label>systemd Unit Directory
-            <input id="systemdUnitDirectory" />
-          </label>
-          <label>systemd Reload Command
-            <input id="systemdReloadCommand" />
-          </label>
-          <label>Enable Timer Command
-            <input id="systemdEnableTimerCommand" />
-          </label>
+      <details class="card section-card" open>
+        <summary>
+          <div class="section-summary-copy">
+            <span class="pill">Gateway</span>
+            <h3>Gateway Server Settings</h3>
+            <p>Core host-level control-plane paths and reload commands.</p>
+          </div>
+        </summary>
+        <div class="section-body">
+          <div class="row">
+            <label>Server Names (comma separated)
+              <input id="gatewayServerNames" />
+            </label>
+            <label>nginx Site Output
+              <input id="nginxSiteOutputPath" />
+            </label>
+            <label>Upstream Directory
+              <input id="upstreamDirectory" />
+            </label>
+            <label>nginx Reload Command
+              <input id="nginxReloadCommand" />
+            </label>
+            <label>systemd Unit Directory
+              <input id="systemdUnitDirectory" />
+            </label>
+            <label>systemd Reload Command
+              <input id="systemdReloadCommand" />
+            </label>
+            <label>Enable Timer Command
+              <input id="systemdEnableTimerCommand" />
+            </label>
+          </div>
         </div>
-      </div>
+      </details>
 
-      <div class="card">
-        <span class="pill">Admin UI</span>
-        <div class="row">
-          <label class="check"><input id="adminUiEnabled" type="checkbox" /> Enabled</label>
-          <label>Bind Host
-            <input id="adminUiHost" />
-          </label>
-          <label>Bind Port
-            <input id="adminUiPort" type="number" />
-          </label>
-          <label>Gateway Route Path
-            <input id="adminUiRoutePath" />
-          </label>
-          <label>Service Name
-            <input id="adminUiServiceName" />
-          </label>
-          <label>Working Directory
-            <input id="adminUiWorkingDirectory" />
-          </label>
-          <label>Config Path
-            <input id="adminUiConfigPath" />
-          </label>
-          <label>Build Output Directory
-            <input id="adminUiBuildOutDir" />
-          </label>
-          <label>Node Executable
-            <input id="adminUiNodeExecutable" />
-          </label>
-          <label>User
-            <input id="adminUiUser" />
-          </label>
-          <label>Group
-            <input id="adminUiGroup" />
-          </label>
+      <details class="card section-card">
+        <summary>
+          <div class="section-summary-copy">
+            <span class="pill">Admin UI</span>
+            <h3>Control-Plane Web App</h3>
+            <p>Bind settings and service details for the admin interface itself.</p>
+          </div>
+        </summary>
+        <div class="section-body">
+          <div class="row">
+            <label class="check"><input id="adminUiEnabled" type="checkbox" /> Enabled</label>
+            <label>Bind Host
+              <input id="adminUiHost" />
+            </label>
+            <label>Bind Port
+              <input id="adminUiPort" type="number" />
+            </label>
+            <label>Gateway Route Path
+              <input id="adminUiRoutePath" />
+            </label>
+            <label>Service Name
+              <input id="adminUiServiceName" />
+            </label>
+            <label>Working Directory
+              <input id="adminUiWorkingDirectory" />
+            </label>
+            <label>Config Path
+              <input id="adminUiConfigPath" />
+            </label>
+            <label>Build Output Directory
+              <input id="adminUiBuildOutDir" />
+            </label>
+            <label>Node Executable
+              <input id="adminUiNodeExecutable" />
+            </label>
+            <label>User
+              <input id="adminUiUser" />
+            </label>
+            <label>Group
+              <input id="adminUiGroup" />
+            </label>
+          </div>
         </div>
-      </div>
+      </details>
 
       </div>
 
       <div class="tab-panel" data-tab-panel="services" hidden>
-      <div class="card">
-        <div class="split-actions">
-          <div>
+      <details class="card section-card" open>
+        <summary>
+          <div class="section-summary-copy">
             <span class="pill">gateway-api</span>
             <h3>Runtime Profile</h3>
-            <p>Runtime wiring for <code>gateway-api</code>: env files, job delivery channels, and KULRS integration. This is not where app deployments or workflows are created.</p>
+            <p>Env files, job channels, and KULRS runtime wiring for <code>gateway-api</code>.</p>
           </div>
-          <div class="toolbar">
-            <button id="addGatewayApiEnvButton">Add Env Var</button>
-            <button id="addGatewayApiChannelButton">Add Channel</button>
-            <button id="addKulrsBotButton">Add KULRS Bot</button>
-          </div>
-        </div>
-        <div class="row">
-          <label class="check"><input id="gatewayApiProfileEnabled" type="checkbox" /> Enabled</label>
-          <label>Managed App
-            <select id="gatewayApiProfileAppId"></select>
-          </label>
-          <label>Workflow API Base URL
-            <input id="gatewayApiProfileApiBaseUrl" />
-          </label>
-          <label>Env File Path
-            <input id="gatewayApiProfileEnvFilePath" />
-          </label>
-        </div>
-        <div id="gatewayApiEnvContainer" class="section-list"></div>
-        <div class="card">
+        </summary>
+        <div class="section-body">
           <div class="split-actions">
-            <div>
-              <span class="pill">Jobs</span>
-              <h4>Job Runtime Channels</h4>
-              <p>Named delivery channels for catalog jobs running through <code>gateway-jobs.run</code>.</p>
+            <div></div>
+            <div class="toolbar">
+              <button id="addGatewayApiEnvButton">Add Env Var</button>
+              <button id="addGatewayApiChannelButton">Add Channel</button>
+              <button id="addKulrsBotButton">Add KULRS Bot</button>
             </div>
           </div>
           <div class="row">
-            <label>Channels File Path
-              <input id="gatewayApiJobChannelsFilePath" />
+            <label class="check"><input id="gatewayApiProfileEnabled" type="checkbox" /> Enabled</label>
+            <label>Managed App
+              <select id="gatewayApiProfileAppId"></select>
             </label>
-          </div>
-          <div id="gatewayApiJobChannelsContainer" class="section-list"></div>
-        </div>
-        <div class="card">
-          <div class="split-actions">
-            <div>
-              <span class="pill">KULRS</span>
-              <h4>Activity Job</h4>
-              <p>Generates the KULRS env file, credentials JSON, and derived systemd timer for <code>gateway-api</code>.</p>
-            </div>
-          </div>
-          <div class="row">
-            <label class="check"><input id="kulrsEnabled" type="checkbox" /> Enabled</label>
-            <label>Schedule
-              <input id="kulrsSchedule" />
+            <label>Workflow API Base URL
+              <input id="gatewayApiProfileApiBaseUrl" />
             </label>
-            <label>User
-              <input id="kulrsUser" />
-            </label>
-            <label>Group
-              <input id="kulrsGroup" />
-            </label>
-            <label>Timezone
-              <input id="kulrsTimezone" />
-            </label>
-          </div>
-          <div class="row">
             <label>Env File Path
-              <input id="kulrsEnvFilePath" />
-            </label>
-            <label>Credentials File Path
-              <input id="kulrsCredentialsFilePath" />
-            </label>
-            <label>Workspace Dir
-              <input id="kulrsWorkspaceDir" />
+              <input id="gatewayApiProfileEnvFilePath" />
             </label>
           </div>
-          <div class="row">
-            <label>Working Directory
-              <input id="kulrsWorkingDirectory" />
-            </label>
-            <label>ExecStart
-              <input id="kulrsExecStart" />
-            </label>
-          </div>
-          <label>Description
-            <input id="kulrsDescription" />
-          </label>
-          <div class="row">
-            <label>Firebase API Key
-              <input id="kulrsFirebaseApiKey" type="password" />
-            </label>
-            <label>Unsplash Access Key
-              <input id="kulrsUnsplashAccessKey" type="password" />
-            </label>
-          </div>
-          <div id="kulrsBotsContainer" class="section-list"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="split-actions">
-          <div>
-            <span class="pill">gateway-chat-platform</span>
-            <h3>Runtime Profile</h3>
-            <p>Runtime wiring for <code>gateway-chat-platform</code>: env vars, provider sync, and local TTS integration.</p>
-          </div>
-          <div class="toolbar">
-            <button id="addGatewayChatEnvButton">Add Env Var</button>
-          </div>
-        </div>
-        <div class="row">
-          <label class="check"><input id="gatewayChatProfileEnabled" type="checkbox" /> Enabled</label>
-          <label>Managed App
-            <select id="gatewayChatProfileAppId"></select>
-          </label>
-          <label>Chat API Base URL
-            <input id="gatewayChatProfileApiBaseUrl" />
-          </label>
-          <label>API Env File Path
-            <input id="gatewayChatProfileEnvFilePath" />
-          </label>
-        </div>
-        <div class="section-list">
-          <div>
-            <p>Environment</p>
-            <div id="gatewayChatEnvContainer" class="section-list"></div>
-          </div>
-          <div class="card">
-            <div class="split-actions">
-              <div>
-                <span class="pill">TTS</span>
-                <h4>Local TTS Service</h4>
+          <div id="gatewayApiEnvContainer" class="section-list"></div>
+          <details class="card section-card">
+            <summary>
+              <div class="section-summary-copy">
+                <span class="pill">Jobs</span>
+                <h3>Job Runtime Channels</h3>
+                <p>Named delivery channels for <code>gateway-jobs.run</code>.</p>
               </div>
-              <div class="toolbar">
-                <button id="checkTtsButton">Check TTS</button>
-                <button id="reloadTtsVoicesButton">Reload Voices</button>
+            </summary>
+            <div class="section-body">
+              <div class="row">
+                <label>Channels File Path
+                  <input id="gatewayApiJobChannelsFilePath" />
+                </label>
               </div>
+              <div id="gatewayApiJobChannelsContainer" class="section-list"></div>
             </div>
-            <div class="row">
-              <label class="check"><input id="gatewayChatTtsEnabled" type="checkbox" /> Enabled</label>
-              <label>TTS Base URL
-                <input id="gatewayChatTtsBaseUrl" />
-              </label>
-              <label>Default Voice
-                <input id="gatewayChatTtsDefaultVoice" />
-              </label>
-              <label>Generate Path
-                <input id="gatewayChatTtsGeneratePath" />
-              </label>
-              <label>Stream Path
-                <input id="gatewayChatTtsStreamPath" />
-              </label>
-              <label>Voices Path
-                <input id="gatewayChatTtsVoicesPath" />
-              </label>
-              <label>Health Path
-                <input id="gatewayChatTtsHealthPath" />
-              </label>
-            </div>
-            <div id="ttsStatus" class="meta-list"></div>
-            <div class="split-actions">
-              <div>
-                <p>Voices</p>
+          </details>
+          <details class="card section-card">
+            <summary>
+              <div class="section-summary-copy">
+                <span class="pill">KULRS</span>
+                <h3>Activity Job</h3>
+                <p>Generated job files, credentials, schedule, and runtime details for KULRS.</p>
               </div>
-            </div>
-            <div id="ttsVoicesContainer" class="section-list"></div>
-            <div class="card">
-              <div class="split-actions">
-                <div>
-                  <span class="pill">Create Voice</span>
-                  <h4>New Voice</h4>
-                </div>
-                <button id="createTtsVoiceButton" class="primary">Create Voice</button>
+            </summary>
+            <div class="section-body">
+              <div class="row">
+                <label class="check"><input id="kulrsEnabled" type="checkbox" /> Enabled</label>
+                <label>Schedule
+                  <input id="kulrsSchedule" />
+                </label>
+                <label>User
+                  <input id="kulrsUser" />
+                </label>
+                <label>Group
+                  <input id="kulrsGroup" />
+                </label>
+                <label>Timezone
+                  <input id="kulrsTimezone" />
+                </label>
               </div>
               <div class="row">
-                <label>Name
-                  <input id="ttsCreateVoiceName" />
+                <label>Env File Path
+                  <input id="kulrsEnvFilePath" />
                 </label>
-                <label>Description
-                  <input id="ttsCreateVoiceDescription" />
+                <label>Credentials File Path
+                  <input id="kulrsCredentialsFilePath" />
                 </label>
-                <label>Source
-                  <input id="ttsCreateVoiceSource" value="recorded" />
-                </label>
-                <label>Reference Audio
-                  <input id="ttsCreateVoiceFile" type="file" accept="audio/*,.wav,.mp3,.m4a" />
+                <label>Workspace Dir
+                  <input id="kulrsWorkspaceDir" />
                 </label>
               </div>
-              <label>Transcript
-                <textarea id="ttsCreateVoiceTranscript" placeholder="Required by local-tts-service for voice creation. Provide the spoken text from the reference audio."></textarea>
+              <div class="row">
+                <label>Working Directory
+                  <input id="kulrsWorkingDirectory" />
+                </label>
+                <label>ExecStart
+                  <input id="kulrsExecStart" />
+                </label>
+              </div>
+              <label>Description
+                <input id="kulrsDescription" />
               </label>
+              <div class="row">
+                <label>Firebase API Key
+                  <input id="kulrsFirebaseApiKey" type="password" />
+                </label>
+                <label>Unsplash Access Key
+                  <input id="kulrsUnsplashAccessKey" type="password" />
+                </label>
+              </div>
+              <div id="kulrsBotsContainer" class="section-list"></div>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <details class="card section-card">
+        <summary>
+          <div class="section-summary-copy">
+            <span class="pill">gateway-chat-platform</span>
+            <h3>Runtime Profile</h3>
+            <p>Chat API env wiring, provider sync, and local TTS settings.</p>
+          </div>
+        </summary>
+        <div class="section-body">
+          <div class="split-actions">
+            <div></div>
+            <div class="toolbar">
+              <button id="addGatewayChatEnvButton">Add Env Var</button>
             </div>
           </div>
+          <div class="row">
+            <label class="check"><input id="gatewayChatProfileEnabled" type="checkbox" /> Enabled</label>
+            <label>Managed App
+              <select id="gatewayChatProfileAppId"></select>
+            </label>
+            <label>Chat API Base URL
+              <input id="gatewayChatProfileApiBaseUrl" />
+            </label>
+            <label>API Env File Path
+              <input id="gatewayChatProfileEnvFilePath" />
+            </label>
+          </div>
+          <div class="section-list">
+            <div class="card card-quiet">
+              <p>Environment</p>
+              <div id="gatewayChatEnvContainer" class="section-list"></div>
+            </div>
+            <details class="card section-card">
+              <summary>
+                <div class="section-summary-copy">
+                  <span class="pill">TTS</span>
+                  <h3>Local TTS Service</h3>
+                  <p>Voice generation settings, health checks, and managed voice entries.</p>
+                </div>
+              </summary>
+              <div class="section-body">
+                <div class="split-actions">
+                  <div></div>
+                  <div class="toolbar">
+                    <button id="checkTtsButton">Check TTS</button>
+                    <button id="reloadTtsVoicesButton">Reload Voices</button>
+                  </div>
+                </div>
+                <div class="row">
+                  <label class="check"><input id="gatewayChatTtsEnabled" type="checkbox" /> Enabled</label>
+                  <label>TTS Base URL
+                    <input id="gatewayChatTtsBaseUrl" />
+                  </label>
+                  <label>Default Voice
+                    <input id="gatewayChatTtsDefaultVoice" />
+                  </label>
+                  <label>Generate Path
+                    <input id="gatewayChatTtsGeneratePath" />
+                  </label>
+                  <label>Stream Path
+                    <input id="gatewayChatTtsStreamPath" />
+                  </label>
+                  <label>Voices Path
+                    <input id="gatewayChatTtsVoicesPath" />
+                  </label>
+                  <label>Health Path
+                    <input id="gatewayChatTtsHealthPath" />
+                  </label>
+                </div>
+                <div id="ttsStatus" class="meta-list"></div>
+                <div class="split-actions">
+                  <div>
+                    <p>Voices</p>
+                  </div>
+                </div>
+                <div id="ttsVoicesContainer" class="section-list"></div>
+                <div class="card">
+                  <div class="split-actions">
+                    <div>
+                      <span class="pill">Create Voice</span>
+                      <h4>New Voice</h4>
+                    </div>
+                    <button id="createTtsVoiceButton" class="primary">Create Voice</button>
+                  </div>
+                  <div class="row">
+                    <label>Name
+                      <input id="ttsCreateVoiceName" />
+                    </label>
+                    <label>Description
+                      <input id="ttsCreateVoiceDescription" />
+                    </label>
+                    <label>Source
+                      <input id="ttsCreateVoiceSource" value="recorded" />
+                    </label>
+                    <label>Reference Audio
+                      <input id="ttsCreateVoiceFile" type="file" accept="audio/*,.wav,.mp3,.m4a" />
+                    </label>
+                  </div>
+                  <label>Transcript
+                    <textarea id="ttsCreateVoiceTranscript" placeholder="Required by local-tts-service for voice creation. Provide the spoken text from the reference audio."></textarea>
+                  </label>
+                </div>
+              </div>
+            </details>
+          </div>
         </div>
-      </div>
+      </details>
 
       </div>
 
       <div class="tab-panel" data-tab-panel="secrets" hidden>
       <div class="section-list">
-        <div class="card">
+        <div class="card card-quiet">
           <div class="split-actions">
             <div>
               <span class="pill">Secrets</span>
@@ -847,157 +975,213 @@ function htmlPage(basePath: string): string {
             </div>
           </div>
         </div>
-        <div class="card">
-          <div class="split-actions">
-            <div>
+        <details class="card section-card" open>
+          <summary>
+            <div class="section-summary-copy">
               <span class="pill">gateway-api</span>
               <h3>Secret Env Vars</h3>
+              <p>Passwords, tokens, and private env vars for <code>gateway-api</code>.</p>
             </div>
-            <button id="addGatewayApiSecretButton">Add Secret Env Var</button>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div></div>
+              <button id="addGatewayApiSecretButton">Add Secret Env Var</button>
+            </div>
+            <div id="gatewayApiSecretsContainer" class="section-list"></div>
           </div>
-          <div id="gatewayApiSecretsContainer" class="section-list"></div>
-        </div>
-        <div class="card">
-          <div class="split-actions">
-            <div>
+        </details>
+        <details class="card section-card">
+          <summary>
+            <div class="section-summary-copy">
               <span class="pill">Delivery</span>
               <h3>Job Delivery Channels</h3>
-              <p>These credentials are used by <code>gateway-jobs.run</code> jobs when they send a message to Telegram or a webhook.</p>
+              <p>Credentials used when jobs send to Telegram or webhooks.</p>
             </div>
-            <button id="addGatewayApiSecretChannelButton">Add Channel</button>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div></div>
+              <button id="addGatewayApiSecretChannelButton">Add Channel</button>
+            </div>
+            <div id="gatewayApiSecretChannelsContainer" class="section-list"></div>
           </div>
-          <div id="gatewayApiSecretChannelsContainer" class="section-list"></div>
-        </div>
-        <div class="card">
-          <div class="split-actions">
-            <div>
+        </details>
+        <details class="card section-card">
+          <summary>
+            <div class="section-summary-copy">
               <span class="pill">KULRS</span>
               <h3>KULRS Credentials</h3>
+              <p>Firebase, Unsplash, and per-bot credentials for palette generation.</p>
             </div>
-            <button id="addKulrsSecretBotButton">Add KULRS Bot</button>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div></div>
+              <button id="addKulrsSecretBotButton">Add KULRS Bot</button>
+            </div>
+            <div class="row">
+              <label>Firebase API Key
+                <input id="kulrsFirebaseApiKeySecrets" type="password" />
+              </label>
+              <label>Unsplash Access Key
+                <input id="kulrsUnsplashAccessKeySecrets" type="password" />
+              </label>
+            </div>
+            <div id="kulrsSecretBotsContainer" class="section-list"></div>
           </div>
-          <div class="row">
-            <label>Firebase API Key
-              <input id="kulrsFirebaseApiKeySecrets" type="password" />
-            </label>
-            <label>Unsplash Access Key
-              <input id="kulrsUnsplashAccessKeySecrets" type="password" />
-            </label>
-          </div>
-          <div id="kulrsSecretBotsContainer" class="section-list"></div>
-        </div>
-        <div class="card">
-          <div class="split-actions">
-            <div>
+        </details>
+        <details class="card section-card">
+          <summary>
+            <div class="section-summary-copy">
               <span class="pill">gateway-chat-platform</span>
               <h3>Secret Env Vars</h3>
+              <p>Model-provider and runtime secret env vars for chat services.</p>
             </div>
-            <button id="addGatewayChatSecretButton">Add Secret Env Var</button>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div></div>
+              <button id="addGatewayChatSecretButton">Add Secret Env Var</button>
+            </div>
+            <div id="gatewayChatSecretsContainer" class="section-list"></div>
           </div>
-          <div id="gatewayChatSecretsContainer" class="section-list"></div>
-        </div>
+        </details>
       </div>
       </div>
 
       <div class="tab-panel" data-tab-panel="agents" hidden>
-      <div class="card">
-        <div class="split-actions">
-          <div>
+      <details class="card section-card" open>
+        <summary>
+          <div class="section-summary-copy">
             <span class="pill">Agents</span>
             <h3>Configured Chat Agents</h3>
             <p>Only these agents are synced into <code>gateway-chat-platform</code>.</p>
           </div>
-          <div class="toolbar">
-            <button id="addGatewayChatAgentButton">Add Agent</button>
-            <button id="syncGatewayChatAgentsButtonSecondary">Sync Agents</button>
+        </summary>
+        <div class="section-body">
+          <div class="split-actions">
+            <div></div>
+            <div class="toolbar">
+              <button id="addGatewayChatAgentButton">Add Agent</button>
+              <button id="syncGatewayChatAgentsButtonSecondary">Sync Agents</button>
+            </div>
           </div>
+          <div id="gatewayChatAgentsContainer" class="section-list"></div>
         </div>
-        <div id="gatewayChatAgentsContainer" class="section-list"></div>
-      </div>
+      </details>
       </div>
 
       <div class="tab-panel" data-tab-panel="workflows" hidden>
-      <div class="card">
-        <div class="split-actions">
-          <div>
+      <details class="card section-card">
+        <summary>
+          <div class="section-summary-copy">
             <span class="pill">Catalog</span>
             <h3>Automation Job Catalog</h3>
             <p>Available refs for <code>target.type = gateway-jobs.run</code>.</p>
           </div>
-          <button id="reloadJobsButton">Reload Jobs</button>
+        </summary>
+        <div class="section-body">
+          <div class="split-actions">
+            <div></div>
+            <button id="reloadJobsButton">Reload Jobs</button>
+          </div>
+          <div id="jobsCatalogContainer" class="section-list"></div>
         </div>
-        <div id="jobsCatalogContainer" class="section-list"></div>
-      </div>
-      <div class="card">
-        <div class="split-actions">
-          <div>
+      </details>
+      <details class="card section-card" open>
+        <summary>
+          <div class="section-summary-copy">
             <span class="pill">Automations</span>
             <h3>Scheduled Workflows</h3>
-            <p>These are API-level automations stored and executed by <code>gateway-api</code>. Use this for agentic workflows, not for app deploys.</p>
+            <p>API-level automations stored and executed by <code>gateway-api</code>.</p>
           </div>
-          <div class="toolbar">
-            <button id="reloadWorkflowsButton">Reload Workflows</button>
-            <button id="addWorkflowButton">Add Workflow</button>
+        </summary>
+        <div class="section-body">
+          <div class="split-actions">
+            <div></div>
+            <div class="toolbar">
+              <button id="reloadWorkflowsButton">Reload Workflows</button>
+              <button id="addWorkflowButton">Add Workflow</button>
+            </div>
           </div>
+          <div id="workflowsContainer" class="section-list"></div>
         </div>
-        <div id="workflowsContainer" class="section-list"></div>
-      </div>
+      </details>
       </div>
 
       <div class="tab-panel" data-tab-panel="remote" hidden>
       <div class="section-list">
-        <div class="card">
+        <div class="card card-quiet">
           <div>
             <span class="pill">Nodes</span>
             <h3>Worker Nodes and Remote Container Jobs</h3>
             <p>Use this tab to define remote nodes like your core-node and generic container workloads. Minecraft has its own dedicated tab.</p>
           </div>
         </div>
-        <div class="card">
-          <div class="split-actions">
-            <div>
+        <details class="card section-card" open>
+          <summary>
+            <div class="section-summary-copy">
               <span class="pill">Nodes</span>
               <h3>Worker Nodes</h3>
+              <p>SSH targets and runtime settings for remote workload execution.</p>
             </div>
-            <button id="addWorkerNodeButton">Add Worker Node</button>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div></div>
+              <button id="addWorkerNodeButton">Add Worker Node</button>
+            </div>
+            <div id="workerNodesContainer" class="section-list"></div>
           </div>
-          <div id="workerNodesContainer" class="section-list"></div>
-        </div>
-        <div class="card">
-          <div class="split-actions">
-            <div>
+        </details>
+        <details class="card section-card">
+          <summary>
+            <div class="section-summary-copy">
               <span class="pill">Remote Workloads</span>
               <h3>Container Jobs + Bedrock Servers</h3>
+              <p>Generic remote workloads. Bedrock also has its own simplified tab.</p>
             </div>
-            <div class="toolbar">
-              <button id="addRemoteWorkloadButton">Add Container Job</button>
-              <button id="addBedrockWorkloadButton">Add Bedrock Server</button>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div></div>
+              <div class="toolbar">
+                <button id="addRemoteWorkloadButton">Add Container Job</button>
+                <button id="addBedrockWorkloadButton">Add Bedrock Server</button>
+              </div>
             </div>
+            <div id="remoteWorkloadsContainer" class="section-list"></div>
           </div>
-          <div id="remoteWorkloadsContainer" class="section-list"></div>
-        </div>
+        </details>
       </div>
       </div>
 
       <div class="tab-panel" data-tab-panel="bedrock" hidden>
-      <div class="card">
-        <div class="split-actions">
-          <div>
+      <details class="card section-card" open>
+        <summary>
+          <div class="section-summary-copy">
             <span class="pill">Bedrock</span>
             <h3>Minecraft Bedrock Servers</h3>
-            <p>Launch, configure, update, and administer Bedrock servers running on worker nodes.</p>
-            <p>Save the config before deploying or sending live admin commands so the worker node uses the latest settings.</p>
+            <p>Launch, configure, update, and administer Bedrock servers on worker nodes.</p>
           </div>
-          <div class="toolbar">
-            <button id="addBedrockServerButton">Add Bedrock Server</button>
+        </summary>
+        <div class="section-body">
+          <div class="split-actions">
+            <div>
+              <p>Use Save + Deploy or Redeploy inside a server card when you want the live node updated with the latest config.</p>
+            </div>
+            <div class="toolbar">
+              <button id="addBedrockServerButton">Add Bedrock Server</button>
+            </div>
           </div>
+          <div id="bedrockServersContainer" class="section-list"></div>
         </div>
-        <div id="bedrockServersContainer" class="section-list"></div>
-      </div>
+      </details>
       </div>
 
       <div class="tab-panel" data-tab-panel="overview">
-      <div class="card">
+      <div class="card card-quiet">
         <div class="split-actions">
           <div>
             <span class="pill">Start Here</span>
@@ -1038,12 +1222,17 @@ function htmlPage(basePath: string): string {
           </div>
         </div>
       </div>
-      <div class="card">
-        <div class="split-actions">
-          <div>
+      <details class="card section-card">
+        <summary>
+          <div class="section-summary-copy">
             <span class="pill">Tools</span>
             <h3>Agent and Workflow Utilities</h3>
+            <p>Secondary utilities for imports, sync, and agent test runs.</p>
           </div>
+        </summary>
+        <div class="section-body">
+        <div class="split-actions">
+          <div></div>
           <div class="toolbar">
             <button id="syncGatewayChatAgentsButton">Sync Agents</button>
             <button id="importWorkflowSeedButton">Import Workflow Seed</button>
@@ -1072,45 +1261,62 @@ function htmlPage(basePath: string): string {
           <button id="runAgentButton" class="primary">Run Agent</button>
         </div>
         <div id="agentRunResult" class="meta-list"></div>
-      </div>
+        </div>
+      </details>
       </div>
 
       <div class="tab-panel" data-tab-panel="apps" hidden>
       <div class="section-list">
-        <div class="card">
-          <div class="split-actions">
-            <div>
+        <details class="card section-card" open>
+          <summary>
+            <div class="section-summary-copy">
               <span class="pill">Apps</span>
               <h3>Managed Apps</h3>
-              <p>Git-based applications deployed by the control-plane, such as <code>gateway-api</code> or <code>gateway-chat-platform</code>.</p>
+              <p>Git-based services deployed by the control-plane.</p>
             </div>
-            <button id="addAppButton">Add App</button>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div></div>
+              <button id="addAppButton">Add App</button>
+            </div>
+            <div id="appsContainer" class="section-list"></div>
           </div>
-          <div id="appsContainer" class="section-list"></div>
-        </div>
+        </details>
 
-        <div class="card">
-          <div class="split-actions">
-            <div>
+        <details class="card section-card">
+          <summary>
+            <div class="section-summary-copy">
               <span class="pill">Jobs</span>
               <h3>Host Scheduled Jobs</h3>
-              <p>Host-level scheduled commands tied to an app deployment. This is separate from API workflows and remote container jobs.</p>
+              <p>Host-level scheduled commands tied to an app deployment.</p>
             </div>
-            <button id="addJobButton">Add Job</button>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div></div>
+              <button id="addJobButton">Add Job</button>
+            </div>
+            <div id="jobsContainer" class="section-list"></div>
           </div>
-          <div id="jobsContainer" class="section-list"></div>
-        </div>
+        </details>
 
-        <div class="card">
-          <div class="split-actions">
-            <div>
+        <details class="card section-card">
+          <summary>
+            <div class="section-summary-copy">
               <span class="pill">Features</span>
               <h3>Feature Flags</h3>
+              <p>Optional deployment toggles and feature switches.</p>
             </div>
-            <button id="addFeatureButton">Add Feature</button>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div></div>
+              <button id="addFeatureButton">Add Feature</button>
+            </div>
+            <div id="featuresContainer" class="section-list"></div>
           </div>
-          <div id="featuresContainer" class="section-list"></div>
-        </div>
+        </details>
       </div>
       </div>
     </section>
@@ -1137,9 +1343,9 @@ function htmlPage(basePath: string): string {
         </div>
         <textarea id="rawJson" spellcheck="false"></textarea>
       </section>
-      <section class="panel">
-        <h2>Definitions</h2>
-        <div class="hint-list">
+      <details class="panel" open>
+        <summary><strong>Definitions</strong></summary>
+        <div class="hint-list" style="margin-top: 14px;">
           <p><strong>Apps</strong> are git-based services deployed by the control-plane.</p>
           <p><strong>Jobs</strong> are host scheduled commands attached to an app deployment.</p>
           <p><strong>Automations</strong> are workflow records stored and run by <code>gateway-api</code>.</p>
@@ -1148,7 +1354,7 @@ function htmlPage(basePath: string): string {
           <p><strong>Nodes</strong> defines remote worker nodes and generic remote container jobs.</p>
           <p><strong>Minecraft</strong> is the dedicated Bedrock administration surface.</p>
         </div>
-      </section>
+      </details>
     </aside>
   </main>
   <script>
