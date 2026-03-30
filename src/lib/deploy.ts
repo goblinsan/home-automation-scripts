@@ -176,16 +176,32 @@ function sshTarget(node: WorkerNodeConfig): string {
   return `${node.sshUser}@${node.host}`;
 }
 
+function baseSshOptions(node: WorkerNodeConfig): string {
+  return [
+    '-o BatchMode=yes',
+    '-o StrictHostKeyChecking=accept-new',
+    `-o UserKnownHostsFile=${shellQuote(`/tmp/gateway-control-plane-known-hosts-${node.id}`)}`
+  ].join(' ');
+}
+
+function sshOptions(node: WorkerNodeConfig): string {
+  return [`-p ${node.sshPort}`, baseSshOptions(node)].join(' ');
+}
+
+function scpOptions(node: WorkerNodeConfig): string {
+  return [`-P ${node.sshPort}`, baseSshOptions(node)].join(' ');
+}
+
 async function runRemoteShell(node: WorkerNodeConfig, command: string, context: CommandContext): Promise<void> {
-  await runShell(`ssh -p ${node.sshPort} ${sshTarget(node)} ${shellQuote(command)}`, process.cwd(), context);
+  await runShell(`ssh ${sshOptions(node)} ${sshTarget(node)} ${shellQuote(command)}`, process.cwd(), context);
 }
 
 async function runRemoteShellCapture(node: WorkerNodeConfig, command: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  return await runShellCapture(`ssh -p ${node.sshPort} ${sshTarget(node)} ${shellQuote(command)}`, process.cwd());
+  return await runShellCapture(`ssh ${sshOptions(node)} ${sshTarget(node)} ${shellQuote(command)}`, process.cwd());
 }
 
 async function copyDirectoryToRemote(node: WorkerNodeConfig, localDir: string, remoteDir: string, context: CommandContext): Promise<void> {
-  await runShell(`scp -P ${node.sshPort} -r ${localDir}/. ${sshTarget(node)}:${remoteDir}/`, process.cwd(), context);
+  await runShell(`scp ${scpOptions(node)} -r ${localDir}/. ${sshTarget(node)}:${remoteDir}/`, process.cwd(), context);
 }
 
 export async function readCurrentSlot(app: AppConfig): Promise<Slot> {
@@ -660,11 +676,11 @@ async function prepareScheduledContainerJobSource(
 async function inspectRemoteContainer(node: WorkerNodeConfig, containerName: string): Promise<RemoteContainerStatus> {
   const inspectCommand = [
     `if ${node.dockerCommand} inspect ${shellQuote(containerName)} >/dev/null 2>&1; then`,
-    `${node.dockerCommand} inspect ${shellQuote(containerName)} --format ${shellQuote('{{json .State}}@@{{json .NetworkSettings.Ports}}')}`,
+    `${node.dockerCommand} inspect ${shellQuote(containerName)} --format ${shellQuote('{{json .State}}@@{{json .NetworkSettings.Ports}}')};`,
     'else',
-    `printf '__MISSING__'`,
+    `printf '__MISSING__';`,
     'fi'
-  ].join(' ');
+  ].join('\n');
   const result = await runRemoteShellCapture(node, inspectCommand);
   if (result.code !== 0) {
     return {
