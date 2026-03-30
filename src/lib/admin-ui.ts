@@ -2719,9 +2719,11 @@ function htmlPage(basePath: string): string {
 
         element.querySelector('[data-action="deploy"]').addEventListener('click', async () => {
           try {
+            const workloadId = workload.id;
+            await persistConfigState();
             const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
-            await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/deploy\`, revision ? { revision } : {});
-            setStatus(\`Deployed remote workload \${workload.id}\`);
+            await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {});
+            setStatus(\`Deployed remote workload \${workloadId}\`);
           } catch (error) {
             setStatus(error.message, 'error');
           }
@@ -3027,9 +3029,11 @@ function htmlPage(basePath: string): string {
             renderRemoteWorkloads();
             renderBedrockServers();
             syncRawJson();
+            const workloadId = targetWorkload.id;
+            await persistConfigState();
             const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
-            await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(targetWorkload.id)}/deploy\`, revision ? { revision } : {});
-            setStatus(\`Deployed Bedrock server \${targetWorkload.id}\`);
+            await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {});
+            setStatus(\`Applied Bedrock server \${workloadId}\`);
           } catch (error) {
             setStatus(error.message, 'error');
           }
@@ -3298,6 +3302,14 @@ function htmlPage(basePath: string): string {
       return data;
     }
 
+    async function persistConfigState() {
+      const result = await requestJson('POST', '/api/config', state.config);
+      state.config = result.config;
+      render();
+      await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime()]);
+      return result;
+    }
+
     async function syncConfiguredAgents() {
       await requestJson('POST', '/api/service-profiles/gateway-chat-platform/sync');
       setStatus('Chat agents synced to gateway-chat-platform');
@@ -3455,10 +3467,7 @@ function htmlPage(basePath: string): string {
 
     document.getElementById('saveButton').addEventListener('click', async () => {
       try {
-        const result = await requestJson('POST', '/api/config', state.config);
-        state.config = result.config;
-        render();
-        await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime()]);
+        const result = await persistConfigState();
         setStatus(result.message || 'Saved');
       } catch (error) {
         setStatus(error.message, 'error');
