@@ -2538,7 +2538,6 @@ function htmlPage(basePath: string): string {
               return;
             }
             node[field] = isCheckbox ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
-            renderWorkerNodes();
             renderRemoteWorkloads();
             renderBedrockServers();
             syncRawJson();
@@ -3010,7 +3009,6 @@ function htmlPage(basePath: string): string {
             applyBedrockIdentityDefaults(targetWorkload, previousMinecraft, targetWorkload.minecraft);
           }
           renderRemoteWorkloads();
-          renderBedrockServers();
           syncRawJson();
         };
 
@@ -3081,7 +3079,6 @@ function htmlPage(basePath: string): string {
             }
             state.config.remoteWorkloads[remoteIndex][field] = isCheckbox ? input.checked : input.value;
             renderRemoteWorkloads();
-            renderBedrockServers();
             syncRawJson();
           });
         });
