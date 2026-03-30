@@ -227,32 +227,35 @@ function htmlPage(basePath: string): string {
   <style>
     :root {
       color-scheme: light;
-      --bg: #f3f4f1;
+      --bg: #eef3f1;
       --panel: #ffffff;
-      --line: #d7ddd9;
-      --text: #111515;
-      --muted: #69716d;
-      --accent: #0d7a5c;
-      --accent-soft: rgba(13, 122, 92, 0.09);
-      --sidebar: #171a19;
-      --sidebar-soft: rgba(255, 255, 255, 0.08);
-      --highlight: #d7b34d;
+      --line: #cfdad7;
+      --text: #173336;
+      --muted: #5f7578;
+      --accent: #6c9894;
+      --accent-soft: rgba(108, 152, 148, 0.12);
+      --accent-strong: #103235;
+      --sidebar: #6c9894;
+      --sidebar-soft: rgba(255, 255, 255, 0.14);
+      --highlight: #6f99a7;
       --danger: #8f3030;
-      --ok: #216247;
-      --shadow: rgba(17, 21, 21, 0.05);
+      --ok: #2e6961;
+      --shadow: rgba(16, 50, 53, 0.08);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
-      background: var(--bg);
+      background:
+        linear-gradient(180deg, #f3f6f5 0%, var(--bg) 100%);
       color: var(--text);
     }
     header {
       padding: 20px 28px 16px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      background: var(--sidebar);
-      color: #f6f6f3;
+      border-bottom: 1px solid rgba(16, 50, 53, 0.12);
+      background:
+        linear-gradient(90deg, #6c9894 0%, #6f99a7 56%, #103235 100%);
+      color: #f5fbfa;
     }
     h1, h2, h3 { margin: 0 0 10px; font-weight: 600; }
     p { margin: 0 0 10px; color: var(--muted); }
@@ -280,7 +283,7 @@ function htmlPage(basePath: string): string {
       margin-top: 14px;
     }
     button {
-      border: 1px solid #1b1f1e;
+      border: 1px solid rgba(16, 50, 53, 0.42);
       background: var(--panel);
       color: var(--text);
       border-radius: 0;
@@ -301,13 +304,13 @@ function htmlPage(basePath: string): string {
       filter: grayscale(0.15);
     }
     button.primary {
-      background: #171a19;
-      border-color: #171a19;
+      background: var(--accent-strong);
+      border-color: var(--accent-strong);
       color: #fff;
     }
     button.primary:hover:not(:disabled) {
-      background: #2a302e;
-      border-color: #2a302e;
+      background: #184247;
+      border-color: #184247;
     }
     button.danger {
       border-color: var(--danger);
@@ -364,8 +367,8 @@ function htmlPage(basePath: string): string {
       display: inline-block;
       border-radius: 0;
       padding: 3px 8px;
-      background: #eef4f1;
-      color: #35614f;
+      background: rgba(108, 152, 148, 0.14);
+      color: #27555a;
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.08em;
@@ -375,8 +378,8 @@ function htmlPage(basePath: string): string {
       min-height: 0;
       font-size: 13px;
       color: rgba(255, 255, 255, 0.92);
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.1);
       padding: 10px 12px;
       width: 260px;
       white-space: nowrap;
@@ -385,7 +388,7 @@ function htmlPage(basePath: string): string {
     }
     .status-ok {
       color: rgba(255, 255, 255, 0.92);
-      border-color: rgba(255, 255, 255, 0.18);
+      border-color: rgba(255, 255, 255, 0.22);
     }
     .status-error {
       color: #ffd7d7;
@@ -420,7 +423,7 @@ function htmlPage(basePath: string): string {
       color: inherit;
     }
     .header-row p {
-      color: rgba(255, 255, 255, 0.72);
+      color: rgba(245, 251, 250, 0.78);
       max-width: 760px;
     }
     .top-tab-nav {
@@ -437,7 +440,7 @@ function htmlPage(basePath: string): string {
       text-align: center;
       border: 1px solid transparent;
       background: transparent;
-      color: rgba(255, 255, 255, 0.82);
+      color: rgba(245, 251, 250, 0.88);
       padding: 12px 18px;
       font-size: 15px;
       white-space: nowrap;
@@ -445,7 +448,7 @@ function htmlPage(basePath: string): string {
     .top-tab-nav .tab-button:hover,
     .top-tab-nav .tab-button.active {
       background: #ffffff;
-      color: #171a19;
+      color: var(--accent-strong);
       border-color: #ffffff;
     }
     .nav-card {
