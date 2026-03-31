@@ -173,6 +173,26 @@ function normalizeBasePath(pathValue: string | undefined): string {
   return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`;
 }
 
+function adminFaviconDataUri(): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+    <defs>
+      <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#6fe4e2"/>
+        <stop offset="45%" stop-color="#4bb7d8"/>
+        <stop offset="100%" stop-color="#173f78"/>
+      </linearGradient>
+    </defs>
+    <rect width="64" height="64" rx="14" fill="#eef8fb"/>
+    <circle cx="32" cy="28" r="21" fill="none" stroke="url(#g)" stroke-width="4.5"/>
+    <path d="M12 30c7-7 15-11 20-11s13 4 20 11" fill="none" stroke="#2b8db8" stroke-width="3.2" stroke-linecap="round"/>
+    <path d="M17 17c8 7 12 16 15 31M47 17c-8 7-12 16-15 31" fill="none" stroke="#2b8db8" stroke-width="3.2" stroke-linecap="round"/>
+    <path d="M19 47 32 33l13 14" fill="none" stroke="#173f78" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M32 23c-6.4 0-11.6 5.2-11.6 11.6v1.1h6.3v-1.1c0-2.9 2.4-5.3 5.3-5.3s5.3 2.4 5.3 5.3v1.1h6.3v-1.1C43.6 28.2 38.4 23 32 23Z" fill="url(#g)"/>
+    <path d="M32 32c-1.8 0-3.2 1.4-3.2 3.2v5.5h6.4v-5.5c0-1.8-1.4-3.2-3.2-3.2Z" fill="#ffffff"/>
+  </svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 function getForwardedBasePath(request: IncomingMessage): string {
   const headerValue = request.headers['x-forwarded-prefix'];
   return normalizeBasePath(typeof headerValue === 'string' ? headerValue : undefined);
@@ -224,6 +244,7 @@ function htmlPage(basePath: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="gateway-base-path" content="${basePath}" />
   <title>Gateway Config Admin</title>
+  <link rel="icon" type="image/svg+xml" href="${adminFaviconDataUri()}" />
   <style>
     :root {
       color-scheme: light;
@@ -259,6 +280,7 @@ function htmlPage(basePath: string): string {
     }
     h1, h2, h3 { margin: 0 0 10px; font-weight: 600; }
     p { margin: 0 0 10px; color: var(--muted); }
+    .section-note { margin-top: 10px; font-size: 0.92rem; }
     main {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
@@ -929,6 +951,21 @@ function htmlPage(basePath: string): string {
               <p>Environment</p>
               <div id="gatewayChatEnvContainer" class="section-list"></div>
             </div>
+            <div class="card card-quiet">
+              <p>Chat Inbox / Redis</p>
+              <div class="row">
+                <label>Redis URL
+                  <input id="gatewayChatRedisUrl" placeholder="redis://198.51.100.200:6379" />
+                </label>
+                <label>Default User Id
+                  <input id="gatewayChatDefaultUserId" placeholder="me" />
+                </label>
+                <label>Default Channel Id
+                  <input id="gatewayChatDefaultChannelId" placeholder="coach" />
+                </label>
+              </div>
+              <p class="section-note">Scheduled prompts use these defaults unless a workflow overrides its own inbox scope.</p>
+            </div>
             <details class="card section-card">
               <summary>
                 <div class="section-summary-copy">
@@ -1493,6 +1530,32 @@ function htmlPage(basePath: string): string {
       return state.config.apps.map((app) => \`<option value="\${app.id}" \${app.id === selectedAppId ? 'selected' : ''}>\${app.id || '(unset app id)'}</option>\`).join('');
     }
 
+    function findEnvironmentEntry(environment, key) {
+      return environment.find((entry) => entry.key === key);
+    }
+
+    function getEnvironmentValue(environment, key, fallback = '') {
+      return findEnvironmentEntry(environment, key)?.value || fallback;
+    }
+
+    function upsertEnvironmentEntry(environment, key, value, description, secret = false) {
+      const existing = findEnvironmentEntry(environment, key);
+      if (!value) {
+        const index = environment.findIndex((entry) => entry.key === key);
+        if (index >= 0) {
+          environment.splice(index, 1);
+        }
+        return;
+      }
+      if (existing) {
+        existing.value = value;
+        existing.secret = secret;
+        existing.description = description;
+        return;
+      }
+      environment.push({ key, value, secret, description });
+    }
+
     function renderEnvironmentList(containerId, environment, onRemove) {
       const container = document.getElementById(containerId);
       container.innerHTML = '';
@@ -1524,7 +1587,9 @@ function htmlPage(basePath: string): string {
             if (field === 'description' && !input.value) {
               delete entry.description;
             }
-            renderSecrets();
+            if (isCheckbox) {
+              renderSecrets();
+            }
             syncRawJson();
           });
         });
@@ -1578,8 +1643,10 @@ function htmlPage(basePath: string): string {
             if (field === 'description' && !input.value) {
               delete entry.description;
             }
-            onRenderFullProfile();
-            renderSecrets();
+            if (isCheckbox) {
+              onRenderFullProfile();
+              renderSecrets();
+            }
             syncRawJson();
           });
         });
@@ -1866,7 +1933,9 @@ function htmlPage(basePath: string): string {
                 delete channel[field];
               }
             }
-            renderSecrets();
+            if (isCheckbox || isSelect || field === 'type') {
+              renderSecrets();
+            }
             syncRawJson();
           });
         });
@@ -1931,7 +2000,6 @@ function htmlPage(basePath: string): string {
             if (field === 'description' && !input.value) {
               delete bot.description;
             }
-            renderSecrets();
             syncRawJson();
           });
         });
@@ -1946,6 +2014,9 @@ function htmlPage(basePath: string): string {
       document.getElementById('gatewayChatProfileAppId').innerHTML = appOptions(profile.appId);
       document.getElementById('gatewayChatProfileApiBaseUrl').value = profile.apiBaseUrl;
       document.getElementById('gatewayChatProfileEnvFilePath').value = profile.apiEnvFilePath;
+      document.getElementById('gatewayChatRedisUrl').value = getEnvironmentValue(profile.environment, 'REDIS_URL');
+      document.getElementById('gatewayChatDefaultUserId').value = getEnvironmentValue(profile.environment, 'CHAT_DEFAULT_USER_ID', 'me');
+      document.getElementById('gatewayChatDefaultChannelId').value = getEnvironmentValue(profile.environment, 'CHAT_DEFAULT_CHANNEL_ID', 'coach');
       document.getElementById('gatewayChatTtsEnabled').checked = profile.tts.enabled;
       document.getElementById('gatewayChatTtsBaseUrl').value = profile.tts.baseUrl;
       document.getElementById('gatewayChatTtsDefaultVoice').value = profile.tts.defaultVoice;
@@ -2132,9 +2203,6 @@ function htmlPage(basePath: string): string {
               renderGatewayChatPlatformProfile();
             } else {
               agent[field] = input.value;
-            }
-            if (field === 'endpointConfig') {
-              renderGatewayChatPlatformProfile();
             }
             syncRawJson();
           });
@@ -2618,8 +2686,10 @@ function htmlPage(basePath: string): string {
                 delete channel[field];
               }
             }
-            renderGatewayApiJobRuntimeProfile();
-            renderSecrets();
+            if (isCheckbox || input.tagName === 'SELECT') {
+              renderGatewayApiJobRuntimeProfile();
+              renderSecrets();
+            }
             syncRawJson();
           });
         });
@@ -2673,8 +2743,6 @@ function htmlPage(basePath: string): string {
             if (field === 'description' && !input.value) {
               delete bot.description;
             }
-            renderKulrsActivityProfile();
-            renderSecrets();
             syncRawJson();
           });
         });
@@ -2930,8 +2998,10 @@ function htmlPage(basePath: string): string {
               return;
             }
             node[field] = isCheckbox ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
-            renderRemoteWorkloads();
-            renderBedrockServers();
+            if (isCheckbox) {
+              renderRemoteWorkloads();
+              renderBedrockServers();
+            }
             syncRawJson();
           });
         });
@@ -3435,7 +3505,7 @@ function htmlPage(basePath: string): string {
         });
 
         const remoteIndex = state.config.remoteWorkloads.findIndex((candidate) => candidate === workload);
-        const updateMinecraftField = (field, value, removeWhenEmpty = false) => {
+        const updateMinecraftField = (field, value, removeWhenEmpty = false, shouldRerender = false) => {
           const targetWorkload = state.config.remoteWorkloads[remoteIndex];
           targetWorkload.minecraft = targetWorkload.minecraft || createDefaultMinecraftConfig();
           const previousMinecraft = { ...targetWorkload.minecraft };
@@ -3446,7 +3516,9 @@ function htmlPage(basePath: string): string {
           if (field === 'serverName' || field === 'worldName') {
             applyBedrockIdentityDefaults(targetWorkload, previousMinecraft, targetWorkload.minecraft);
           }
-          renderRemoteWorkloads();
+          if (shouldRerender) {
+            renderRemoteWorkloads();
+          }
           syncRawJson();
         };
 
@@ -3549,7 +3621,9 @@ function htmlPage(basePath: string): string {
               return;
             }
             state.config.remoteWorkloads[remoteIndex][field] = isCheckbox ? input.checked : input.value;
-            renderRemoteWorkloads();
+            if (isCheckbox || input.tagName === 'SELECT') {
+              renderRemoteWorkloads();
+            }
             syncRawJson();
           });
         });
@@ -3563,14 +3637,14 @@ function htmlPage(basePath: string): string {
               return;
             }
             if (isCheckbox) {
-              updateMinecraftField(field, input.checked);
+              updateMinecraftField(field, input.checked, false, true);
               return;
             }
             if (input.type === 'number') {
               updateMinecraftField(field, Number(input.value));
               return;
             }
-            updateMinecraftField(field, input.value || undefined, true);
+            updateMinecraftField(field, input.value || undefined, true, input.tagName === 'SELECT');
           });
         });
 
@@ -3605,7 +3679,6 @@ function htmlPage(basePath: string): string {
             } else {
               targetPack[field] = input.value;
             }
-            renderRemoteWorkloads();
             syncRawJson();
           });
         });
@@ -3977,6 +4050,24 @@ function htmlPage(basePath: string): string {
       element.addEventListener(kind === 'checkbox' ? 'change' : 'input', (event) => {
         const target = event.target;
         state.config.serviceProfiles.gatewayChatPlatform[key] = kind === 'checkbox' ? target.checked : target.value;
+        renderSecrets();
+        syncRawJson();
+      });
+    });
+    [
+      ['gatewayChatRedisUrl', 'REDIS_URL', 'Redis backing store for scheduled chat inbox messages'],
+      ['gatewayChatDefaultUserId', 'CHAT_DEFAULT_USER_ID', 'Default user scope for scheduled chat inbox messages'],
+      ['gatewayChatDefaultChannelId', 'CHAT_DEFAULT_CHANNEL_ID', 'Default inbox channel for scheduled chat inbox messages'],
+    ].forEach(([id, key, description]) => {
+      const element = document.getElementById(id);
+      element.addEventListener('input', (event) => {
+        upsertEnvironmentEntry(
+          state.config.serviceProfiles.gatewayChatPlatform.environment,
+          key,
+          event.target.value.trim(),
+          description,
+          false
+        );
         renderSecrets();
         syncRawJson();
       });
