@@ -6,16 +6,14 @@ What it does now:
 - sends morning, midday, and evening coaching check-ins
 - reads the ANCR plan plus recent notes from the `notes` repo
 - uses a local chat agent for the coaching response
+- publishes scheduled coach prompts into the `gateway-chat` inbox
 - appends each coaching message into today's note in the `notes` repo
 - commits and pushes those note updates
 
 What it does now for `gateway-chat`:
 - you can talk to a dedicated coach agent in `gateway-chat`
+- scheduled coach prompts land in the chat inbox for the configured `userId` / `channelId`
 - each coach exchange can be appended into the `notes` repo and pushed automatically
-
-What it does not do yet:
-- `gateway-chat` does not yet have a proactive inbox or notification surface for scheduled prompts
-- the scheduled morning/midday/evening prompts are therefore logged into notes, not pushed into the chat UI automatically
 
 Current path for saving your own response:
 - use the disabled `ancr-coach-log-progress` workflow
@@ -44,7 +42,19 @@ Make sure the runtime user for `gateway-api` can:
 - commit inside `/srv/example-notes`
 - push from `/srv/example-notes`
 
-## 2. Create The Coach Agent In Gateway Chat
+## 2. Point Gateway Chat At Redis
+
+Add these env vars to the `gateway-chat-platform` service profile:
+
+```text
+REDIS_URL=redis://<core-node-ip>:6379
+CHAT_DEFAULT_USER_ID=me
+CHAT_DEFAULT_CHANNEL_ID=coach
+```
+
+That gives `gateway-chat` a durable inbox for scheduled prompts.
+
+## 3. Create The Coach Agent In Gateway Chat
 
 Reference config:
 - [migration/ancr/ancr-coach-agent.json](/Users/jamescoghlan/code/gateway-control-plane/migration/ancr/ancr-coach-agent.json)
@@ -61,7 +71,7 @@ That is what causes normal `gateway-chat` conversations with the coach agent to:
 
 If you prefer to reuse `bruvie-d` instead of a dedicated coach agent, copy the same `notesSync` block into Bruvie-D's `endpointConfig.modelParams`.
 
-## 3. Import The Workflow Seed
+## 4. Import The Workflow Seed
 
 Seed file:
 - [migration/ancr/ancr-coach-workflows.json](/Users/jamescoghlan/code/gateway-control-plane/migration/ancr/ancr-coach-workflows.json)
@@ -80,28 +90,30 @@ Or use the admin UI workflow-seed import and point it at:
 migration/ancr/ancr-coach-workflows.json
 ```
 
-## 4. Confirm The Agent Id
+## 5. Confirm The Scope
 
 The seed defaults to:
-- `bruvie-d`
+- `userId = "me"`
+- `channelId = "coach"`
+- `threadId = "ancr-coach-me"`
 
-That is already a local-model agent in the example config.
+You can change those in the imported workflow input later, but keep them stable if you want all coach prompts and replies to stay in the same scoped thread.
 
-If you create the dedicated coach agent above, change the imported workflows to:
-- `agentId = "ancr-coach"`
-
-## 5. Daily Use
+## 6. Daily Use
 
 Scheduled workflows:
 - `ancr-coach-morning` at 8:00 AM
 - `ancr-coach-midday` at 12:30 PM
 - `ancr-coach-evening` at 6:30 PM
 
-These scheduled runs write the coach guidance into the `notes` repo and push it.
+These scheduled runs now do both:
+- write the coach guidance into the `notes` repo and push it
+- publish the same check-in into the `gateway-chat` inbox
 
 Interactive coaching:
 1. Open `gateway-chat`
-2. Talk to the `ancr-coach` agent, or `bruvie-d` if you reused that agent
+2. Open the `Inbox` panel and click the coach prompt
+3. Talk to the `ancr-coach` agent in that thread
 3. If `notesSync` is configured on that agent, each exchange is appended into the notes repo automatically
 
 Manual progress logging:
@@ -114,3 +126,4 @@ That run will:
 - append the progress note into today's note file
 - commit and push the notes repo
 - optionally add a short coach reflection into the notes file
+- publish that reflection into the `gateway-chat` inbox when `inbox` is configured

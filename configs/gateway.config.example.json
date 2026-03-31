@@ -343,6 +343,24 @@
           "description": "SQLite database location"
         },
         {
+          "key": "REDIS_URL",
+          "value": "redis://198.51.100.200:6379",
+          "secret": false,
+          "description": "Redis backing store for chat inbox delivery"
+        },
+        {
+          "key": "CHAT_DEFAULT_USER_ID",
+          "value": "me",
+          "secret": false,
+          "description": "Default user scope for scheduled chat inbox messages"
+        },
+        {
+          "key": "CHAT_DEFAULT_CHANNEL_ID",
+          "value": "coach",
+          "secret": false,
+          "description": "Default inbox channel for scheduled coach prompts"
+        },
+        {
           "key": "LM_STUDIO_A_BASE_URL",
           "value": "http://198.51.100.172:1234",
           "secret": false,

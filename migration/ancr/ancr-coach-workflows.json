@@ -11,11 +11,19 @@
       "mode": "check-in",
       "phase": "morning",
       "timeZone": "America/New_York",
-      "agentId": "bruvie-d",
+      "agentId": "ancr-coach",
       "planFilePath": "/opt/gateway-control-plane/docs/ancr-2-week-plan.md",
       "notesRepoPath": "/srv/example-notes",
       "notesSearchDirs": ["daily", "notes", "inbox"],
       "recentNotesLimit": 8,
+      "inbox": {
+        "userId": "me",
+        "channelId": "coach",
+        "threadId": "ancr-coach-me",
+        "threadTitle": "ANCR Coach",
+        "title": "Morning Check-In",
+        "kind": "coach_prompt"
+      },
       "noteLog": {
         "enabled": true,
         "commit": true
@@ -35,11 +43,19 @@
       "mode": "check-in",
       "phase": "midday",
       "timeZone": "America/New_York",
-      "agentId": "bruvie-d",
+      "agentId": "ancr-coach",
       "planFilePath": "/opt/gateway-control-plane/docs/ancr-2-week-plan.md",
       "notesRepoPath": "/srv/example-notes",
       "notesSearchDirs": ["daily", "notes", "inbox"],
       "recentNotesLimit": 8,
+      "inbox": {
+        "userId": "me",
+        "channelId": "coach",
+        "threadId": "ancr-coach-me",
+        "threadTitle": "ANCR Coach",
+        "title": "Midday Check-In",
+        "kind": "coach_prompt"
+      },
       "noteLog": {
         "enabled": true,
         "commit": true
@@ -59,11 +75,19 @@
       "mode": "check-in",
       "phase": "evening",
       "timeZone": "America/New_York",
-      "agentId": "bruvie-d",
+      "agentId": "ancr-coach",
       "planFilePath": "/opt/gateway-control-plane/docs/ancr-2-week-plan.md",
       "notesRepoPath": "/srv/example-notes",
       "notesSearchDirs": ["daily", "notes", "inbox"],
       "recentNotesLimit": 8,
+      "inbox": {
+        "userId": "me",
+        "channelId": "coach",
+        "threadId": "ancr-coach-me",
+        "threadTitle": "ANCR Coach",
+        "title": "Evening Check-In",
+        "kind": "coach_prompt"
+      },
       "noteLog": {
         "enabled": true,
         "commit": true
@@ -82,7 +106,7 @@
     "input": {
       "mode": "log-progress",
       "timeZone": "America/New_York",
-      "agentId": "bruvie-d",
+      "agentId": "ancr-coach",
       "planFilePath": "/opt/gateway-control-plane/docs/ancr-2-week-plan.md",
       "notesRepoPath": "/srv/example-notes",
       "notesSearchDirs": ["daily", "notes", "inbox"],
@@ -90,6 +114,14 @@
       "progressSource": "manual-workflow-run",
       "progressEntry": "Replace this text in the workflow input before clicking Run.",
       "includeReflection": true,
+      "inbox": {
+        "userId": "me",
+        "channelId": "coach",
+        "threadId": "ancr-coach-me",
+        "threadTitle": "ANCR Coach",
+        "title": "Progress Reflection",
+        "kind": "coach_reflection"
+      },
       "noteLog": {
         "enabled": true,
         "commit": true
