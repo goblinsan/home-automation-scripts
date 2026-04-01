@@ -1315,7 +1315,17 @@ export async function getPiProxyServiceStatus(config: GatewayConfig): Promise<Pi
     node,
     [
       `if systemctl show ${shellQuote(profile.systemdUnitName)} >/dev/null 2>&1; then`,
-      `systemctl show ${shellQuote(profile.systemdUnitName)} --property LoadState,ActiveState,SubState,UnitFileState,WorkingDirectory,ExecStart --value;`,
+      [
+        'systemctl show',
+        shellQuote(profile.systemdUnitName),
+        '-p LoadState',
+        '-p ActiveState',
+        '-p SubState',
+        '-p UnitFileState',
+        '-p WorkingDirectory',
+        '-p ExecStart',
+        '--value'
+      ].join(' ') + ';',
       'else',
       `printf '__MISSING__';`,
       'fi'

@@ -755,12 +755,26 @@ function htmlPage(basePath: string): string {
     .action-dock > * {
       pointer-events: auto;
     }
+    .action-dock-header {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
+    }
+    .action-dock-toggle {
+      padding: 6px 10px;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.96);
+    }
     .action-feed {
       border: 1px solid rgba(16, 50, 53, 0.18);
       background: rgba(255, 255, 255, 0.96);
       box-shadow: 0 12px 28px rgba(17, 30, 38, 0.16);
       max-height: 220px;
       overflow: auto;
+    }
+    .action-feed.is-collapsed {
+      display: none;
     }
     .action-feed-empty {
       margin: 0;
@@ -1907,6 +1921,9 @@ function htmlPage(basePath: string): string {
     </aside>
   </main>
   <div class="action-dock">
+    <div class="action-dock-header">
+      <button id="toggleActionFeedButton" class="action-dock-toggle">Hide History</button>
+    </div>
     <div id="status" class="status-ok">Current</div>
     <div id="actionFeed" class="action-feed">
       <p class="action-feed-empty">No recent actions.</p>
@@ -1925,6 +1942,7 @@ function htmlPage(basePath: string): string {
       ttsVoices: [],
       piProxyRegistry: null,
       piProxyStatus: null,
+      actionFeedCollapsed: false,
       agentRun: {
         agentId: '',
         prompt: 'Give me a short readiness check in character, then confirm the local model route is working.',
@@ -1936,12 +1954,35 @@ function htmlPage(basePath: string): string {
       activeTab: 'overview'
     };
     const basePath = document.querySelector('meta[name="gateway-base-path"]').content || '/';
+    let actionFeedCollapseTimer = null;
+
+    function applyActionFeedVisibility() {
+      const feed = document.getElementById('actionFeed');
+      const toggle = document.getElementById('toggleActionFeedButton');
+      if (!feed || !toggle) {
+        return;
+      }
+      feed.classList.toggle('is-collapsed', state.actionFeedCollapsed);
+      toggle.textContent = state.actionFeedCollapsed ? 'Show History' : 'Hide History';
+    }
+
+    function scheduleActionFeedAutoCollapse() {
+      if (actionFeedCollapseTimer) {
+        clearTimeout(actionFeedCollapseTimer);
+      }
+      actionFeedCollapseTimer = setTimeout(() => {
+        state.actionFeedCollapsed = true;
+        applyActionFeedVisibility();
+      }, 5000);
+    }
 
     function pushActionFeed(message, kind = 'ok') {
       const feed = document.getElementById('actionFeed');
       if (!feed) {
         return;
       }
+      state.actionFeedCollapsed = false;
+      applyActionFeedVisibility();
       const empty = feed.querySelector('.action-feed-empty');
       if (empty) {
         empty.remove();
@@ -1965,6 +2006,15 @@ function htmlPage(basePath: string): string {
       status.textContent = message;
       status.title = message;
       status.className = kind === 'error' ? 'status-error' : kind === 'progress' ? 'status-progress' : 'status-ok';
+      if (kind === 'progress') {
+        if (actionFeedCollapseTimer) {
+          clearTimeout(actionFeedCollapseTimer);
+        }
+        state.actionFeedCollapsed = false;
+        applyActionFeedVisibility();
+      } else {
+        scheduleActionFeedAutoCollapse();
+      }
       if (options.log !== false) {
         pushActionFeed(message, kind);
       }
@@ -4942,6 +4992,16 @@ function htmlPage(basePath: string): string {
       setTimeout(() => button.classList.remove('button-tapped'), 180);
     }, true);
 
+    document.getElementById('toggleActionFeedButton').addEventListener('click', () => {
+      state.actionFeedCollapsed = !state.actionFeedCollapsed;
+      if (!state.actionFeedCollapsed) {
+        scheduleActionFeedAutoCollapse();
+      } else if (actionFeedCollapseTimer) {
+        clearTimeout(actionFeedCollapseTimer);
+      }
+      applyActionFeedVisibility();
+    });
+
     document.querySelectorAll('[data-open-tab]').forEach((button) => {
       button.addEventListener('click', () => {
         state.activeTab = button.dataset.openTab || 'overview';
@@ -5583,6 +5643,7 @@ function htmlPage(basePath: string): string {
     fetchConfig()
       .then(() => Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime(), fetchTtsVoices(), fetchChatProviders()]))
       .catch((error) => setStatus(error.message, 'error'));
+    applyActionFeedVisibility();
     setInterval(() => {
       fetchRuntime().catch(() => undefined);
     }, 15000);
