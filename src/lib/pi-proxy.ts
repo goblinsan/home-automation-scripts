@@ -182,6 +182,23 @@ async function reconcile() {
   const nextSpecs = registryServers.map((entry, index) => normalizeEntry(entry, index));
   const nextKeys = new Set(nextSpecs.map((entry) => entry.key));
 
+  await writeState({
+    updatedAt: new Date().toISOString(),
+    registryUrl: runtimeConfig.registryUrl,
+    lastError: null,
+    servers: nextSpecs.map((spec) => ({
+      workloadId: spec.workloadId,
+      serverName: spec.serverName,
+      worldName: spec.worldName,
+      motd: spec.motd,
+      levelName: spec.levelName,
+      targetHost: spec.targetHost,
+      targetPort: spec.targetPort,
+      localPort: spec.localPort
+    }))
+  });
+  console.log('[pi-proxy] wrote state for ' + nextSpecs.length + ' world(s)');
+
   for (const [key, record] of activeServers.entries()) {
     if (!nextKeys.has(key)) {
       console.log('[pi-proxy] removing proxy ' + key);
@@ -205,22 +222,6 @@ async function reconcile() {
       });
     }
   }
-
-  await writeState({
-    updatedAt: new Date().toISOString(),
-    registryUrl: runtimeConfig.registryUrl,
-    lastError: null,
-    servers: nextSpecs.map((spec) => ({
-      workloadId: spec.workloadId,
-      serverName: spec.serverName,
-      worldName: spec.worldName,
-      motd: spec.motd,
-      levelName: spec.levelName,
-      targetHost: spec.targetHost,
-      targetPort: spec.targetPort,
-      localPort: spec.localPort
-    }))
-  });
 }
 
 async function main() {
