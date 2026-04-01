@@ -664,11 +664,14 @@ export interface PiProxyServiceStatus {
   systemdUnitName: string;
   registryUrl: string;
   serviceInstalled: boolean;
+  managedConfigMatched: boolean;
   activeState: string;
   subState: string;
   unitFileState: string;
   summary: string;
   runtimeState: PiProxyRuntimeState | null;
+  workingDirectory?: string;
+  execStart?: string;
   error?: string;
 }
 
@@ -1241,12 +1244,16 @@ export async function deployPiProxyService(
   const systemdReloadCommand = node.systemdReloadCommand ?? 'sudo systemctl daemon-reload';
   const systemdEnableCommand = node.systemdEnableTimerCommand ?? 'sudo systemctl enable --now';
 
-  await runRemoteShell(node, `mkdir -p ${shellQuote(profile.installRoot)}`, context);
+  await runRemoteShell(
+    node,
+    `sudo mkdir -p ${shellQuote(profile.installRoot)} && sudo chown -R ${shellQuote(`${node.sshUser}:${node.sshUser}`)} ${shellQuote(profile.installRoot)}`,
+    context
+  );
   await copyDirectoryToRemote(node, localDir, profile.installRoot, context);
   await runRemoteShell(node, `cd ${shellQuote(profile.installRoot)} && npm install --omit=dev`, context);
   await runRemoteShell(
     node,
-    `install -m 0644 ${shellQuote(`${profile.installRoot}/systemd/${profile.systemdUnitName}`)} ${shellQuote(join(systemdUnitDirectory, profile.systemdUnitName))}`,
+    `sudo install -m 0644 ${shellQuote(`${profile.installRoot}/systemd/${profile.systemdUnitName}`)} ${shellQuote(join(systemdUnitDirectory, profile.systemdUnitName))}`,
     context
   );
   await runRemoteShell(node, systemdReloadCommand, context);
@@ -1277,6 +1284,7 @@ export async function getPiProxyServiceStatus(config: GatewayConfig): Promise<Pi
       systemdUnitName: profile.systemdUnitName,
       registryUrl: buildPiProxyRegistryUrl(config),
       serviceInstalled: false,
+      managedConfigMatched: false,
       activeState: 'disabled',
       subState: 'disabled',
       unitFileState: 'disabled',
@@ -1295,6 +1303,7 @@ export async function getPiProxyServiceStatus(config: GatewayConfig): Promise<Pi
       systemdUnitName: profile.systemdUnitName,
       registryUrl: buildPiProxyRegistryUrl(config),
       serviceInstalled: false,
+      managedConfigMatched: false,
       activeState: 'disabled',
       subState: 'disabled',
       unitFileState: 'disabled',
@@ -1306,7 +1315,7 @@ export async function getPiProxyServiceStatus(config: GatewayConfig): Promise<Pi
     node,
     [
       `if systemctl show ${shellQuote(profile.systemdUnitName)} >/dev/null 2>&1; then`,
-      `systemctl show ${shellQuote(profile.systemdUnitName)} --property LoadState,ActiveState,SubState,UnitFileState --value;`,
+      `systemctl show ${shellQuote(profile.systemdUnitName)} --property LoadState,ActiveState,SubState,UnitFileState,WorkingDirectory,ExecStart --value;`,
       'else',
       `printf '__MISSING__';`,
       'fi'
@@ -1327,6 +1336,7 @@ export async function getPiProxyServiceStatus(config: GatewayConfig): Promise<Pi
       systemdUnitName: profile.systemdUnitName,
       registryUrl: buildPiProxyRegistryUrl(config),
       serviceInstalled: false,
+      managedConfigMatched: false,
       activeState: 'error',
       subState: 'error',
       unitFileState: 'unknown',
@@ -1346,6 +1356,7 @@ export async function getPiProxyServiceStatus(config: GatewayConfig): Promise<Pi
       systemdUnitName: profile.systemdUnitName,
       registryUrl: buildPiProxyRegistryUrl(config),
       serviceInstalled: false,
+      managedConfigMatched: false,
       activeState: 'missing',
       subState: 'missing',
       unitFileState: 'not-found',
@@ -1354,9 +1365,27 @@ export async function getPiProxyServiceStatus(config: GatewayConfig): Promise<Pi
     };
   }
 
-  const [loadState = 'unknown', activeState = 'unknown', subState = 'unknown', unitFileState = 'unknown'] = output.split('\n');
+  const [
+    loadState = 'unknown',
+    activeState = 'unknown',
+    subState = 'unknown',
+    unitFileState = 'unknown',
+    workingDirectory = '',
+    execStart = ''
+  ] = output.split('\n');
   const serviceInstalled = loadState !== 'not-found';
   const serverCount = Array.isArray(runtimeState?.servers) ? runtimeState.servers.length : 0;
+  const managedConfigMatched = serviceInstalled &&
+    workingDirectory.trim() === profile.installRoot &&
+    execStart.includes(`${profile.installRoot}/proxy.mjs`) &&
+    execStart.includes(`${profile.installRoot}/proxy-config.json`);
+  const summary = !serviceInstalled
+    ? 'Pi proxy service is not installed on the node'
+    : !managedConfigMatched
+      ? 'Pi proxy service exists but still points to a different install path'
+      : activeState === 'active'
+        ? `Pi proxy active with ${serverCount} advertised world(s)`
+        : `Pi proxy service state: ${activeState}/${subState}`;
 
   return {
     enabled: true,
@@ -1366,12 +1395,13 @@ export async function getPiProxyServiceStatus(config: GatewayConfig): Promise<Pi
     systemdUnitName: profile.systemdUnitName,
     registryUrl: buildPiProxyRegistryUrl(config),
     serviceInstalled,
+    managedConfigMatched,
     activeState,
     subState,
     unitFileState,
-    summary: activeState === 'active'
-      ? `Pi proxy active with ${serverCount} advertised world(s)`
-      : `Pi proxy service state: ${activeState}/${subState}`,
-    runtimeState
+    summary,
+    runtimeState,
+    workingDirectory: workingDirectory || undefined,
+    execStart: execStart || undefined
   };
 }
