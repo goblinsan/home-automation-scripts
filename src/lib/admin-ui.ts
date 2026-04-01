@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { buildArtifacts } from './build.ts';
 import { getAllScheduledJobs, loadGatewayConfig, parseGatewayConfig, saveGatewayConfig, type GatewayConfig } from './config.ts';
 import {
@@ -108,6 +109,198 @@ interface ChatProviderModelRecord {
   id: string;
   name?: string;
   description?: string;
+}
+
+interface MinecraftManualUpdateRecord {
+  workloadId: string;
+  mode: 'now' | 'minutes' | 'at';
+  requestedAt: string;
+  runAt: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  delayMinutes: number | null;
+  startedAt?: string;
+  completedAt?: string;
+  message?: string;
+  error?: string;
+}
+
+interface MinecraftManualUpdateStore {
+  version: 1;
+  updates: Record<string, MinecraftManualUpdateRecord>;
+}
+
+interface MinecraftManualUpdateScheduler {
+  filePath: string;
+  state: MinecraftManualUpdateStore;
+  timers: Map<string, ReturnType<typeof setTimeout>>;
+  configPath: string;
+}
+
+function createEmptyMinecraftManualUpdateStore(): MinecraftManualUpdateStore {
+  return {
+    version: 1,
+    updates: {}
+  };
+}
+
+async function saveMinecraftManualUpdateScheduler(scheduler: MinecraftManualUpdateScheduler): Promise<void> {
+  await mkdir(dirname(scheduler.filePath), { recursive: true });
+  await writeFile(scheduler.filePath, `${JSON.stringify(scheduler.state, null, 2)}\n`, 'utf8');
+}
+
+function clearMinecraftManualUpdateTimer(scheduler: MinecraftManualUpdateScheduler, workloadId: string): void {
+  const timer = scheduler.timers.get(workloadId);
+  if (timer) {
+    clearTimeout(timer);
+    scheduler.timers.delete(workloadId);
+  }
+}
+
+async function executeMinecraftManualUpdate(
+  scheduler: MinecraftManualUpdateScheduler,
+  workloadId: string
+): Promise<MinecraftManualUpdateRecord | null> {
+  const record = scheduler.state.updates[workloadId];
+  if (!record || record.status !== 'pending') {
+    return record || null;
+  }
+
+  clearMinecraftManualUpdateTimer(scheduler, workloadId);
+  record.status = 'running';
+  record.startedAt = new Date().toISOString();
+  record.message = 'Running safe update';
+  delete record.error;
+  await saveMinecraftManualUpdateScheduler(scheduler);
+
+  try {
+    const config = await loadGatewayConfig(scheduler.configPath);
+    await controlMinecraftWorkload(
+      config,
+      workloadId,
+      'update-if-empty',
+      {},
+      { dryRun: false, log: () => undefined }
+    );
+    record.status = 'completed';
+    record.completedAt = new Date().toISOString();
+    record.message = 'Safe update finished';
+  } catch (error) {
+    record.status = 'failed';
+    record.completedAt = new Date().toISOString();
+    record.error = error instanceof Error ? error.message : String(error);
+    record.message = 'Safe update failed';
+  }
+
+  await saveMinecraftManualUpdateScheduler(scheduler);
+  return record;
+}
+
+function scheduleMinecraftManualUpdateTimer(
+  scheduler: MinecraftManualUpdateScheduler,
+  workloadId: string
+): void {
+  clearMinecraftManualUpdateTimer(scheduler, workloadId);
+  const record = scheduler.state.updates[workloadId];
+  if (!record || record.status !== 'pending') {
+    return;
+  }
+
+  const runAtMs = new Date(record.runAt).getTime();
+  if (!Number.isFinite(runAtMs)) {
+    record.status = 'failed';
+    record.completedAt = new Date().toISOString();
+    record.error = `Invalid runAt timestamp: ${record.runAt}`;
+    void saveMinecraftManualUpdateScheduler(scheduler);
+    return;
+  }
+
+  const delayMs = Math.max(0, runAtMs - Date.now());
+  const timer = setTimeout(() => {
+    void executeMinecraftManualUpdate(scheduler, workloadId);
+  }, delayMs);
+  scheduler.timers.set(workloadId, timer);
+}
+
+async function loadMinecraftManualUpdateScheduler(configPath: string, buildOutDir: string): Promise<MinecraftManualUpdateScheduler> {
+  const filePath = join(buildOutDir, 'admin-ui-runtime', 'minecraft-manual-updates.json');
+  let state = createEmptyMinecraftManualUpdateStore();
+
+  if (existsSync(filePath)) {
+    try {
+      const raw = await readFile(filePath, 'utf8');
+      const parsed = JSON.parse(raw) as Partial<MinecraftManualUpdateStore>;
+      if (parsed && parsed.version === 1 && parsed.updates && typeof parsed.updates === 'object') {
+        state = {
+          version: 1,
+          updates: parsed.updates as Record<string, MinecraftManualUpdateRecord>
+        };
+      }
+    } catch {
+      state = createEmptyMinecraftManualUpdateStore();
+    }
+  }
+
+  const scheduler: MinecraftManualUpdateScheduler = {
+    filePath,
+    state,
+    timers: new Map(),
+    configPath
+  };
+
+  for (const workloadId of Object.keys(state.updates)) {
+    const record = state.updates[workloadId];
+    if (record?.status === 'pending') {
+      scheduleMinecraftManualUpdateTimer(scheduler, workloadId);
+    }
+  }
+
+  return scheduler;
+}
+
+async function queueMinecraftManualUpdate(
+  scheduler: MinecraftManualUpdateScheduler,
+  workloadId: string,
+  mode: 'now' | 'minutes' | 'at',
+  runAt: string,
+  delayMinutes: number | null
+): Promise<MinecraftManualUpdateRecord> {
+  clearMinecraftManualUpdateTimer(scheduler, workloadId);
+  const record: MinecraftManualUpdateRecord = {
+    workloadId,
+    mode,
+    requestedAt: new Date().toISOString(),
+    runAt,
+    status: 'pending',
+    delayMinutes,
+    message: mode === 'now' ? 'Queued to run now' : 'Queued safe update'
+  };
+  scheduler.state.updates[workloadId] = record;
+  await saveMinecraftManualUpdateScheduler(scheduler);
+
+  if (new Date(runAt).getTime() <= Date.now()) {
+    await executeMinecraftManualUpdate(scheduler, workloadId);
+  } else {
+    scheduleMinecraftManualUpdateTimer(scheduler, workloadId);
+  }
+
+  return scheduler.state.updates[workloadId];
+}
+
+async function cancelMinecraftManualUpdate(
+  scheduler: MinecraftManualUpdateScheduler,
+  workloadId: string
+): Promise<MinecraftManualUpdateRecord | null> {
+  const record = scheduler.state.updates[workloadId];
+  if (!record || record.status !== 'pending') {
+    return null;
+  }
+
+  clearMinecraftManualUpdateTimer(scheduler, workloadId);
+  record.status = 'cancelled';
+  record.completedAt = new Date().toISOString();
+  record.message = 'Cancelled pending safe update';
+  await saveMinecraftManualUpdateScheduler(scheduler);
+  return record;
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
@@ -3327,19 +3520,28 @@ function htmlPage(basePath: string): string {
       workloads.forEach((workload) => {
         const minecraft = workload.minecraft || createDefaultMinecraftConfig();
         const minecraftStatus = state.minecraftStatuses[workload.id];
+        const autoUpdate = minecraftStatus?.autoUpdate;
+        const autoUpdateStatus = describeAutoUpdateStatus(autoUpdate);
+        const manualUpdate = minecraftStatus?.manualUpdate;
         const workerSummary = describeContainerStatus(minecraftStatus?.worker);
         const serverSummary = describeContainerStatus(minecraftStatus?.server);
         const portSummary = minecraftStatus
           ? formatPortMappings(minecraftStatus.server?.ports, minecraftStatus.server?.networkMode)
           : 'not checked yet';
         const startedLine = minecraftStatus?.server?.startedAt
-          ? '<p><strong>Started:</strong> ' + minecraftStatus.server.startedAt + '</p>'
+          ? '<p><strong>Started:</strong> ' + formatTimestamp(minecraftStatus.server.startedAt) + '</p>'
           : '';
         const workerErrorLine = minecraftStatus?.worker?.error
           ? '<p><strong>Worker Error:</strong> ' + minecraftStatus.worker.error + '</p>'
           : '';
         const serverErrorLine = minecraftStatus?.server?.error
           ? '<p><strong>Server Error:</strong> ' + minecraftStatus.server.error + '</p>'
+          : '';
+        const autoUpdateWorkerConfigErrorLine = autoUpdate?.workerConfigError
+          ? '<p><strong>Worker Config Error:</strong> ' + autoUpdate.workerConfigError + '</p>'
+          : '';
+        const autoUpdateWorkerStateErrorLine = autoUpdate?.workerStateError
+          ? '<p><strong>Worker State Error:</strong> ' + autoUpdate.workerStateError + '</p>'
           : '';
         const element = document.createElement('div');
         element.className = 'card';
@@ -3366,6 +3568,23 @@ function htmlPage(basePath: string): string {
                 \${startedLine}
                 \${workerErrorLine}
                 \${serverErrorLine}
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="split-actions">
+              <div>
+                <span class="pill">Auto Update</span>
+                <p><strong>Status:</strong> \${autoUpdateStatus.label}</p>
+                <p>\${autoUpdateStatus.detail}</p>
+                <p><strong>Configured Schedule:</strong> \${minecraft.autoUpdateEnabled ? (minecraft.autoUpdateSchedule || 'missing') : 'disabled'}</p>
+                <p><strong>Worker Schedule:</strong> \${autoUpdate?.workerSchedule || 'not deployed'}</p>
+                <p><strong>Worker Timezone:</strong> \${autoUpdate?.workerTimeZone || 'unknown'}</p>
+                <p><strong>Worker Poll Interval:</strong> \${autoUpdate?.workerPollIntervalSeconds ? autoUpdate.workerPollIntervalSeconds + 's' : 'unknown'}</p>
+                <p><strong>Last Scheduled Check:</strong> \${formatTimestamp(autoUpdate?.lastRunAt)}</p>
+                <p><strong>Next Scheduled Check:</strong> \${formatTimestamp(autoUpdate?.nextRunAt)}</p>
+                \${autoUpdateWorkerConfigErrorLine}
+                \${autoUpdateWorkerStateErrorLine}
               </div>
             </div>
           </div>
@@ -3460,7 +3679,6 @@ function htmlPage(basePath: string): string {
               <button data-action="stop">Stop</button>
               <button data-action="restart">Restart</button>
               <button data-action="redeploy">Redeploy</button>
-              <button data-action="update">Update</button>
             </div>
             <div class="row">
               <label>Broadcast Message<input data-control="broadcastMessage" placeholder="Server message" /></label>
@@ -3471,6 +3689,27 @@ function htmlPage(basePath: string): string {
               <button data-action="broadcast">Broadcast</button>
               <button data-action="kick">Kick</button>
               <button data-action="ban">Ban</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="split-actions">
+              <div>
+                <span class="pill">Manual Update</span>
+                <p>Manual updates use the safe <code>update-if-empty</code> path and will skip if players are online.</p>
+                <p><strong>Current Queue State:</strong> \${describeManualUpdate(manualUpdate)}</p>
+              </div>
+            </div>
+            <div class="toolbar">
+              <button data-action="update-now">Update Now</button>
+              <button data-action="cancel-scheduled-update" \${manualUpdate?.status === 'pending' ? '' : 'disabled'}>Cancel Pending Update</button>
+            </div>
+            <div class="row">
+              <label>Update In Minutes<input type="number" min="0" step="1" data-control="updateDelayMinutes" value="\${manualUpdate?.status === 'pending' && manualUpdate.mode === 'minutes' && manualUpdate.delayMinutes !== null ? manualUpdate.delayMinutes : 15}" /></label>
+              <label>Update At Time<input type="datetime-local" data-control="updateAt" value="\${formatDateTimeLocalValue(manualUpdate?.status === 'pending' && manualUpdate.mode === 'at' ? manualUpdate.runAt : undefined)}" /></label>
+            </div>
+            <div class="toolbar">
+              <button data-action="schedule-update-delay">Schedule In Minutes</button>
+              <button data-action="schedule-update-at">Schedule At Time</button>
             </div>
           </div>
         \`;
@@ -3573,8 +3812,7 @@ function htmlPage(basePath: string): string {
         [
           ['start', 'start'],
           ['stop', 'stop'],
-          ['restart', 'restart'],
-          ['update', 'update-if-empty']
+          ['restart', 'restart']
         ].forEach(([buttonAction, action]) => {
           element.querySelector(\`[data-action="\${buttonAction}"]\`).addEventListener('click', async () => {
             const button = element.querySelector(\`[data-action="\${buttonAction}"]\`);
@@ -3587,6 +3825,78 @@ function htmlPage(basePath: string): string {
                 setStatus(error.message, 'error');
               }
             });
+          });
+        });
+
+        element.querySelector('[data-action="update-now"]').addEventListener('click', async () => {
+          const button = element.querySelector('[data-action="update-now"]');
+          await withBusyButton(button, 'Updating…', async () => {
+            try {
+              await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/update-request\`, {
+                mode: 'now'
+              });
+              await refreshMinecraftStatus(workload.id);
+              setStatus('Queued Bedrock update now');
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
+        });
+
+        element.querySelector('[data-action="schedule-update-delay"]').addEventListener('click', async () => {
+          const button = element.querySelector('[data-action="schedule-update-delay"]');
+          await withBusyButton(button, 'Scheduling…', async () => {
+            try {
+              const delayMinutes = Number(element.querySelector('[data-control="updateDelayMinutes"]').value);
+              if (!Number.isFinite(delayMinutes) || delayMinutes < 0) {
+                throw new Error('Update delay must be a non-negative number of minutes');
+              }
+              await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/update-request\`, {
+                mode: 'minutes',
+                delayMinutes
+              });
+              await refreshMinecraftStatus(workload.id);
+              setStatus(\`Queued Bedrock update in \${delayMinutes} minute(s)\`);
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
+        });
+
+        element.querySelector('[data-action="schedule-update-at"]').addEventListener('click', async () => {
+          const button = element.querySelector('[data-action="schedule-update-at"]');
+          await withBusyButton(button, 'Scheduling…', async () => {
+            try {
+              const rawValue = element.querySelector('[data-control="updateAt"]').value;
+              if (!rawValue) {
+                throw new Error('Pick a date and time first');
+              }
+              const runAt = new Date(rawValue);
+              if (Number.isNaN(runAt.getTime())) {
+                throw new Error(\`Invalid update time: \${rawValue}\`);
+              }
+              await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/update-request\`, {
+                mode: 'at',
+                runAt: runAt.toISOString()
+              });
+              await refreshMinecraftStatus(workload.id);
+              setStatus(\`Queued Bedrock update for \${runAt.toLocaleString()}\`);
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
+        });
+
+        element.querySelector('[data-action="cancel-scheduled-update"]').addEventListener('click', async () => {
+          const button = element.querySelector('[data-action="cancel-scheduled-update"]');
+          await withBusyButton(button, 'Cancelling…', async () => {
+            try {
+              await requestJson('DELETE', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/update-request\`);
+              await refreshMinecraftStatus(workload.id);
+              setStatus('Cancelled pending Bedrock update');
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
           });
         });
 
@@ -3858,6 +4168,91 @@ function htmlPage(basePath: string): string {
         return 'running';
       }
       return container.status || 'stopped';
+    }
+
+    function formatTimestamp(value) {
+      if (!value) {
+        return 'not yet';
+      }
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+      return date.toLocaleString();
+    }
+
+    function formatDateTimeLocalValue(value) {
+      const date = value ? new Date(value) : new Date();
+      if (Number.isNaN(date.getTime())) {
+        return '';
+      }
+      const pad = (input) => String(input).padStart(2, '0');
+      return [
+        date.getFullYear(),
+        pad(date.getMonth() + 1),
+        pad(date.getDate())
+      ].join('-') + 'T' + [pad(date.getHours()), pad(date.getMinutes())].join(':');
+    }
+
+    function describeAutoUpdateStatus(autoUpdate) {
+      if (!autoUpdate) {
+        return {
+          label: 'unknown',
+          detail: 'Auto-update status has not been checked yet.'
+        };
+      }
+
+      switch (autoUpdate.status) {
+        case 'running':
+          return {
+            label: 'running',
+            detail: 'The update schedule is deployed to gateway-worker and the worker container is running.'
+          };
+        case 'disabled':
+          return {
+            label: 'disabled',
+            detail: 'Auto-update is disabled in config.'
+          };
+        case 'not-deployed':
+          return {
+            label: 'not deployed',
+            detail: 'This Bedrock workload is not present in the deployed gateway-worker config yet. Apply or redeploy the server.'
+          };
+        case 'worker-stopped':
+          return {
+            label: 'worker stopped',
+            detail: 'The gateway-worker container is not running, so no schedule is being evaluated.'
+          };
+        case 'misconfigured':
+          return {
+            label: 'misconfigured',
+            detail: 'The worker config for this Bedrock server is missing the auto-update schedule.'
+          };
+        default:
+          return {
+            label: autoUpdate.status || 'unknown',
+            detail: autoUpdate.summary || 'Unknown auto-update state.'
+          };
+      }
+    }
+
+    function describeManualUpdate(record) {
+      if (!record) {
+        return 'No manual update queued.';
+      }
+      if (record.status === 'pending') {
+        return 'Queued for ' + formatTimestamp(record.runAt) + '.';
+      }
+      if (record.status === 'running') {
+        return 'Running now.';
+      }
+      if (record.status === 'completed') {
+        return 'Last manual update ran at ' + formatTimestamp(record.completedAt || record.startedAt || record.runAt) + '.';
+      }
+      if (record.status === 'cancelled') {
+        return 'Last queued manual update was cancelled.';
+      }
+      return 'Last manual update failed: ' + (record.error || 'unknown error');
     }
 
     function formatPortMappings(ports, networkMode) {
@@ -4472,6 +4867,9 @@ function htmlPage(basePath: string): string {
     setInterval(() => {
       fetchRuntime().catch(() => undefined);
     }, 15000);
+    setInterval(() => {
+      refreshAllMinecraftStatuses().catch(() => undefined);
+    }, 60000);
   </script>
 </body>
 </html>`;
@@ -4771,6 +5169,7 @@ async function deleteTtsVoice(config: GatewayConfig, voiceId: string): Promise<{
 
 export async function startAdminServer(options: AdminServerOptions): Promise<void> {
   const startedAtMs = Date.now();
+  const minecraftUpdateScheduler = await loadMinecraftManualUpdateScheduler(options.configPath, options.buildOutDir);
   const server = createServer(async (request, response) => {
     try {
       const path = getRequestPath(request);
@@ -4781,6 +5180,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       const remoteWorkloadDeployMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/deploy$/);
       const remoteWorkloadStatusMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/status$/);
       const remoteMinecraftActionMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/(start|stop|restart|broadcast|kick|ban|update-if-empty)$/);
+      const remoteMinecraftUpdateRequestMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/update-request$/);
 
       if (request.method === 'GET' && path === '/') {
         sendHtml(response, htmlPage(basePath));
@@ -4980,7 +5380,10 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           config,
           decodeURIComponent(remoteWorkloadStatusMatch[1])
         );
-        sendJson(response, 200, status);
+        sendJson(response, 200, {
+          ...status,
+          manualUpdate: minecraftUpdateScheduler.state.updates[decodeURIComponent(remoteWorkloadStatusMatch[1])] || null
+        });
         return;
       }
 
@@ -4995,6 +5398,71 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           { dryRun: false, log: () => undefined }
         );
         sendJson(response, 200, { message: `Minecraft action completed: ${remoteMinecraftActionMatch[2]}` });
+        return;
+      }
+
+      if (remoteMinecraftUpdateRequestMatch && request.method === 'POST') {
+        const workloadId = decodeURIComponent(remoteMinecraftUpdateRequestMatch[1]);
+        const body = JSON.parse(await readBody(request) || '{}') as {
+          mode?: 'now' | 'minutes' | 'at';
+          delayMinutes?: number;
+          runAt?: string;
+        };
+        const mode = body.mode === 'minutes' || body.mode === 'at' ? body.mode : 'now';
+        if (mode === 'minutes') {
+          const delayMinutes = Number(body.delayMinutes);
+          if (!Number.isFinite(delayMinutes) || delayMinutes < 0) {
+            throw new Error('delayMinutes must be a non-negative number');
+          }
+          const record = await queueMinecraftManualUpdate(
+            minecraftUpdateScheduler,
+            workloadId,
+            'minutes',
+            new Date(Date.now() + delayMinutes * 60_000).toISOString(),
+            delayMinutes
+          );
+          sendJson(response, 200, { message: `Queued Bedrock update in ${delayMinutes} minute(s)`, manualUpdate: record });
+          return;
+        }
+
+        if (mode === 'at') {
+          if (typeof body.runAt !== 'string' || body.runAt.trim().length === 0) {
+            throw new Error('runAt is required for mode=at');
+          }
+          const runAt = new Date(body.runAt);
+          if (Number.isNaN(runAt.getTime())) {
+            throw new Error(`Invalid runAt: ${body.runAt}`);
+          }
+          const record = await queueMinecraftManualUpdate(
+            minecraftUpdateScheduler,
+            workloadId,
+            'at',
+            runAt.toISOString(),
+            null
+          );
+          sendJson(response, 200, { message: `Queued Bedrock update for ${runAt.toISOString()}`, manualUpdate: record });
+          return;
+        }
+
+        const record = await queueMinecraftManualUpdate(
+          minecraftUpdateScheduler,
+          workloadId,
+          'now',
+          new Date().toISOString(),
+          null
+        );
+        sendJson(response, 200, { message: 'Triggered Bedrock update now', manualUpdate: record });
+        return;
+      }
+
+      if (remoteMinecraftUpdateRequestMatch && request.method === 'DELETE') {
+        const workloadId = decodeURIComponent(remoteMinecraftUpdateRequestMatch[1]);
+        const record = await cancelMinecraftManualUpdate(minecraftUpdateScheduler, workloadId);
+        if (!record) {
+          sendJson(response, 200, { message: 'No pending Bedrock update to cancel', manualUpdate: null });
+          return;
+        }
+        sendJson(response, 200, { message: 'Cancelled pending Bedrock update', manualUpdate: record });
         return;
       }
 

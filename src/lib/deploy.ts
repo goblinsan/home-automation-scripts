@@ -604,9 +604,29 @@ export interface MinecraftWorkloadStatus {
   configuredServerPort: number | null;
   worker: RemoteContainerStatus;
   server: RemoteContainerStatus;
+  autoUpdate: MinecraftAutoUpdateStatus;
 }
 
 type MinecraftControlAction = 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty';
+
+export interface MinecraftAutoUpdateStatus {
+  status: 'running' | 'disabled' | 'not-deployed' | 'worker-stopped' | 'misconfigured';
+  summary: string;
+  configuredEnabled: boolean;
+  configuredSchedule: string | null;
+  workerConfigPresent: boolean;
+  workerConfigError?: string;
+  registeredInWorker: boolean;
+  workerEnabled: boolean;
+  workerSchedule: string | null;
+  workerTimeZone: string | null;
+  workerPollIntervalSeconds: number | null;
+  workerStatePresent: boolean;
+  workerStateError?: string;
+  lastRunAt: string | null;
+  lastSlot: string | null;
+  nextRunAt: string | null;
+}
 
 function requireRemoteWorkloadEnabled(workload: RemoteWorkloadConfig): void {
   if (!workload.enabled) {
@@ -727,6 +747,268 @@ async function inspectRemoteContainer(node: WorkerNodeConfig, containerName: str
   }
 }
 
+function getDatePartsForTimeZone(date: Date, timeZone: string): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+} {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  const values = Object.fromEntries(
+    formatter.formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value])
+  );
+
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+    second: Number(values.second)
+  };
+}
+
+function matchesScheduleAtExactSecond(schedule: string, at: Date, timeZone: string): boolean {
+  const everyMinutes = /^\*:(\d{1,2})\/(\d{1,2})$/u.exec(schedule);
+  if (everyMinutes) {
+    const start = Number(everyMinutes[1]);
+    const step = Number(everyMinutes[2]);
+    const parts = getDatePartsForTimeZone(at, timeZone);
+    return parts.second === 0 && parts.minute >= start && (parts.minute - start) % step === 0;
+  }
+
+  const daily = /^\*-\*-\* (\d{2}):(\d{2}):(\d{2})$/u.exec(schedule);
+  if (daily) {
+    const parts = getDatePartsForTimeZone(at, timeZone);
+    return (
+      parts.hour === Number(daily[1]) &&
+      parts.minute === Number(daily[2]) &&
+      parts.second === Number(daily[3])
+    );
+  }
+
+  return false;
+}
+
+function findNextScheduledRun(schedule: string | null, timeZone: string | null, now = new Date()): string | null {
+  if (!schedule || !timeZone) {
+    return null;
+  }
+
+  const start = new Date(now.getTime() + 1000);
+  start.setMilliseconds(0);
+
+  for (let offsetSeconds = 0; offsetSeconds < 172_800; offsetSeconds += 1) {
+    const candidate = new Date(start.getTime() + offsetSeconds * 1000);
+    if (matchesScheduleAtExactSecond(schedule, candidate, timeZone)) {
+      return candidate.toISOString();
+    }
+  }
+
+  return null;
+}
+
+async function readRemoteJsonFile(
+  node: WorkerNodeConfig,
+  path: string
+): Promise<{ exists: boolean; value: unknown | null; error?: string }> {
+  const result = await runRemoteShellCapture(
+    node,
+    `if [ -f ${shellQuote(path)} ]; then cat ${shellQuote(path)}; else printf '__MISSING__'; fi`
+  );
+
+  if (result.code !== 0) {
+    return {
+      exists: false,
+      value: null,
+      error: result.stderr.trim() || result.stdout.trim() || `read failed (${result.code})`
+    };
+  }
+
+  const output = result.stdout.trim();
+  if (output === '__MISSING__') {
+    return { exists: false, value: null };
+  }
+
+  try {
+    return {
+      exists: true,
+      value: JSON.parse(output) as unknown
+    };
+  } catch (error) {
+    return {
+      exists: true,
+      value: null,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+async function readRemoteWorkerTimeZone(node: WorkerNodeConfig, containerName: string): Promise<string | null> {
+  const result = await runRemoteShellCapture(
+    node,
+    `${node.dockerCommand} exec ${shellQuote(containerName)} node -e ${shellQuote("process.stdout.write(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')")}`
+  );
+
+  if (result.code !== 0) {
+    return null;
+  }
+
+  const timeZone = result.stdout.trim();
+  return timeZone.length > 0 ? timeZone : null;
+}
+
+function buildMinecraftAutoUpdateStatus(
+  workload: RemoteWorkloadConfig,
+  worker: RemoteContainerStatus,
+  workerConfigSnapshot: { exists: boolean; value: unknown | null; error?: string },
+  workerStateSnapshot: { exists: boolean; value: unknown | null; error?: string },
+  workerTimeZone: string | null
+): MinecraftAutoUpdateStatus {
+  const configuredEnabled = Boolean(workload.minecraft?.autoUpdateEnabled);
+  const configuredSchedule = workload.minecraft?.autoUpdateSchedule || null;
+
+  const workerConfig = workerConfigSnapshot.value && typeof workerConfigSnapshot.value === 'object'
+    ? workerConfigSnapshot.value as {
+      pollIntervalSeconds?: number;
+      workloads?: Array<{ id?: string; kind?: string; minecraft?: { autoUpdateEnabled?: boolean; autoUpdateSchedule?: string } }>;
+    }
+    : null;
+
+  const workerWorkload = Array.isArray(workerConfig?.workloads)
+    ? workerConfig.workloads.find((candidate) => candidate?.id === workload.id && candidate?.kind === 'minecraft-bedrock-server')
+    : undefined;
+
+  const workerEnabled = Boolean(workerWorkload?.minecraft?.autoUpdateEnabled);
+  const workerSchedule = typeof workerWorkload?.minecraft?.autoUpdateSchedule === 'string'
+    ? workerWorkload.minecraft.autoUpdateSchedule
+    : null;
+
+  const workerState = workerStateSnapshot.value && typeof workerStateSnapshot.value === 'object'
+    ? workerStateSnapshot.value as {
+      tasks?: Record<string, { lastRunAt?: string; lastSlot?: string }>;
+    }
+    : null;
+  const workerTask = workerState?.tasks?.[`minecraft-update:${workload.id}`];
+  const nextRunAt = findNextScheduledRun(workerSchedule, workerTimeZone);
+
+  if (!configuredEnabled) {
+    return {
+      status: 'disabled',
+      summary: 'Disabled in config',
+      configuredEnabled,
+      configuredSchedule,
+      workerConfigPresent: workerConfigSnapshot.exists,
+      workerConfigError: workerConfigSnapshot.error,
+      registeredInWorker: Boolean(workerWorkload),
+      workerEnabled,
+      workerSchedule,
+      workerTimeZone,
+      workerPollIntervalSeconds: typeof workerConfig?.pollIntervalSeconds === 'number' ? workerConfig.pollIntervalSeconds : null,
+      workerStatePresent: workerStateSnapshot.exists,
+      workerStateError: workerStateSnapshot.error,
+      lastRunAt: typeof workerTask?.lastRunAt === 'string' ? workerTask.lastRunAt : null,
+      lastSlot: typeof workerTask?.lastSlot === 'string' ? workerTask.lastSlot : null,
+      nextRunAt
+    };
+  }
+
+  if (!workerConfigSnapshot.exists || !workerWorkload) {
+    return {
+      status: 'not-deployed',
+      summary: 'Not deployed to gateway-worker',
+      configuredEnabled,
+      configuredSchedule,
+      workerConfigPresent: workerConfigSnapshot.exists,
+      workerConfigError: workerConfigSnapshot.error,
+      registeredInWorker: Boolean(workerWorkload),
+      workerEnabled,
+      workerSchedule,
+      workerTimeZone,
+      workerPollIntervalSeconds: typeof workerConfig?.pollIntervalSeconds === 'number' ? workerConfig.pollIntervalSeconds : null,
+      workerStatePresent: workerStateSnapshot.exists,
+      workerStateError: workerStateSnapshot.error,
+      lastRunAt: typeof workerTask?.lastRunAt === 'string' ? workerTask.lastRunAt : null,
+      lastSlot: typeof workerTask?.lastSlot === 'string' ? workerTask.lastSlot : null,
+      nextRunAt
+    };
+  }
+
+  if (!worker.running) {
+    return {
+      status: 'worker-stopped',
+      summary: 'gateway-worker container is not running',
+      configuredEnabled,
+      configuredSchedule,
+      workerConfigPresent: workerConfigSnapshot.exists,
+      workerConfigError: workerConfigSnapshot.error,
+      registeredInWorker: true,
+      workerEnabled,
+      workerSchedule,
+      workerTimeZone,
+      workerPollIntervalSeconds: typeof workerConfig?.pollIntervalSeconds === 'number' ? workerConfig.pollIntervalSeconds : null,
+      workerStatePresent: workerStateSnapshot.exists,
+      workerStateError: workerStateSnapshot.error,
+      lastRunAt: typeof workerTask?.lastRunAt === 'string' ? workerTask.lastRunAt : null,
+      lastSlot: typeof workerTask?.lastSlot === 'string' ? workerTask.lastSlot : null,
+      nextRunAt
+    };
+  }
+
+  if (!workerEnabled || !workerSchedule) {
+    return {
+      status: 'misconfigured',
+      summary: 'Worker config is missing the auto-update schedule',
+      configuredEnabled,
+      configuredSchedule,
+      workerConfigPresent: workerConfigSnapshot.exists,
+      workerConfigError: workerConfigSnapshot.error,
+      registeredInWorker: true,
+      workerEnabled,
+      workerSchedule,
+      workerTimeZone,
+      workerPollIntervalSeconds: typeof workerConfig?.pollIntervalSeconds === 'number' ? workerConfig.pollIntervalSeconds : null,
+      workerStatePresent: workerStateSnapshot.exists,
+      workerStateError: workerStateSnapshot.error,
+      lastRunAt: typeof workerTask?.lastRunAt === 'string' ? workerTask.lastRunAt : null,
+      lastSlot: typeof workerTask?.lastSlot === 'string' ? workerTask.lastSlot : null,
+      nextRunAt
+    };
+  }
+
+  return {
+    status: 'running',
+    summary: 'Running in gateway-worker',
+    configuredEnabled,
+    configuredSchedule,
+    workerConfigPresent: workerConfigSnapshot.exists,
+    workerConfigError: workerConfigSnapshot.error,
+    registeredInWorker: true,
+    workerEnabled,
+    workerSchedule,
+    workerTimeZone,
+    workerPollIntervalSeconds: typeof workerConfig?.pollIntervalSeconds === 'number' ? workerConfig.pollIntervalSeconds : null,
+    workerStatePresent: workerStateSnapshot.exists,
+    workerStateError: workerStateSnapshot.error,
+    lastRunAt: typeof workerTask?.lastRunAt === 'string' ? workerTask.lastRunAt : null,
+    lastSlot: typeof workerTask?.lastSlot === 'string' ? workerTask.lastSlot : null,
+    nextRunAt
+  };
+}
+
 async function restartRemoteWorker(node: WorkerNodeConfig, context: CommandContext): Promise<void> {
   const composeCommand = `${node.dockerComposeCommand} -f ${shellQuote(`${getRemoteWorkerRuntimeDir(node)}/compose.yml`)} --project-name ${shellQuote(getRemoteWorkerProjectName(node))}`;
   await runRemoteShell(
@@ -823,16 +1105,21 @@ export async function getMinecraftWorkloadStatus(config: GatewayConfig, workload
   const node = getWorkerNode(config, workload.nodeId);
   const workerContainerName = `${getRemoteWorkerProjectName(node)}-service`;
   const serverContainerName = `${getRemoteWorkloadProjectName(workload)}-server`;
-  const [worker, server] = await Promise.all([
+  const runtimeDir = getRemoteWorkerRuntimeDir(node);
+  const [worker, server, workerConfigSnapshot, workerStateSnapshot] = await Promise.all([
     inspectRemoteContainer(node, workerContainerName),
-    inspectRemoteContainer(node, serverContainerName)
+    inspectRemoteContainer(node, serverContainerName),
+    readRemoteJsonFile(node, `${runtimeDir}/worker-config.json`),
+    readRemoteJsonFile(node, `${runtimeDir}/worker-state.json`)
   ]);
+  const workerTimeZone = worker.running ? await readRemoteWorkerTimeZone(node, workerContainerName) : null;
 
   return {
     workloadId: workload.id,
     nodeId: node.id,
     configuredServerPort: workload.minecraft.serverPort ?? null,
     worker,
-    server
+    server,
+    autoUpdate: buildMinecraftAutoUpdateStatus(workload, worker, workerConfigSnapshot, workerStateSnapshot, workerTimeZone)
   };
 }
