@@ -1323,8 +1323,7 @@ export async function getPiProxyServiceStatus(config: GatewayConfig): Promise<Pi
         '-p SubState',
         '-p UnitFileState',
         '-p WorkingDirectory',
-        '-p ExecStart',
-        '--value'
+        '-p ExecStart'
       ].join(' ') + ';',
       'else',
       `printf '__MISSING__';`,
@@ -1375,14 +1374,28 @@ export async function getPiProxyServiceStatus(config: GatewayConfig): Promise<Pi
     };
   }
 
-  const [
-    loadState = 'unknown',
-    activeState = 'unknown',
-    subState = 'unknown',
-    unitFileState = 'unknown',
-    workingDirectory = '',
-    execStart = ''
-  ] = output.split('\n');
+  const systemdFields = Object.fromEntries(
+    output
+      .split('\n')
+      .map((line) => {
+        const separatorIndex = line.indexOf('=');
+        if (separatorIndex <= 0) {
+          return null;
+        }
+        return [
+          line.slice(0, separatorIndex),
+          line.slice(separatorIndex + 1)
+        ];
+      })
+      .filter((entry): entry is [string, string] => Array.isArray(entry))
+  );
+
+  const loadState = systemdFields.LoadState || 'unknown';
+  const activeState = systemdFields.ActiveState || 'unknown';
+  const subState = systemdFields.SubState || 'unknown';
+  const unitFileState = systemdFields.UnitFileState || 'unknown';
+  const workingDirectory = systemdFields.WorkingDirectory || '';
+  const execStart = systemdFields.ExecStart || '';
   const serviceInstalled = loadState !== 'not-found';
   const serverCount = Array.isArray(runtimeState?.servers) ? runtimeState.servers.length : 0;
   const managedConfigMatched = serviceInstalled &&
