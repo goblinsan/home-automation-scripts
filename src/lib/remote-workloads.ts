@@ -233,6 +233,7 @@ function renderMinecraftCompose(node: WorkerNodeConfig, workload: RemoteWorkload
 function renderMinecraftUpdateScript(node: WorkerNodeConfig, workload: RemoteWorkloadConfig): string {
   const stackDir = getRemoteWorkloadStackDir(node, workload);
   const composeCommand = `${node.dockerComposeCommand} -f ${stackDir}/compose.yml --project-name ${getRemoteWorkloadProjectName(workload)}`;
+  const containerName = `${getRemoteWorkloadProjectName(workload)}-server`;
   return `#!/bin/sh
 set -eu
 
@@ -241,13 +242,18 @@ SINCE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 sleep 2
 LOGS="$(/bin/sh -lc ${JSON.stringify(`${composeCommand} logs --since "$SINCE" server 2>/dev/null || true`)})"
 ONLINE="$(printf '%s\n' "$LOGS" | sed -n 's/.*There are \\([0-9][0-9]*\\)\\/[0-9][0-9]* players online.*/\\1/p' | tail -n 1)"
+BEFORE_IMAGE_ID="$(/bin/sh -lc ${JSON.stringify(`${node.dockerCommand} inspect -f '{{.Image}}' ${containerName} 2>/dev/null || true`)})"
 
 if [ -z "$ONLINE" ]; then
+  echo "__GCP_UPDATE_STATUS__ skipped-player-count-unknown"
+  echo "__GCP_UPDATE_DETAIL__ Could not determine player count from Bedrock logs"
   echo "Could not determine player count; skipping update"
   exit 0
 fi
 
 if [ "$ONLINE" != "0" ]; then
+  echo "__GCP_UPDATE_STATUS__ skipped-players-online"
+  echo "__GCP_UPDATE_DETAIL__ Players online: $ONLINE"
   echo "Players online: $ONLINE; skipping update"
   exit 0
 fi
@@ -255,6 +261,15 @@ fi
 /bin/sh -lc ${JSON.stringify(`${composeCommand} pull server`)}
 /bin/sh -lc ${JSON.stringify(`${stackDir}/scripts/bootstrap-world.sh`)}
 /bin/sh -lc ${JSON.stringify(`${composeCommand} up -d server`)}
+AFTER_IMAGE_ID="$(/bin/sh -lc ${JSON.stringify(`${node.dockerCommand} inspect -f '{{.Image}}' ${containerName} 2>/dev/null || true`)})"
+
+if [ -n "$BEFORE_IMAGE_ID" ] && [ -n "$AFTER_IMAGE_ID" ] && [ "$BEFORE_IMAGE_ID" = "$AFTER_IMAGE_ID" ]; then
+  echo "__GCP_UPDATE_STATUS__ no-image-change"
+  echo "__GCP_UPDATE_DETAIL__ Server image digest unchanged after pull"
+else
+  echo "__GCP_UPDATE_STATUS__ updated"
+  echo "__GCP_UPDATE_DETAIL__ Server image digest changed or container was recreated"
+fi
 `;
 }
 

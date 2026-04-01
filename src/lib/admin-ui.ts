@@ -3523,6 +3523,7 @@ function htmlPage(basePath: string): string {
         const autoUpdate = minecraftStatus?.autoUpdate;
         const autoUpdateStatus = describeAutoUpdateStatus(autoUpdate);
         const manualUpdate = minecraftStatus?.manualUpdate;
+        const lastManualUpdateResult = minecraftStatus?.lastManualUpdateResult;
         const workerSummary = describeContainerStatus(minecraftStatus?.worker);
         const serverSummary = describeContainerStatus(minecraftStatus?.server);
         const portSummary = minecraftStatus
@@ -3583,6 +3584,7 @@ function htmlPage(basePath: string): string {
                 <p><strong>Worker Poll Interval:</strong> \${autoUpdate?.workerPollIntervalSeconds ? autoUpdate.workerPollIntervalSeconds + 's' : 'unknown'}</p>
                 <p><strong>Last Scheduled Check:</strong> \${formatTimestamp(autoUpdate?.lastRunAt)}</p>
                 <p><strong>Next Scheduled Check:</strong> \${formatTimestamp(autoUpdate?.nextRunAt)}</p>
+                \${renderMinecraftActionResult(autoUpdate?.lastResult, 'No scheduled update result recorded yet.')}
                 \${autoUpdateWorkerConfigErrorLine}
                 \${autoUpdateWorkerStateErrorLine}
               </div>
@@ -3697,6 +3699,7 @@ function htmlPage(basePath: string): string {
                 <span class="pill">Manual Update</span>
                 <p>Manual updates use the safe <code>update-if-empty</code> path and will skip if players are online.</p>
                 <p><strong>Current Queue State:</strong> \${describeManualUpdate(manualUpdate)}</p>
+                \${renderMinecraftActionResult(lastManualUpdateResult, 'No manual update result recorded yet.')}
               </div>
             </div>
             <div class="toolbar">
@@ -4253,6 +4256,38 @@ function htmlPage(basePath: string): string {
         return 'Last queued manual update was cancelled.';
       }
       return 'Last manual update failed: ' + (record.error || 'unknown error');
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function renderMinecraftActionResult(result, emptyMessage) {
+      if (!result) {
+        return '<p>' + emptyMessage + '</p>';
+      }
+      const detailLine = result.detail
+        ? '<p><strong>Detail:</strong> ' + escapeHtml(result.detail) + '</p>'
+        : '';
+      const stdoutBlock = result.stdout
+        ? '<details><summary>Command Output</summary><pre>' + escapeHtml(result.stdout) + '</pre></details>'
+        : '';
+      const stderrBlock = result.stderr
+        ? '<details><summary>Command Errors</summary><pre>' + escapeHtml(result.stderr) + '</pre></details>'
+        : '';
+      return [
+        '<p><strong>Status:</strong> ' + escapeHtml(result.status || 'unknown') + '</p>',
+        '<p><strong>Summary:</strong> ' + escapeHtml(result.summary || 'No summary') + '</p>',
+        '<p><strong>Recorded:</strong> ' + escapeHtml(formatTimestamp(result.recordedAt)) + '</p>',
+        detailLine,
+        stdoutBlock,
+        stderrBlock
+      ].join('');
     }
 
     function formatPortMappings(ports, networkMode) {

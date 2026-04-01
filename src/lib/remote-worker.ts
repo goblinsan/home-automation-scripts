@@ -222,8 +222,99 @@ async function runShell(command) {
   });
 }
 
+async function runShellCapture(command) {
+  log('$ ' + command);
+  return await new Promise((resolve, reject) => {
+    const child = spawn('/bin/sh', ['-lc', command], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk) => {
+      stdout += String(chunk);
+      process.stdout.write(chunk);
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += String(chunk);
+      process.stderr.write(chunk);
+    });
+    child.on('exit', (code) => {
+      resolve({
+        code: code ?? 1,
+        stdout,
+        stderr
+      });
+    });
+    child.on('error', reject);
+  });
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function summarizeUpdateResult(status, detail) {
+  switch (status) {
+    case 'updated':
+      return detail || 'Server image updated';
+    case 'no-image-change':
+      return detail || 'No newer server image was applied';
+    case 'skipped-player-count-unknown':
+      return detail || 'Skipped because player count could not be determined';
+    case 'skipped-players-online':
+      return detail || 'Skipped because players were online';
+    default:
+      return detail || 'Safe update finished';
+  }
+}
+
+function parseMinecraftUpdateResult(stdout, stderr) {
+  const combined = [stdout, stderr].filter(Boolean).join('\\n');
+  const lines = combined
+    .split(/\\r?\\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const statusLine = lines.find((line) => line.startsWith('__GCP_UPDATE_STATUS__ '));
+  const detailLine = lines.find((line) => line.startsWith('__GCP_UPDATE_DETAIL__ '));
+  const status = statusLine ? statusLine.slice('__GCP_UPDATE_STATUS__ '.length).trim() : 'completed';
+  const detail = detailLine ? detailLine.slice('__GCP_UPDATE_DETAIL__ '.length).trim() : '';
+  const cleanOutput = (text) => text
+    .split(/\\r?\\n/u)
+    .filter((line) => !line.startsWith('__GCP_UPDATE_STATUS__ ') && !line.startsWith('__GCP_UPDATE_DETAIL__ '))
+    .join('\\n')
+    .trim();
+  return {
+    status,
+    summary: summarizeUpdateResult(status, detail),
+    detail: detail || undefined,
+    stdout: cleanOutput(stdout) || undefined,
+    stderr: cleanOutput(stderr) || undefined,
+    recordedAt: new Date().toISOString()
+  };
+}
+
+function buildFailedMinecraftActionResult(action, error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    action,
+    status: 'failed',
+    summary: message,
+    detail: message,
+    recordedAt: new Date().toISOString()
+  };
+}
+
+async function readWorkerState(statePath) {
+  return await readJson(statePath, { tasks: {} });
+}
+
+async function recordMinecraftActionResult(statePath, key, action, result) {
+  const state = await readWorkerState(statePath);
+  state.tasks[key] = {
+    ...(state.tasks[key] || {}),
+    lastRunAt: new Date().toISOString(),
+    lastAction: action,
+    lastResult: result
+  };
+  await writeJson(statePath, state);
 }
 
 function getDateParts(date, timeZone) {
@@ -310,28 +401,60 @@ async function runMinecraftAction(config, workload, action, payload) {
     case 'start':
       await bootstrapMinecraft(config, workload);
       await runShell(composeCommand + ' up -d server');
-      return;
+      return {
+        action,
+        status: 'completed',
+        summary: 'Server started',
+        recordedAt: new Date().toISOString()
+      };
     case 'stop':
       await runShell(composeCommand + ' stop server');
-      return;
+      return {
+        action,
+        status: 'completed',
+        summary: 'Server stopped',
+        recordedAt: new Date().toISOString()
+      };
     case 'restart':
       await bootstrapMinecraft(config, workload);
       await runShell(composeCommand + ' restart server');
-      return;
+      return {
+        action,
+        status: 'completed',
+        summary: 'Server restarted',
+        recordedAt: new Date().toISOString()
+      };
     case 'update-if-empty':
       if (!workload.minecraft?.updateScript) {
         throw new Error('Update script is not configured for workload ' + workload.id);
       }
       await runShell('chmod +x ' + shellQuote(workload.minecraft.updateScript));
-      await runShell(shellQuote(workload.minecraft.updateScript));
-      return;
+      {
+        const updateCommand = shellQuote(workload.minecraft.updateScript);
+        const output = await runShellCapture(updateCommand);
+        const result = {
+          action,
+          ...parseMinecraftUpdateResult(output.stdout, output.stderr)
+        };
+        if (output.code !== 0) {
+          const error = new Error(result.summary || 'Safe update failed');
+          error.result = result;
+          throw error;
+        }
+        return result;
+      }
     case 'broadcast': {
       const message = String(payload.message || '').trim();
       if (!message) {
         throw new Error('Broadcast message is required');
       }
       await runShell(composeCommand + ' exec -T server send-command ' + shellQuote('say ' + message));
-      return;
+      return {
+        action,
+        status: 'completed',
+        summary: 'Broadcast sent',
+        recordedAt: new Date().toISOString()
+      };
     }
     case 'kick':
     case 'ban': {
@@ -342,7 +465,12 @@ async function runMinecraftAction(config, workload, action, payload) {
       const reason = String(payload.reason || '').trim();
       const command = reason ? action + ' ' + player + ' ' + reason : action + ' ' + player;
       await runShell(composeCommand + ' exec -T server send-command ' + shellQuote(command));
-      return;
+      return {
+        action,
+        status: 'completed',
+        summary: action + ' command sent for ' + player,
+        recordedAt: new Date().toISOString()
+      };
     }
     default:
       throw new Error('Unsupported action: ' + action);
@@ -352,7 +480,7 @@ async function runMinecraftAction(config, workload, action, payload) {
 async function runDueTasks(configPath) {
   const config = await readJson(configPath);
   const statePath = config.runtimeDir + '/worker-state.json';
-  const state = await readJson(statePath, { tasks: {} });
+  const state = await readWorkerState(statePath);
   const pollWindow = Number(config.pollIntervalSeconds) > 0 ? Number(config.pollIntervalSeconds) : 15;
   const localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
@@ -378,12 +506,27 @@ async function runDueTasks(configPath) {
       const slot = getSlotForSchedule(workload.minecraft.autoUpdateSchedule, new Date(), localTimeZone, pollWindow);
       if (slot && state.tasks['minecraft-update:' + workload.id]?.lastSlot !== slot) {
         log('Running Bedrock auto-update for ' + workload.id + ' slot ' + slot);
-        await runMinecraftAction(config, workload, 'update-if-empty', {});
-        state.tasks['minecraft-update:' + workload.id] = {
-          lastSlot: slot,
-          lastRunAt: new Date().toISOString()
-        };
-        await writeJson(statePath, state);
+        try {
+          const result = await runMinecraftAction(config, workload, 'update-if-empty', {});
+          state.tasks['minecraft-update:' + workload.id] = {
+            lastSlot: slot,
+            lastRunAt: new Date().toISOString(),
+            lastAction: 'update-if-empty',
+            lastResult: result
+          };
+          await writeJson(statePath, state);
+        } catch (error) {
+          state.tasks['minecraft-update:' + workload.id] = {
+            lastSlot: slot,
+            lastRunAt: new Date().toISOString(),
+            lastAction: 'update-if-empty',
+            lastResult: error && typeof error === 'object' && 'result' in error
+              ? error.result
+              : buildFailedMinecraftActionResult('update-if-empty', error)
+          };
+          await writeJson(statePath, state);
+          throw error;
+        }
       }
     }
   }
@@ -416,11 +559,23 @@ async function main() {
     const action = typeof args.action === 'string' ? args.action : '';
     const payload = typeof args.payload === 'string' ? JSON.parse(args.payload) : {};
     const config = await readJson(configPath);
+    const statePath = config.runtimeDir + '/worker-state.json';
     const workload = (config.workloads || []).find((candidate) => candidate.id === workloadId);
     if (!workload) {
       throw new Error('Unknown workload id: ' + workloadId);
     }
-    await runMinecraftAction(config, workload, action, payload);
+    try {
+      const result = await runMinecraftAction(config, workload, action, payload);
+      await recordMinecraftActionResult(statePath, 'minecraft-control:' + action + ':' + workloadId, action, result);
+      console.log('__CONTROL_RESULT__ ' + JSON.stringify(result));
+    } catch (error) {
+      const result = error && typeof error === 'object' && 'result' in error
+        ? error.result
+        : buildFailedMinecraftActionResult(action, error);
+      await recordMinecraftActionResult(statePath, 'minecraft-control:' + action + ':' + workloadId, action, result);
+      console.log('__CONTROL_RESULT__ ' + JSON.stringify(result));
+      throw error;
+    }
     return;
   }
   throw new Error('Unknown command: ' + command);

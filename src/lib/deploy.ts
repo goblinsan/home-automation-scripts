@@ -605,6 +605,7 @@ export interface MinecraftWorkloadStatus {
   worker: RemoteContainerStatus;
   server: RemoteContainerStatus;
   autoUpdate: MinecraftAutoUpdateStatus;
+  lastManualUpdateResult: MinecraftActionResult | null;
 }
 
 type MinecraftControlAction = 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty';
@@ -626,6 +627,17 @@ export interface MinecraftAutoUpdateStatus {
   lastRunAt: string | null;
   lastSlot: string | null;
   nextRunAt: string | null;
+  lastResult: MinecraftActionResult | null;
+}
+
+export interface MinecraftActionResult {
+  action?: string;
+  status: string;
+  summary: string;
+  detail?: string;
+  stdout?: string;
+  stderr?: string;
+  recordedAt?: string;
 }
 
 function requireRemoteWorkloadEnabled(workload: RemoteWorkloadConfig): void {
@@ -899,7 +911,7 @@ function buildMinecraftAutoUpdateStatus(
 
   const workerState = workerStateSnapshot.value && typeof workerStateSnapshot.value === 'object'
     ? workerStateSnapshot.value as {
-      tasks?: Record<string, { lastRunAt?: string; lastSlot?: string }>;
+      tasks?: Record<string, { lastRunAt?: string; lastSlot?: string; lastResult?: MinecraftActionResult }>;
     }
     : null;
   const workerTask = workerState?.tasks?.[`minecraft-update:${workload.id}`];
@@ -922,7 +934,8 @@ function buildMinecraftAutoUpdateStatus(
       workerStateError: workerStateSnapshot.error,
       lastRunAt: typeof workerTask?.lastRunAt === 'string' ? workerTask.lastRunAt : null,
       lastSlot: typeof workerTask?.lastSlot === 'string' ? workerTask.lastSlot : null,
-      nextRunAt
+      nextRunAt,
+      lastResult: workerTask?.lastResult && typeof workerTask.lastResult === 'object' ? workerTask.lastResult : null
     };
   }
 
@@ -943,7 +956,8 @@ function buildMinecraftAutoUpdateStatus(
       workerStateError: workerStateSnapshot.error,
       lastRunAt: typeof workerTask?.lastRunAt === 'string' ? workerTask.lastRunAt : null,
       lastSlot: typeof workerTask?.lastSlot === 'string' ? workerTask.lastSlot : null,
-      nextRunAt
+      nextRunAt,
+      lastResult: workerTask?.lastResult && typeof workerTask.lastResult === 'object' ? workerTask.lastResult : null
     };
   }
 
@@ -964,7 +978,8 @@ function buildMinecraftAutoUpdateStatus(
       workerStateError: workerStateSnapshot.error,
       lastRunAt: typeof workerTask?.lastRunAt === 'string' ? workerTask.lastRunAt : null,
       lastSlot: typeof workerTask?.lastSlot === 'string' ? workerTask.lastSlot : null,
-      nextRunAt
+      nextRunAt,
+      lastResult: workerTask?.lastResult && typeof workerTask.lastResult === 'object' ? workerTask.lastResult : null
     };
   }
 
@@ -985,7 +1000,8 @@ function buildMinecraftAutoUpdateStatus(
       workerStateError: workerStateSnapshot.error,
       lastRunAt: typeof workerTask?.lastRunAt === 'string' ? workerTask.lastRunAt : null,
       lastSlot: typeof workerTask?.lastSlot === 'string' ? workerTask.lastSlot : null,
-      nextRunAt
+      nextRunAt,
+      lastResult: workerTask?.lastResult && typeof workerTask.lastResult === 'object' ? workerTask.lastResult : null
     };
   }
 
@@ -1005,7 +1021,8 @@ function buildMinecraftAutoUpdateStatus(
     workerStateError: workerStateSnapshot.error,
     lastRunAt: typeof workerTask?.lastRunAt === 'string' ? workerTask.lastRunAt : null,
     lastSlot: typeof workerTask?.lastSlot === 'string' ? workerTask.lastSlot : null,
-    nextRunAt
+    nextRunAt,
+    lastResult: workerTask?.lastResult && typeof workerTask.lastResult === 'object' ? workerTask.lastResult : null
   };
 }
 
@@ -1113,6 +1130,12 @@ export async function getMinecraftWorkloadStatus(config: GatewayConfig, workload
     readRemoteJsonFile(node, `${runtimeDir}/worker-state.json`)
   ]);
   const workerTimeZone = worker.running ? await readRemoteWorkerTimeZone(node, workerContainerName) : null;
+  const workerState = workerStateSnapshot.value && typeof workerStateSnapshot.value === 'object'
+    ? workerStateSnapshot.value as {
+      tasks?: Record<string, { lastResult?: MinecraftActionResult }>;
+    }
+    : null;
+  const manualTask = workerState?.tasks?.[`minecraft-control:update-if-empty:${workload.id}`];
 
   return {
     workloadId: workload.id,
@@ -1120,6 +1143,7 @@ export async function getMinecraftWorkloadStatus(config: GatewayConfig, workload
     configuredServerPort: workload.minecraft.serverPort ?? null,
     worker,
     server,
-    autoUpdate: buildMinecraftAutoUpdateStatus(workload, worker, workerConfigSnapshot, workerStateSnapshot, workerTimeZone)
+    autoUpdate: buildMinecraftAutoUpdateStatus(workload, worker, workerConfigSnapshot, workerStateSnapshot, workerTimeZone),
+    lastManualUpdateResult: manualTask?.lastResult && typeof manualTask.lastResult === 'object' ? manualTask.lastResult : null
   };
 }
