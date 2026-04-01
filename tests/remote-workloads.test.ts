@@ -67,6 +67,24 @@ function createConfig(root: string): GatewayConfig {
         systemdEnableTimerCommand: 'sudo systemctl enable --now',
         dockerCommand: 'docker',
         dockerComposeCommand: 'docker compose'
+      },
+      {
+        id: 'pi-node',
+        enabled: true,
+        description: 'Raspberry Pi node',
+        host: '198.51.100.50',
+        sshUser: 'deploy',
+        sshPort: 22,
+        buildRoot: '/opt/gateway-control-plane',
+        stackRoot: '/opt/gateway-control-plane/stacks',
+        volumeRoot: '/opt/gateway-control-plane/volumes',
+        workerPollIntervalSeconds: 30,
+        nodeCommand: '/usr/bin/node',
+        systemdUnitDirectory: '/etc/systemd/system',
+        systemdReloadCommand: 'sudo systemctl daemon-reload',
+        systemdEnableTimerCommand: 'sudo systemctl enable --now',
+        dockerCommand: 'docker',
+        dockerComposeCommand: 'docker compose'
       }
     ],
     remoteWorkloads: [
@@ -193,6 +211,19 @@ function createConfig(root: string): GatewayConfig {
           healthPath: '/health'
         },
         agents: []
+      },
+      piProxy: {
+        enabled: true,
+        description: 'Physical Raspberry Pi running the external Bedrock LAN proxy',
+        nodeId: 'pi-node',
+        installRoot: '/opt/bedrock-lan-proxy',
+        systemdUnitName: 'bedrock-lan-proxy.service',
+        registryBaseUrl: 'http://198.51.100.200:4173',
+        listenHost: '0.0.0.0',
+        listenPort: 19132,
+        registryPath: '/api/minecraft/server-registry',
+        pollIntervalSeconds: 30,
+        serviceUser: 'deploy'
       }
     }
   };
@@ -216,6 +247,9 @@ test('buildArtifacts renders remote workload bundles for core nodes', async () =
   const minecraftUpdateScript = await readFile(join(outDir, 'nodes', 'core-node', 'workloads', 'bedrock-main', 'scripts', 'update-if-empty.sh'), 'utf8');
   const minecraftBootstrapScript = await readFile(join(outDir, 'nodes', 'core-node', 'workloads', 'bedrock-main', 'scripts', 'bootstrap-world.sh'), 'utf8');
   const behaviorManifest = await readFile(join(outDir, 'nodes', 'core-node', 'workloads', 'bedrock-main', 'runtime', 'world_behavior_packs.json'), 'utf8');
+  const piProxyPackageJson = await readFile(join(outDir, 'nodes', 'pi-node', 'pi-proxy', 'package.json'), 'utf8');
+  const piProxyConfig = await readFile(join(outDir, 'nodes', 'pi-node', 'pi-proxy', 'proxy-config.json'), 'utf8');
+  const piProxyService = await readFile(join(outDir, 'nodes', 'pi-node', 'pi-proxy', 'systemd', 'bedrock-lan-proxy.service'), 'utf8');
 
   assert.match(jobCompose, /node jobs\/kulrs_activity\.js/);
   assert.match(jobCompose, /\/runtime:ro/);
@@ -239,4 +273,7 @@ test('buildArtifacts renders remote workload bundles for core nodes', async () =
   assert.match(minecraftBootstrapScript, /gateway-main\.mcworld/);
   assert.match(minecraftBootstrapScript, /chmod -R a\+rwX/);
   assert.match(behaviorManifest, /11111111-1111-1111-1111-111111111111/);
+  assert.match(piProxyPackageJson, /bedrock-protocol/);
+  assert.match(piProxyConfig, /http:\/\/192\.168\.0\.200:4173\/api\/minecraft\/server-registry/);
+  assert.match(piProxyService, /ExecStart=\/usr\/bin\/node \/opt\/bedrock-lan-proxy\/proxy\.mjs \/opt\/bedrock-lan-proxy\/proxy-config\.json/);
 });

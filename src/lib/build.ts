@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { type GatewayConfig, getJobsForApp } from './config.ts';
 import { renderRemoteWorkerFiles } from './remote-worker.ts';
 import { renderActiveUpstream, renderGatewaySite } from './nginx.ts';
+import { renderManagedPiProxyFiles } from './pi-proxy.ts';
 import { renderRemoteWorkloadFiles } from './remote-workloads.ts';
 import {
   renderGatewayApiEnv,
@@ -61,6 +62,16 @@ export async function buildArtifacts(config: GatewayConfig, outDir: string): Pro
         await mkdir(dirname(outputPath), { recursive: true });
         await writeFile(outputPath, file.contents, 'utf8');
       }
+    }
+  }
+
+  if (config.serviceProfiles.piProxy.enabled) {
+    const piProxyDir = join(nodesDir, config.serviceProfiles.piProxy.nodeId, 'pi-proxy');
+    await mkdir(piProxyDir, { recursive: true });
+    for (const file of renderManagedPiProxyFiles(config)) {
+      const outputPath = join(piProxyDir, file.relativePath);
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, file.contents, 'utf8');
     }
   }
 

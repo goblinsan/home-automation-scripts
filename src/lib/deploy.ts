@@ -640,6 +640,38 @@ export interface MinecraftActionResult {
   recordedAt?: string;
 }
 
+export interface PiProxyRuntimeState {
+  updatedAt?: string;
+  registryUrl?: string;
+  lastError?: string | null;
+  servers?: Array<{
+    workloadId?: string;
+    serverName?: string;
+    worldName?: string;
+    motd?: string;
+    levelName?: string;
+    targetHost?: string;
+    targetPort?: number;
+    localPort?: number;
+  }>;
+}
+
+export interface PiProxyServiceStatus {
+  enabled: boolean;
+  nodeId: string;
+  nodeEnabled: boolean;
+  installRoot: string;
+  systemdUnitName: string;
+  registryUrl: string;
+  serviceInstalled: boolean;
+  activeState: string;
+  subState: string;
+  unitFileState: string;
+  summary: string;
+  runtimeState: PiProxyRuntimeState | null;
+  error?: string;
+}
+
 function getLatestMinecraftActionResult(
   tasks: Record<string, { lastResult?: MinecraftActionResult; lastRunAt?: string }> | undefined,
   keys: string[]
@@ -676,6 +708,13 @@ function requireRemoteWorkloadEnabled(workload: RemoteWorkloadConfig): void {
 
 function buildMinecraftComposeCommand(node: WorkerNodeConfig, workload: RemoteWorkloadConfig): string {
   return `${node.dockerComposeCommand} -f ${getRemoteWorkloadStackDir(node, workload)}/compose.yml --project-name ${getRemoteWorkloadProjectName(workload)}`;
+}
+
+function buildPiProxyRegistryUrl(config: GatewayConfig): string {
+  const profile = config.serviceProfiles.piProxy;
+  const baseUrl = normalizeBaseUrl(profile.registryBaseUrl);
+  const path = profile.registryPath.startsWith('/') ? profile.registryPath : `/${profile.registryPath}`;
+  return `${baseUrl}${path}`;
 }
 
 async function bootstrapMinecraftWorld(node: WorkerNodeConfig, workload: RemoteWorkloadConfig, context: CommandContext): Promise<void> {
@@ -1176,5 +1215,163 @@ export async function getMinecraftWorkloadStatus(config: GatewayConfig, workload
     server,
     autoUpdate: buildMinecraftAutoUpdateStatus(workload, worker, workerConfigSnapshot, workerStateSnapshot, workerTimeZone),
     lastManualUpdateResult
+  };
+}
+
+export async function deployPiProxyService(
+  config: GatewayConfig,
+  outDir: string,
+  context: CommandContext
+): Promise<void> {
+  const profile = config.serviceProfiles.piProxy;
+  if (!profile.enabled) {
+    throw new Error('piProxy service profile is disabled');
+  }
+
+  const node = getWorkerNode(config, profile.nodeId);
+  if (!node.enabled) {
+    throw new Error(`Pi proxy node is disabled: ${node.id}`);
+  }
+  const localDir = join(outDir, 'nodes', node.id, 'pi-proxy');
+  if (!existsSync(localDir)) {
+    throw new Error(`Missing rendered Pi proxy artifacts at ${localDir}. Run build first.`);
+  }
+
+  const systemdUnitDirectory = node.systemdUnitDirectory ?? '/etc/systemd/system';
+  const systemdReloadCommand = node.systemdReloadCommand ?? 'sudo systemctl daemon-reload';
+  const systemdEnableCommand = node.systemdEnableTimerCommand ?? 'sudo systemctl enable --now';
+
+  await runRemoteShell(node, `mkdir -p ${shellQuote(profile.installRoot)}`, context);
+  await copyDirectoryToRemote(node, localDir, profile.installRoot, context);
+  await runRemoteShell(node, `cd ${shellQuote(profile.installRoot)} && npm install --omit=dev`, context);
+  await runRemoteShell(
+    node,
+    `install -m 0644 ${shellQuote(`${profile.installRoot}/systemd/${profile.systemdUnitName}`)} ${shellQuote(join(systemdUnitDirectory, profile.systemdUnitName))}`,
+    context
+  );
+  await runRemoteShell(node, systemdReloadCommand, context);
+  await runRemoteShell(node, `${systemdEnableCommand} ${shellQuote(profile.systemdUnitName)}`, context);
+}
+
+export async function restartPiProxyService(config: GatewayConfig, context: CommandContext): Promise<void> {
+  const profile = config.serviceProfiles.piProxy;
+  if (!profile.enabled) {
+    throw new Error('piProxy service profile is disabled');
+  }
+
+  const node = getWorkerNode(config, profile.nodeId);
+  if (!node.enabled) {
+    throw new Error(`Pi proxy node is disabled: ${node.id}`);
+  }
+  await runRemoteShell(node, `sudo systemctl restart ${shellQuote(profile.systemdUnitName)}`, context);
+}
+
+export async function getPiProxyServiceStatus(config: GatewayConfig): Promise<PiProxyServiceStatus> {
+  const profile = config.serviceProfiles.piProxy;
+  if (!profile.enabled) {
+    return {
+      enabled: false,
+      nodeId: profile.nodeId,
+      nodeEnabled: false,
+      installRoot: profile.installRoot,
+      systemdUnitName: profile.systemdUnitName,
+      registryUrl: buildPiProxyRegistryUrl(config),
+      serviceInstalled: false,
+      activeState: 'disabled',
+      subState: 'disabled',
+      unitFileState: 'disabled',
+      summary: 'Pi proxy profile is disabled',
+      runtimeState: null
+    };
+  }
+
+  const node = getWorkerNode(config, profile.nodeId);
+  if (!node.enabled) {
+    return {
+      enabled: true,
+      nodeId: node.id,
+      nodeEnabled: false,
+      installRoot: profile.installRoot,
+      systemdUnitName: profile.systemdUnitName,
+      registryUrl: buildPiProxyRegistryUrl(config),
+      serviceInstalled: false,
+      activeState: 'disabled',
+      subState: 'disabled',
+      unitFileState: 'disabled',
+      summary: `Pi proxy node is disabled: ${node.id}`,
+      runtimeState: null
+    };
+  }
+  const systemctlResult = await runRemoteShellCapture(
+    node,
+    [
+      `if systemctl show ${shellQuote(profile.systemdUnitName)} >/dev/null 2>&1; then`,
+      `systemctl show ${shellQuote(profile.systemdUnitName)} --property LoadState,ActiveState,SubState,UnitFileState --value;`,
+      'else',
+      `printf '__MISSING__';`,
+      'fi'
+    ].join('\n')
+  );
+
+  const runtimeStateSnapshot = await readRemoteJsonFile(node, `${profile.installRoot}/proxy-state.json`);
+  const runtimeState = runtimeStateSnapshot.value && typeof runtimeStateSnapshot.value === 'object'
+    ? runtimeStateSnapshot.value as PiProxyRuntimeState
+    : null;
+
+  if (systemctlResult.code !== 0) {
+    return {
+      enabled: true,
+      nodeId: node.id,
+      nodeEnabled: node.enabled,
+      installRoot: profile.installRoot,
+      systemdUnitName: profile.systemdUnitName,
+      registryUrl: buildPiProxyRegistryUrl(config),
+      serviceInstalled: false,
+      activeState: 'error',
+      subState: 'error',
+      unitFileState: 'unknown',
+      summary: 'Unable to inspect Pi proxy service',
+      runtimeState,
+      error: systemctlResult.stderr.trim() || systemctlResult.stdout.trim() || 'systemctl failed'
+    };
+  }
+
+  const output = systemctlResult.stdout.trim();
+  if (output === '__MISSING__') {
+    return {
+      enabled: true,
+      nodeId: node.id,
+      nodeEnabled: node.enabled,
+      installRoot: profile.installRoot,
+      systemdUnitName: profile.systemdUnitName,
+      registryUrl: buildPiProxyRegistryUrl(config),
+      serviceInstalled: false,
+      activeState: 'missing',
+      subState: 'missing',
+      unitFileState: 'not-found',
+      summary: 'Pi proxy service is not installed on the node',
+      runtimeState
+    };
+  }
+
+  const [loadState = 'unknown', activeState = 'unknown', subState = 'unknown', unitFileState = 'unknown'] = output.split('\n');
+  const serviceInstalled = loadState !== 'not-found';
+  const serverCount = Array.isArray(runtimeState?.servers) ? runtimeState.servers.length : 0;
+
+  return {
+    enabled: true,
+    nodeId: node.id,
+    nodeEnabled: node.enabled,
+    installRoot: profile.installRoot,
+    systemdUnitName: profile.systemdUnitName,
+    registryUrl: buildPiProxyRegistryUrl(config),
+    serviceInstalled,
+    activeState,
+    subState,
+    unitFileState,
+    summary: activeState === 'active'
+      ? `Pi proxy active with ${serverCount} advertised world(s)`
+      : `Pi proxy service state: ${activeState}/${subState}`,
+    runtimeState
   };
 }

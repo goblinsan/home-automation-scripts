@@ -76,6 +76,35 @@ Depending on workload kind, the bundle can include:
 The Bedrock updater is implemented as a generated worker-managed script that
 checks for active players before pulling and recreating the server container.
 
+## Pi LAN Proxy Registry
+
+The control plane can also manage a Raspberry Pi node running
+`bedrock-lan-proxy.service` on the Xbox subnet.
+
+The Pi is modeled as:
+
+- a node entry in `workerNodes`
+- a managed service profile in `serviceProfiles.piProxy`
+
+The control plane exposes a registry endpoint, configured by
+`serviceProfiles.piProxy.registryPath`, that lists only running Bedrock worlds.
+
+Each registry record is derived from the Bedrock workload config and live
+runtime state:
+
+- `serverName` becomes the advertised Bedrock `motd`
+- `worldName` becomes the advertised Bedrock `levelName`
+- `node.host` and the resolved Bedrock port become the transfer target
+
+The intended flow is:
+
+1. the Pi proxy service polls the registry from the configured control-plane URL
+2. it advertises those worlds on the local Xbox LAN segment
+3. on join, it transfers the player to the real Bedrock server on the worker node
+
+The admin UI can now deploy and restart that Pi proxy service over SSH, using
+the same control-plane config that defines the Bedrock worlds it advertises.
+
 ## Current Use Cases
 
 - KULRS palette/activity job as a scheduled container workload on the core node

@@ -3,11 +3,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { dirname, join } from 'node:path';
 import { buildArtifacts } from './build.ts';
-import { getAllScheduledJobs, loadGatewayConfig, parseGatewayConfig, saveGatewayConfig, type GatewayConfig } from './config.ts';
+import { getAllScheduledJobs, getWorkerNode, loadGatewayConfig, parseGatewayConfig, saveGatewayConfig, type GatewayConfig } from './config.ts';
 import {
   controlMinecraftWorkload,
+  deployPiProxyService,
   deployRemoteWorkload,
   getMinecraftWorkloadStatus,
+  getPiProxyServiceStatus,
+  restartPiProxyService,
   runServiceProfileAgent,
   syncServiceProfileRuntime,
   type AgentRunPayload,
@@ -41,6 +44,33 @@ interface RuntimeSnapshot {
     nginxSiteExists: boolean;
     controlPlaneUnitExists: boolean;
   };
+}
+
+interface PiProxyRegistryServerRecord {
+  workloadId: string;
+  nodeId: string;
+  description: string;
+  serverName: string;
+  worldName: string;
+  motd: string;
+  levelName: string;
+  targetHost: string;
+  targetPort: number | null;
+  networkMode: string | null;
+  startedAt: string | null;
+}
+
+interface PiProxyRegistryPayload {
+  generatedAt: string;
+  profile: {
+    description: string;
+    systemdUnitName: string;
+    listenHost: string;
+    listenPort: number;
+    registryPath: string;
+    pollIntervalSeconds: number;
+  };
+  servers: PiProxyRegistryServerRecord[];
 }
 
 interface WorkflowTarget {
@@ -426,6 +456,100 @@ function createRuntimeSnapshot(
       nginxSiteExists: existsSync(join(options.buildOutDir, 'nginx', 'gateway-site.conf')),
       controlPlaneUnitExists: config.gateway.adminUi.enabled && existsSync(controlPlaneServicePath)
     }
+  };
+}
+
+function extractPublishedBedrockPort(
+  ports: Record<string, unknown> | null | undefined,
+  configuredServerPort: number | null
+): number | null {
+  if (!ports || typeof ports !== 'object') {
+    return configuredServerPort;
+  }
+
+  const preferredKeys = configuredServerPort
+    ? [`${configuredServerPort}/udp`, '19132/udp']
+    : ['19132/udp'];
+  const availableEntries = Object.entries(ports);
+
+  for (const key of preferredKeys) {
+    const bindings = ports[key];
+    if (!Array.isArray(bindings) || bindings.length === 0) {
+      continue;
+    }
+    const binding = bindings[0];
+    if (binding && typeof binding === 'object' && 'HostPort' in binding) {
+      const hostPort = Number(binding.HostPort);
+      if (Number.isFinite(hostPort) && hostPort > 0) {
+        return hostPort;
+      }
+    }
+  }
+
+  for (const [, bindings] of availableEntries) {
+    if (!Array.isArray(bindings) || bindings.length === 0) {
+      continue;
+    }
+    const binding = bindings[0];
+    if (binding && typeof binding === 'object' && 'HostPort' in binding) {
+      const hostPort = Number(binding.HostPort);
+      if (Number.isFinite(hostPort) && hostPort > 0) {
+        return hostPort;
+      }
+    }
+  }
+
+  return configuredServerPort;
+}
+
+async function buildPiProxyRegistry(config: GatewayConfig): Promise<PiProxyRegistryPayload> {
+  const minecraftWorkloads = config.remoteWorkloads.filter(
+    (workload) => workload.enabled && workload.kind === 'minecraft-bedrock-server' && workload.minecraft
+  );
+
+  const registryServers = (
+    await Promise.all(minecraftWorkloads.map(async (workload) => {
+      try {
+        const status = await getMinecraftWorkloadStatus(config, workload.id);
+        if (!status.server.running || !workload.minecraft) {
+          return null;
+        }
+
+        const node = getWorkerNode(config, workload.nodeId);
+        const targetPort = status.server.networkMode === 'host'
+          ? status.configuredServerPort
+          : extractPublishedBedrockPort(status.server.ports, status.configuredServerPort);
+
+        return {
+          workloadId: workload.id,
+          nodeId: workload.nodeId,
+          description: workload.description,
+          serverName: workload.minecraft.serverName,
+          worldName: workload.minecraft.worldName,
+          motd: workload.minecraft.serverName,
+          levelName: workload.minecraft.worldName,
+          targetHost: node.host,
+          targetPort,
+          networkMode: status.server.networkMode || null,
+          startedAt: status.server.startedAt || null
+        } satisfies PiProxyRegistryServerRecord;
+      } catch {
+        return null;
+      }
+    }))
+  ).filter((entry): entry is PiProxyRegistryServerRecord => entry !== null);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    profile: {
+      description: config.serviceProfiles.piProxy.description,
+      systemdUnitName: config.serviceProfiles.piProxy.systemdUnitName,
+      listenHost: config.serviceProfiles.piProxy.listenHost,
+      listenPort: config.serviceProfiles.piProxy.listenPort,
+      registryPath: config.serviceProfiles.piProxy.registryPath,
+      pollIntervalSeconds: config.serviceProfiles.piProxy.pollIntervalSeconds
+    },
+    servers: registryServers
   };
 }
 
@@ -1316,6 +1440,76 @@ function htmlPage(basePath: string): string {
         </div>
       </details>
 
+      <details class="card section-card">
+        <summary>
+          <div class="section-summary-copy">
+            <span class="pill">pi-proxy</span>
+            <h3>Bedrock LAN Proxy</h3>
+            <p>External Raspberry Pi proxy contract for Xbox LAN discovery and Bedrock server transfer targets.</p>
+          </div>
+        </summary>
+        <div class="section-body">
+          <div class="split-actions">
+            <div>
+              <p class="section-note">This profile manages the Pi-hosted <code>bedrock-lan-proxy.service</code> over SSH and keeps its advertised worlds aligned with the live Bedrock registry.</p>
+            </div>
+            <div class="toolbar">
+              <button id="refreshPiProxyStatusButton">Check Service</button>
+              <button id="deployPiProxyButton" class="primary">Deploy Proxy</button>
+              <button id="restartPiProxyButton">Restart Proxy</button>
+              <button id="refreshPiProxyRegistryButton">Refresh Registry</button>
+            </div>
+          </div>
+          <div class="row">
+            <label class="check"><input id="piProxyEnabled" type="checkbox" /> Enabled</label>
+            <label>Managed Node
+              <select id="piProxyNodeId"></select>
+            </label>
+            <label>Description
+              <input id="piProxyDescription" />
+            </label>
+            <label>Install Root
+              <input id="piProxyInstallRoot" />
+            </label>
+            <label>Systemd Unit
+              <input id="piProxySystemdUnitName" />
+            </label>
+            <label>Registry Base URL
+              <input id="piProxyRegistryBaseUrl" />
+            </label>
+          </div>
+          <div class="row">
+            <label>Listen Host
+              <input id="piProxyListenHost" />
+            </label>
+            <label>Listen Port
+              <input id="piProxyListenPort" type="number" min="1" />
+            </label>
+            <label>Service User
+              <input id="piProxyServiceUser" />
+            </label>
+            <label>Service Group
+              <input id="piProxyServiceGroup" />
+            </label>
+          </div>
+          <div class="row">
+            <label>Registry Path
+              <input id="piProxyRegistryPath" />
+            </label>
+            <label>Poll Interval Seconds
+              <input id="piProxyPollIntervalSeconds" type="number" min="1" />
+            </label>
+            <label>Registry URL
+              <input id="piProxyRegistryUrlPreview" readonly />
+            </label>
+          </div>
+          <div id="piProxyServiceMeta" class="meta-list"></div>
+          <div id="piProxyRegistryMeta" class="meta-list"></div>
+          <div id="piProxyActionOutput" class="inline-action-output"><strong>Action Output</strong><div>No Pi proxy actions yet.</div></div>
+          <div id="piProxyRegistryContainer" class="section-list"></div>
+        </div>
+      </details>
+
       </div>
 
       <div class="tab-panel" data-tab-panel="secrets" hidden>
@@ -1707,6 +1901,7 @@ function htmlPage(basePath: string): string {
           <p><strong>Secrets</strong> is the credential-focused view for keys, passwords, tokens, and secret env vars.</p>
           <p><strong>Nodes</strong> defines remote worker nodes and generic remote container jobs.</p>
           <p><strong>Minecraft</strong> is the dedicated Bedrock administration surface.</p>
+          <p><strong>Pi Proxy</strong> manages the Raspberry Pi Bedrock LAN proxy service and its live registry wiring for Xbox-visible worlds.</p>
         </div>
       </details>
     </aside>
@@ -1728,6 +1923,8 @@ function htmlPage(basePath: string): string {
       providerModels: {},
       ttsStatus: null,
       ttsVoices: [],
+      piProxyRegistry: null,
+      piProxyStatus: null,
       agentRun: {
         agentId: '',
         prompt: 'Give me a short readiness check in character, then confirm the local model route is working.',
@@ -2925,6 +3122,102 @@ function htmlPage(basePath: string): string {
       });
     }
 
+    function renderPiProxyProfile() {
+      const profile = state.config.serviceProfiles.piProxy;
+      document.getElementById('piProxyNodeId').innerHTML = workerNodeOptions(profile.nodeId);
+      document.getElementById('piProxyEnabled').checked = profile.enabled;
+      document.getElementById('piProxyDescription').value = profile.description;
+      document.getElementById('piProxyInstallRoot').value = profile.installRoot;
+      document.getElementById('piProxySystemdUnitName').value = profile.systemdUnitName;
+      document.getElementById('piProxyRegistryBaseUrl').value = profile.registryBaseUrl;
+      document.getElementById('piProxyListenHost').value = profile.listenHost;
+      document.getElementById('piProxyListenPort').value = String(profile.listenPort);
+      document.getElementById('piProxyServiceUser').value = profile.serviceUser || '';
+      document.getElementById('piProxyServiceGroup').value = profile.serviceGroup || '';
+      document.getElementById('piProxyRegistryPath').value = profile.registryPath;
+      document.getElementById('piProxyPollIntervalSeconds').value = String(profile.pollIntervalSeconds);
+      const normalizedBaseUrl = profile.registryBaseUrl.endsWith('/') ? profile.registryBaseUrl.slice(0, -1) : profile.registryBaseUrl;
+      document.getElementById('piProxyRegistryUrlPreview').value = normalizedBaseUrl + (profile.registryPath.startsWith('/') ? profile.registryPath : '/' + profile.registryPath);
+
+      const serviceMeta = document.getElementById('piProxyServiceMeta');
+      const meta = document.getElementById('piProxyRegistryMeta');
+      const container = document.getElementById('piProxyRegistryContainer');
+      const actionOutput = document.getElementById('piProxyActionOutput');
+
+      if (!state.piProxyStatus) {
+        serviceMeta.innerHTML = '<div><strong>Service:</strong> status not checked yet</div>';
+      } else if (state.piProxyStatus.error) {
+        serviceMeta.innerHTML = [
+          '<div><strong>Service:</strong> error</div>',
+          '<div><strong>Detail:</strong> ' + escapeHtml(state.piProxyStatus.error) + '</div>'
+        ].join('');
+      } else {
+        const runtimeServers = Array.isArray(state.piProxyStatus.runtimeState?.servers)
+          ? state.piProxyStatus.runtimeState.servers.length
+          : 0;
+        serviceMeta.innerHTML = [
+          '<div><strong>Node:</strong> ' + escapeHtml(state.piProxyStatus.nodeId || profile.nodeId || 'unset') + '</div>',
+          '<div><strong>Service State:</strong> ' + escapeHtml(state.piProxyStatus.activeState + '/' + state.piProxyStatus.subState) + '</div>',
+          '<div><strong>Installed:</strong> ' + escapeHtml(state.piProxyStatus.serviceInstalled ? 'yes' : 'no') + '</div>',
+          '<div><strong>Advertised Locally:</strong> ' + escapeHtml(String(runtimeServers)) + '</div>',
+          '<div><strong>Summary:</strong> ' + escapeHtml(state.piProxyStatus.summary || 'unknown') + '</div>'
+        ].join('');
+      }
+
+      if (!profile.enabled) {
+        meta.innerHTML = '<div><strong>Status:</strong> disabled</div>';
+        serviceMeta.innerHTML = '<div><strong>Service:</strong> disabled</div>';
+        container.innerHTML = '<div class="card card-quiet">Enable the Pi proxy profile to expose the Bedrock registry endpoint.</div>';
+        return;
+      }
+
+      if (!state.piProxyRegistry) {
+        meta.innerHTML = '<div><strong>Status:</strong> registry not loaded yet</div>';
+        container.innerHTML = '<div class="card card-quiet">Use <strong>Refresh Registry</strong> to inspect the live Bedrock registry.</div>';
+        return;
+      }
+
+      if (state.piProxyRegistry.error) {
+        meta.innerHTML = '<div><strong>Status:</strong> error</div>';
+        container.innerHTML = '<div class="card card-quiet">' + escapeHtml(state.piProxyRegistry.error) + '</div>';
+        return;
+      }
+
+      const generatedAt = formatTimestamp(state.piProxyRegistry.generatedAt);
+      const servers = Array.isArray(state.piProxyRegistry.servers) ? state.piProxyRegistry.servers : [];
+      meta.innerHTML = [
+        '<div><strong>Generated:</strong> ' + escapeHtml(generatedAt) + '</div>',
+        '<div><strong>Available Worlds:</strong> ' + escapeHtml(String(servers.length)) + '</div>',
+        '<div><strong>Proxy Unit:</strong> ' + escapeHtml(profile.systemdUnitName) + '</div>'
+      ].join('');
+
+      if (servers.length === 0) {
+        container.innerHTML = '<div class="card card-quiet">No running Bedrock worlds are currently available for LAN advertisement.</div>';
+        return;
+      }
+
+      container.innerHTML = '';
+      servers.forEach((server) => {
+        const element = document.createElement('div');
+        element.className = 'card';
+        element.innerHTML = [
+          '<div class="split-actions">',
+          '<div><strong>' + escapeHtml(server.serverName || server.workloadId) + '</strong></div>',
+          '<div class="pill">' + escapeHtml(server.worldName || 'world') + '</div>',
+          '</div>',
+          '<div class="meta-list">',
+          '<div><strong>MOTD:</strong> ' + escapeHtml(server.motd || server.serverName || '') + '</div>',
+          '<div><strong>Level Name:</strong> ' + escapeHtml(server.levelName || server.worldName || '') + '</div>',
+          '<div><strong>Transfer Target:</strong> ' + escapeHtml(server.targetHost + ':' + String(server.targetPort || 'unknown')) + '</div>',
+          '<div><strong>Node:</strong> ' + escapeHtml(server.nodeId) + '</div>',
+          '<div><strong>Network Mode:</strong> ' + escapeHtml(server.networkMode || 'unknown') + '</div>',
+          '<div><strong>Started:</strong> ' + escapeHtml(formatTimestamp(server.startedAt)) + '</div>',
+          '</div>'
+        ].join('');
+        container.appendChild(element);
+      });
+    }
+
     function renderSecrets() {
       renderSecretEnvironmentList(
         'gatewayApiSecretsContainer',
@@ -3291,6 +3584,12 @@ function htmlPage(basePath: string): string {
             <label>Worker Poll Seconds<input type="number" data-field="workerPollIntervalSeconds" value="\${node.workerPollIntervalSeconds || 15}" /></label>
           </div>
           <div class="row">
+            <label>Node Command<input data-field="nodeCommand" value="\${node.nodeCommand || 'node'}" /></label>
+            <label>systemd Unit Directory<input data-field="systemdUnitDirectory" value="\${node.systemdUnitDirectory || ''}" placeholder="/etc/systemd/system" /></label>
+            <label>systemd Reload Command<input data-field="systemdReloadCommand" value="\${node.systemdReloadCommand || ''}" placeholder="sudo systemctl daemon-reload" /></label>
+            <label>systemd Enable Timer Command<input data-field="systemdEnableTimerCommand" value="\${node.systemdEnableTimerCommand || ''}" placeholder="sudo systemctl enable --now" /></label>
+          </div>
+          <div class="row">
             <label>Docker Command<input data-field="dockerCommand" value="\${node.dockerCommand}" /></label>
             <label>Docker Compose Command<input data-field="dockerComposeCommand" value="\${node.dockerComposeCommand}" /></label>
           </div>
@@ -3301,6 +3600,7 @@ function htmlPage(basePath: string): string {
           renderWorkerNodes();
           renderRemoteWorkloads();
           renderBedrockServers();
+          renderPiProxyProfile();
           syncRawJson();
         });
 
@@ -3312,10 +3612,17 @@ function htmlPage(basePath: string): string {
               return;
             }
             node[field] = isCheckbox ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
+            if (
+              (field === 'systemdUnitDirectory' || field === 'systemdReloadCommand' || field === 'systemdEnableTimerCommand') &&
+              !input.value.trim()
+            ) {
+              delete node[field];
+            }
             if (isCheckbox) {
               renderRemoteWorkloads();
               renderBedrockServers();
             }
+            renderPiProxyProfile();
             syncRawJson();
           });
         });
@@ -4217,6 +4524,7 @@ function htmlPage(basePath: string): string {
       renderGatewayApiJobRuntimeProfile();
       renderKulrsActivityProfile();
       renderGatewayChatPlatformProfile();
+      renderPiProxyProfile();
       renderSecrets();
       renderJobCatalog();
       renderWorkflows();
@@ -4239,8 +4547,12 @@ function htmlPage(basePath: string): string {
       }
       state.config = await response.json();
       render();
-      await refreshAllMinecraftStatuses({ silent: true });
+      await Promise.all([
+        refreshAllMinecraftStatuses({ silent: true }),
+        fetchPiProxyStatus({ silent: true })
+      ]);
       renderBedrockServers();
+      renderPiProxyProfile();
       setStatus('Current', 'ok', { log: false });
     }
 
@@ -4506,10 +4818,65 @@ function htmlPage(basePath: string): string {
     async function refreshMinecraftStatus(workloadId, options = {}) {
       const status = await requestJson('GET', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/status');
       state.minecraftStatuses[workloadId] = status;
+      if (!options.skipRegistry && state.config?.serviceProfiles.piProxy.enabled) {
+        await fetchPiProxyRegistry({ silent: true });
+      }
       if (!options.silent) {
         renderBedrockServers();
+        renderPiProxyProfile();
       }
       return status;
+    }
+
+    async function fetchPiProxyRegistry(options = {}) {
+      if (!state.config || !state.config.serviceProfiles.piProxy.enabled) {
+        state.piProxyRegistry = null;
+        renderPiProxyProfile();
+        return null;
+      }
+
+      try {
+        state.piProxyRegistry = await requestJson('GET', state.config.serviceProfiles.piProxy.registryPath);
+        renderPiProxyProfile();
+        if (!options.silent) {
+          const serverCount = Array.isArray(state.piProxyRegistry.servers) ? state.piProxyRegistry.servers.length : 0;
+          setStatus('Loaded Pi proxy registry (' + serverCount + ' worlds)');
+        }
+        return state.piProxyRegistry;
+      } catch (error) {
+        state.piProxyRegistry = {
+          error: error.message
+        };
+        renderPiProxyProfile();
+        if (!options.silent) {
+          setStatus(error.message, 'error');
+        }
+        return null;
+      }
+    }
+
+    async function fetchPiProxyStatus(options = {}) {
+      if (!state.config || !state.config.serviceProfiles.piProxy.enabled) {
+        state.piProxyStatus = null;
+        renderPiProxyProfile();
+        return null;
+      }
+
+      try {
+        state.piProxyStatus = await requestJson('GET', '/api/service-profiles/pi-proxy/status');
+        renderPiProxyProfile();
+        if (!options.silent) {
+          setStatus(state.piProxyStatus.summary || 'Loaded Pi proxy status');
+        }
+        return state.piProxyStatus;
+      } catch (error) {
+        state.piProxyStatus = { error: error.message };
+        renderPiProxyProfile();
+        if (!options.silent) {
+          setStatus(error.message, 'error');
+        }
+        return null;
+      }
     }
 
     async function refreshAllMinecraftStatuses(options = {}) {
@@ -4518,7 +4885,7 @@ function htmlPage(basePath: string): string {
         : [];
       await Promise.all(workloads.map(async (workload) => {
         try {
-          await refreshMinecraftStatus(workload.id, { silent: true });
+          await refreshMinecraftStatus(workload.id, { silent: true, skipRegistry: true });
         } catch (error) {
           const message = error && typeof error === 'object' && 'message' in error ? error.message : String(error);
           state.minecraftStatuses[workload.id] = {
@@ -4530,8 +4897,12 @@ function htmlPage(basePath: string): string {
           };
         }
       }));
+      if (!options.skipRegistry && state.config?.serviceProfiles.piProxy.enabled) {
+        await fetchPiProxyRegistry({ silent: true });
+      }
       if (!options.silent) {
         renderBedrockServers();
+        renderPiProxyProfile();
       }
     }
 
@@ -4540,7 +4911,13 @@ function htmlPage(basePath: string): string {
       const result = await requestJson('POST', '/api/config', state.config);
       state.config = result.config;
       render();
-      await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime(), refreshAllMinecraftStatuses({ silent: true })]);
+      await Promise.all([
+        fetchWorkflows(),
+        fetchJobsCatalog(),
+        fetchRuntime(),
+        refreshAllMinecraftStatuses({ silent: true }),
+        fetchPiProxyStatus({ silent: true })
+      ]);
       return result;
     }
 
@@ -4707,6 +5084,105 @@ function htmlPage(basePath: string): string {
         syncRawJson();
       });
     });
+    [
+      ['piProxyEnabled', 'enabled', 'checkbox'],
+      ['piProxyNodeId', 'nodeId'],
+      ['piProxyDescription', 'description'],
+      ['piProxyInstallRoot', 'installRoot'],
+      ['piProxySystemdUnitName', 'systemdUnitName'],
+      ['piProxyRegistryBaseUrl', 'registryBaseUrl'],
+      ['piProxyListenHost', 'listenHost'],
+      ['piProxyListenPort', 'listenPort', 'number'],
+      ['piProxyServiceUser', 'serviceUser'],
+      ['piProxyServiceGroup', 'serviceGroup'],
+      ['piProxyRegistryPath', 'registryPath'],
+      ['piProxyPollIntervalSeconds', 'pollIntervalSeconds', 'number'],
+    ].forEach(([id, key, kind]) => {
+      const element = document.getElementById(id);
+      const eventName = kind === 'checkbox' || element.tagName === 'SELECT' ? 'change' : 'input';
+      element.addEventListener(eventName, (event) => {
+        const target = event.target;
+        if (kind === 'checkbox') {
+          state.config.serviceProfiles.piProxy[key] = target.checked;
+        } else if (kind === 'number') {
+          state.config.serviceProfiles.piProxy[key] = Number(target.value);
+        } else if (key === 'registryPath') {
+          state.config.serviceProfiles.piProxy[key] = target.value.startsWith('/') ? target.value : '/' + target.value;
+        } else if ((key === 'serviceUser' || key === 'serviceGroup') && !target.value.trim()) {
+          delete state.config.serviceProfiles.piProxy[key];
+        } else {
+          state.config.serviceProfiles.piProxy[key] = target.value;
+        }
+        renderPiProxyProfile();
+        syncRawJson();
+      });
+    });
+
+    document.getElementById('refreshPiProxyStatusButton').addEventListener('click', async () => {
+      const button = document.getElementById('refreshPiProxyStatusButton');
+      const actionOutput = document.getElementById('piProxyActionOutput');
+      await withBusyButton(button, 'Checking…', async () => {
+        try {
+          setLocalActionOutput(actionOutput, 'Checking Pi proxy service status…', 'progress');
+          const status = await fetchPiProxyStatus();
+          setLocalActionOutput(actionOutput, status?.summary || 'Loaded Pi proxy status.', 'ok');
+        } catch (error) {
+          setLocalActionOutput(actionOutput, error.message, 'error');
+        }
+      });
+    });
+
+    document.getElementById('deployPiProxyButton').addEventListener('click', async () => {
+      const button = document.getElementById('deployPiProxyButton');
+      const actionOutput = document.getElementById('piProxyActionOutput');
+      await withBusyButton(button, 'Deploying…', async () => {
+        try {
+          setLocalActionOutput(actionOutput, 'Saving config and deploying the managed Pi proxy…', 'progress');
+          await persistConfigState();
+          const result = await requestJson('POST', '/api/service-profiles/pi-proxy/deploy');
+          await Promise.all([fetchPiProxyStatus({ silent: true }), fetchPiProxyRegistry({ silent: true })]);
+          renderPiProxyProfile();
+          setLocalActionOutput(actionOutput, result.message || 'Pi proxy deployed.', 'ok');
+          setStatus(result.message || 'Pi proxy deployed');
+        } catch (error) {
+          setLocalActionOutput(actionOutput, error.message, 'error');
+          setStatus(error.message, 'error');
+        }
+      });
+    });
+
+    document.getElementById('restartPiProxyButton').addEventListener('click', async () => {
+      const button = document.getElementById('restartPiProxyButton');
+      const actionOutput = document.getElementById('piProxyActionOutput');
+      await withBusyButton(button, 'Restarting…', async () => {
+        try {
+          setLocalActionOutput(actionOutput, 'Restarting Pi proxy service…', 'progress');
+          const result = await requestJson('POST', '/api/service-profiles/pi-proxy/restart');
+          await fetchPiProxyStatus({ silent: true });
+          renderPiProxyProfile();
+          setLocalActionOutput(actionOutput, result.message || 'Pi proxy restarted.', 'ok');
+          setStatus(result.message || 'Pi proxy restarted');
+        } catch (error) {
+          setLocalActionOutput(actionOutput, error.message, 'error');
+          setStatus(error.message, 'error');
+        }
+      });
+    });
+
+    document.getElementById('refreshPiProxyRegistryButton').addEventListener('click', async () => {
+      const button = document.getElementById('refreshPiProxyRegistryButton');
+      const actionOutput = document.getElementById('piProxyActionOutput');
+      await withBusyButton(button, 'Refreshing…', async () => {
+        try {
+          setLocalActionOutput(actionOutput, 'Refreshing Bedrock registry for the Pi proxy…', 'progress');
+          const payload = await fetchPiProxyRegistry();
+          const serverCount = Array.isArray(payload?.servers) ? payload.servers.length : 0;
+          setLocalActionOutput(actionOutput, 'Loaded Pi proxy registry with ' + serverCount + ' world(s).', 'ok');
+        } catch (error) {
+          setLocalActionOutput(actionOutput, error.message, 'error');
+        }
+      });
+    });
 
     document.getElementById('saveButton').addEventListener('click', async () => {
       const button = document.getElementById('saveButton');
@@ -4715,7 +5191,13 @@ function htmlPage(basePath: string): string {
           const result = await requestJson('POST', '/api/build', state.config);
           state.config = result.config;
           render();
-          await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime(), refreshAllMinecraftStatuses({ silent: true })]);
+          await Promise.all([
+            fetchWorkflows(),
+            fetchJobsCatalog(),
+            fetchRuntime(),
+            refreshAllMinecraftStatuses({ silent: true }),
+            fetchPiProxyStatus({ silent: true })
+          ]);
           setStatus(result.message || 'Saved');
         } catch (error) {
           setStatus(error.message, 'error');
@@ -4835,6 +5317,7 @@ function htmlPage(basePath: string): string {
       renderWorkerNodes();
       renderRemoteWorkloads();
       renderBedrockServers();
+      renderPiProxyProfile();
       syncRawJson();
     });
     document.getElementById('addRemoteWorkloadButton').addEventListener('click', () => {
@@ -5438,6 +5921,38 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         const config = await loadGatewayConfig(options.configPath);
         sendJson(response, 200, createRuntimeSnapshot(config, options, startedAtMs));
         return;
+      }
+
+      if (request.method === 'GET' && path === '/api/service-profiles/pi-proxy/status') {
+        const config = await loadGatewayConfig(options.configPath);
+        sendJson(response, 200, await getPiProxyServiceStatus(config));
+        return;
+      }
+
+      if (request.method === 'POST' && path === '/api/service-profiles/pi-proxy/deploy') {
+        const config = await loadGatewayConfig(options.configPath);
+        await buildArtifacts(config, options.buildOutDir);
+        await deployPiProxyService(config, options.buildOutDir, { dryRun: false, log: () => undefined });
+        sendJson(response, 200, { message: `Deployed Pi proxy to node ${config.serviceProfiles.piProxy.nodeId}` });
+        return;
+      }
+
+      if (request.method === 'POST' && path === '/api/service-profiles/pi-proxy/restart') {
+        const config = await loadGatewayConfig(options.configPath);
+        await restartPiProxyService(config, { dryRun: false, log: () => undefined });
+        sendJson(response, 200, { message: `Restarted Pi proxy service on node ${config.serviceProfiles.piProxy.nodeId}` });
+        return;
+      }
+
+      if (request.method === 'GET') {
+        const config = await loadGatewayConfig(options.configPath);
+        if (path === config.serviceProfiles.piProxy.registryPath) {
+          if (!config.serviceProfiles.piProxy.enabled) {
+            throw new Error('piProxy service profile is disabled');
+          }
+          sendJson(response, 200, await buildPiProxyRegistry(config));
+          return;
+        }
       }
 
       if (request.method === 'GET' && path === '/api/chat-platform/providers/status') {

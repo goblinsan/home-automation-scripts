@@ -137,6 +137,19 @@ function createConfig(root: string): GatewayConfig {
             contextSources: []
           }
         ]
+      },
+      piProxy: {
+        enabled: false,
+        description: 'Physical Raspberry Pi running the external Bedrock LAN proxy',
+        nodeId: 'pi-node',
+        installRoot: '/opt/bedrock-lan-proxy',
+        systemdUnitName: 'bedrock-lan-proxy.service',
+        registryBaseUrl: 'http://198.51.100.200:4173',
+        listenHost: '0.0.0.0',
+        listenPort: 19132,
+        registryPath: '/api/minecraft/server-registry',
+        pollIntervalSeconds: 30,
+        serviceUser: 'deploy'
       }
     }
   };

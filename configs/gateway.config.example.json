@@ -120,6 +120,24 @@
       "workerPollIntervalSeconds": 15,
       "dockerCommand": "docker",
       "dockerComposeCommand": "docker compose"
+    },
+    {
+      "id": "pi-node",
+      "enabled": true,
+      "description": "Raspberry Pi behind the Deco mesh running the Bedrock LAN proxy (forwarded from 198.51.100.75:2222 to 203.0.113.60:22)",
+      "host": "198.51.100.75",
+      "sshUser": "deploy",
+      "sshPort": 2222,
+      "buildRoot": "/opt/gateway-control-plane",
+      "stackRoot": "/opt/gateway-control-plane/stacks",
+      "volumeRoot": "/opt/gateway-control-plane/volumes",
+      "workerPollIntervalSeconds": 30,
+      "nodeCommand": "/usr/bin/node",
+      "systemdUnitDirectory": "/etc/systemd/system",
+      "systemdReloadCommand": "sudo systemctl daemon-reload",
+      "systemdEnableTimerCommand": "sudo systemctl enable --now",
+      "dockerCommand": "docker",
+      "dockerComposeCommand": "docker compose"
     }
   ],
   "remoteWorkloads": [
@@ -432,6 +450,19 @@
           "contextSources": []
         }
       ]
+    },
+    "piProxy": {
+      "enabled": true,
+      "description": "Physical Raspberry Pi running the Bedrock LAN proxy through the Deco NAT forward",
+      "nodeId": "pi-node",
+      "installRoot": "/opt/bedrock-lan-proxy",
+      "systemdUnitName": "bedrock-lan-proxy.service",
+      "registryBaseUrl": "http://198.51.100.200:4173",
+      "listenHost": "0.0.0.0",
+      "listenPort": 19132,
+      "registryPath": "/api/minecraft/server-registry",
+      "pollIntervalSeconds": 30,
+      "serviceUser": "deploy"
     }
   }
 }

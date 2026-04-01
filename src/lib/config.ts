@@ -275,9 +275,25 @@ export interface GatewayChatPlatformServiceProfile {
   agents: GatewayChatAgentConfig[];
 }
 
+export interface PiProxyServiceProfile {
+  enabled: boolean;
+  description: string;
+  nodeId: string;
+  installRoot: string;
+  systemdUnitName: string;
+  registryBaseUrl: string;
+  listenHost: string;
+  listenPort: number;
+  registryPath: string;
+  pollIntervalSeconds: number;
+  serviceUser?: string;
+  serviceGroup?: string;
+}
+
 export interface ServiceProfiles {
   gatewayApi: GatewayApiServiceProfile;
   gatewayChatPlatform: GatewayChatPlatformServiceProfile;
+  piProxy: PiProxyServiceProfile;
 }
 
 export interface GatewayConfig {
@@ -917,6 +933,46 @@ function parseGatewayChatPlatformServiceProfile(value: unknown): GatewayChatPlat
   };
 }
 
+function parsePiProxyServiceProfile(value: unknown): PiProxyServiceProfile {
+  if (value === undefined) {
+    return {
+      enabled: false,
+      description: 'Physical Raspberry Pi running the external Bedrock LAN proxy',
+      nodeId: 'pi-node',
+      installRoot: '/opt/bedrock-lan-proxy',
+      systemdUnitName: 'bedrock-lan-proxy.service',
+      registryBaseUrl: 'http://127.0.0.1:4173',
+      listenHost: '0.0.0.0',
+      listenPort: 19132,
+      registryPath: '/api/minecraft/server-registry',
+      pollIntervalSeconds: 30
+    };
+  }
+
+  if (!isRecord(value)) {
+    throw new Error('Expected object for serviceProfiles.piProxy');
+  }
+
+  const registryPath = assertString(value.registryPath, 'serviceProfiles.piProxy.registryPath');
+  return {
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
+    description: assertString(value.description, 'serviceProfiles.piProxy.description'),
+    nodeId: assertString(value.nodeId, 'serviceProfiles.piProxy.nodeId'),
+    installRoot: assertString(value.installRoot, 'serviceProfiles.piProxy.installRoot'),
+    systemdUnitName: assertString(value.systemdUnitName, 'serviceProfiles.piProxy.systemdUnitName'),
+    registryBaseUrl: assertString(value.registryBaseUrl, 'serviceProfiles.piProxy.registryBaseUrl'),
+    listenHost: assertString(value.listenHost, 'serviceProfiles.piProxy.listenHost'),
+    listenPort: assertPositiveInteger(value.listenPort, 'serviceProfiles.piProxy.listenPort'),
+    registryPath: registryPath.startsWith('/') ? registryPath : `/${registryPath}`,
+    pollIntervalSeconds: assertPositiveInteger(
+      value.pollIntervalSeconds,
+      'serviceProfiles.piProxy.pollIntervalSeconds'
+    ),
+    serviceUser: typeof value.serviceUser === 'string' ? value.serviceUser : undefined,
+    serviceGroup: typeof value.serviceGroup === 'string' ? value.serviceGroup : undefined
+  };
+}
+
 function parseAdminUiSettings(value: unknown): AdminUiSettings {
   if (value === undefined) {
     return {
@@ -1004,7 +1060,8 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
   const serviceProfilesRaw = isRecord(raw.serviceProfiles) ? raw.serviceProfiles : {};
   const serviceProfiles: ServiceProfiles = {
     gatewayApi: parseGatewayApiServiceProfile(serviceProfilesRaw.gatewayApi),
-    gatewayChatPlatform: parseGatewayChatPlatformServiceProfile(serviceProfilesRaw.gatewayChatPlatform)
+    gatewayChatPlatform: parseGatewayChatPlatformServiceProfile(serviceProfilesRaw.gatewayChatPlatform),
+    piProxy: parsePiProxyServiceProfile(serviceProfilesRaw.piProxy)
   };
 
   for (const job of scheduledJobs) {
@@ -1030,6 +1087,10 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
     throw new Error(
       `service profile gatewayChatPlatform references unknown app ${serviceProfiles.gatewayChatPlatform.appId}`
     );
+  }
+
+  if (serviceProfiles.piProxy.enabled && !workerNodes.find((node) => node.id === serviceProfiles.piProxy.nodeId)) {
+    throw new Error(`service profile piProxy references unknown worker node ${serviceProfiles.piProxy.nodeId}`);
   }
 
   return { gateway, apps, scheduledJobs, workerNodes, remoteWorkloads, features, serviceProfiles };

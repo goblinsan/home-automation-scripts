@@ -95,3 +95,28 @@ The admin surface is also modeled as part of the gateway config:
 - nginx route prefix such as `/admin/`
 - a generated systemd service for the UI process
 - runtime health and artifact status exposed by the UI itself
+
+## Bedrock Console Access
+
+Minecraft Bedrock on Xbox does not reliably discover worlds across subnet
+boundaries, so the architecture now includes an external LAN proxy role:
+
+- the Bedrock server runs on a worker node such as `core-node`
+- the control plane hosts a live Bedrock server registry from configured
+  `serverName` and `worldName` values for running worlds
+- a physical Raspberry Pi on the Xbox subnet runs
+  `bedrock-lan-proxy.service` and polls that registry
+- the Pi advertises LAN-visible worlds locally, then transfers players to the
+  real Bedrock target host and port on join
+
+That split keeps Bedrock world hosting on the core node while still giving
+consoles a LAN-discovery path on a different network segment.
+
+The Raspberry Pi is now modeled through:
+
+- a regular SSH-managed node entry in `workerNodes`
+- the `serviceProfiles.piProxy` profile for the Bedrock LAN proxy service
+
+That lets the control-plane UI manage both the registry contract and the
+deployed `bedrock-lan-proxy.service` on the Pi, while Bedrock world hosting
+remains on the core node.

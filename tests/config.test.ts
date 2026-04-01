@@ -185,6 +185,19 @@ test('parseGatewayConfig accepts the example shape', () => {
             contextSources: []
           }
         ]
+      },
+      piProxy: {
+        enabled: true,
+        description: 'Physical Raspberry Pi running the external Bedrock LAN proxy',
+        nodeId: 'core-node',
+        installRoot: '/opt/bedrock-lan-proxy',
+        systemdUnitName: 'bedrock-lan-proxy.service',
+        registryBaseUrl: 'http://198.51.100.200:4173',
+        listenHost: '0.0.0.0',
+        listenPort: 19132,
+        registryPath: '/api/minecraft/server-registry',
+        pollIntervalSeconds: 30,
+        serviceUser: 'deploy'
       }
     }
   });
@@ -201,6 +214,9 @@ test('parseGatewayConfig accepts the example shape', () => {
   assert.equal(config.serviceProfiles.gatewayApi.kulrsActivity.bots[0].id, 'mireille');
   assert.equal(config.serviceProfiles.gatewayChatPlatform.agents[0].id, 'marvin');
   assert.equal(config.serviceProfiles.gatewayChatPlatform.tts.baseUrl, 'http://198.51.100.111:5000');
+  assert.equal(config.serviceProfiles.piProxy.systemdUnitName, 'bedrock-lan-proxy.service');
+  assert.equal(config.serviceProfiles.piProxy.nodeId, 'core-node');
+  assert.equal(config.serviceProfiles.piProxy.registryBaseUrl, 'http://198.51.100.200:4173');
   assert.equal(getAllScheduledJobs(config).some((job) => job.id === 'gateway-api-kulrs-activity'), true);
 });
 
@@ -263,4 +279,10 @@ test('parseGatewayConfig defaults enabled flags when omitted', () => {
   assert.deepEqual(config.serviceProfiles.gatewayChatPlatform.agents, []);
   assert.equal(config.serviceProfiles.gatewayChatPlatform.tts.enabled, false);
   assert.equal(config.serviceProfiles.gatewayChatPlatform.tts.defaultVoice, 'assistant_v1');
+  assert.equal(config.serviceProfiles.piProxy.enabled, false);
+  assert.equal(config.serviceProfiles.piProxy.nodeId, 'pi-node');
+  assert.equal(config.serviceProfiles.piProxy.installRoot, '/opt/bedrock-lan-proxy');
+  assert.equal(config.serviceProfiles.piProxy.systemdUnitName, 'bedrock-lan-proxy.service');
+  assert.equal(config.serviceProfiles.piProxy.registryBaseUrl, 'http://127.0.0.1:4173');
+  assert.equal(config.serviceProfiles.piProxy.registryPath, '/api/minecraft/server-registry');
 });

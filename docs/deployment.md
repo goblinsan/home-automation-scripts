@@ -155,6 +155,15 @@ The admin UI exposes the same live operations:
 - run Bruvie-D or any configured agent through `/api/agents/:id/run`
 - configure and probe the external `local-tts-service`
 
+## Managed Pi Proxy
+
+The control plane can also deploy a managed Bedrock LAN proxy service to a
+Raspberry Pi node over SSH.
+
+That service is configured through `serviceProfiles.piProxy` and uses the live
+`/api/minecraft/server-registry` endpoint to advertise running Bedrock worlds
+to Xbox clients on a different subnet.
+
 ## Per-Repo Auto Deploy
 
 The intended automation model is:
