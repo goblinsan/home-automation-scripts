@@ -264,6 +264,8 @@ test('buildArtifacts renders remote workload bundles for core nodes', async () =
   assert.match(workerCompose, /gateway-worker:/);
   assert.match(workerCompose, /\/var\/run\/docker\.sock:\/var\/run\/docker\.sock/);
   assert.match(workerCompose, /\/runtime\/worker-config\.json/);
+  assert.match(workerScript, /pull server/);
+  assert.match(workerScript, /up -d --force-recreate server/);
   assert.match(minecraftCompose, /itzg\/minecraft-bedrock-server:latest/);
   assert.match(minecraftCompose, /network_mode: "host"/);
   assert.doesNotMatch(minecraftCompose, /19132:19132\/udp/);

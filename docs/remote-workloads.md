@@ -105,6 +105,12 @@ The intended flow is:
 The admin UI can now deploy and restart that Pi proxy service over SSH, using
 the same control-plane config that defines the Bedrock worlds it advertises.
 
+The Bedrock tab also exposes live server observability for each deployed world:
+
+- the configured image ref and the image ID the container is actually using
+- the latest Bedrock server version detected from container logs
+- the last 100 lines of the server log for startup and connection debugging
+
 ## Current Use Cases
 
 - KULRS palette/activity job as a scheduled container workload on the core node

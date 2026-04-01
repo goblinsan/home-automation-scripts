@@ -406,6 +406,7 @@ async function runMinecraftAction(config, workload, action, payload) {
   switch (action) {
     case 'start':
       await bootstrapMinecraft(config, workload);
+      await runShell(composeCommand + ' pull server');
       await runShell(composeCommand + ' up -d server');
       return {
         action,
@@ -423,7 +424,8 @@ async function runMinecraftAction(config, workload, action, payload) {
       };
     case 'restart':
       await bootstrapMinecraft(config, workload);
-      await runShell(composeCommand + ' restart server');
+      await runShell(composeCommand + ' pull server');
+      await runShell(composeCommand + ' up -d --force-recreate server');
       return {
         action,
         status: 'completed',

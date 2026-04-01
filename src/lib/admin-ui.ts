@@ -824,6 +824,19 @@ function htmlPage(basePath: string): string {
       display: block;
       margin-bottom: 6px;
     }
+    .log-output {
+      margin: 12px 0 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: #f7faf8;
+      font-family: "SFMono-Regular", ui-monospace, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 320px;
+      overflow: auto;
+    }
     .aside-stack {
       order: 2;
       display: grid;
@@ -4007,6 +4020,13 @@ function htmlPage(basePath: string): string {
         const portSummary = minecraftStatus
           ? formatPortMappings(minecraftStatus.server?.ports, minecraftStatus.server?.networkMode)
           : 'not checked yet';
+        const configuredImageSummary = minecraftStatus?.server?.configuredImage || minecraft.image;
+        const imageIdSummary = minecraftStatus?.server?.imageId || 'not checked yet';
+        const bedrockVersionSummary = minecraftStatus?.serverRuntime?.bedrockVersion || 'not detected yet';
+        const downloadedVersionSummary = minecraftStatus?.serverRuntime?.downloadedVersion || null;
+        const createdLine = minecraftStatus?.server?.createdAt
+          ? '<p><strong>Created:</strong> ' + formatTimestamp(minecraftStatus.server.createdAt) + '</p>'
+          : '';
         const startedLine = minecraftStatus?.server?.startedAt
           ? '<p><strong>Started:</strong> ' + formatTimestamp(minecraftStatus.server.startedAt) + '</p>'
           : '';
@@ -4021,6 +4041,9 @@ function htmlPage(basePath: string): string {
           : '';
         const autoUpdateWorkerStateErrorLine = autoUpdate?.workerStateError
           ? '<p><strong>Worker State Error:</strong> ' + autoUpdate.workerStateError + '</p>'
+          : '';
+        const downloadedVersionLine = downloadedVersionSummary
+          ? '<p><strong>Last Downloaded Version:</strong> ' + escapeHtml(downloadedVersionSummary) + '</p>'
           : '';
         const element = document.createElement('div');
         element.className = 'card';
@@ -4044,9 +4067,18 @@ function htmlPage(basePath: string): string {
                 <p><strong>Network Mode:</strong> \${minecraftStatus?.server?.networkMode || minecraft.networkMode}</p>
                 <p><strong>Configured Port:</strong> \${minecraftStatus?.configuredServerPort || minecraft.serverPort}</p>
                 <p><strong>Docker Port Mapping:</strong> \${portSummary}</p>
+                <p><strong>Configured Image:</strong> \${formatInlineValue(minecraft.image)}</p>
+                <p><strong>Container Image:</strong> \${formatInlineValue(configuredImageSummary)}</p>
+                <p><strong>Image ID:</strong> \${formatInlineValue(imageIdSummary)}</p>
+                <p><strong>Bedrock Version:</strong> \${formatInlineValue(bedrockVersionSummary)}</p>
+                \${downloadedVersionLine}
+                \${createdLine}
                 \${startedLine}
                 \${workerErrorLine}
                 \${serverErrorLine}
+              </div>
+              <div class="toolbar">
+                <button data-action="refresh-status">Refresh Status</button>
               </div>
             </div>
           </div>
@@ -4199,6 +4231,11 @@ function htmlPage(basePath: string): string {
               <button data-action="schedule-update-at">Schedule At Time</button>
             </div>
           </div>
+          <details class="card disclosure-card">
+            <summary><strong>Server Log Tail</strong></summary>
+            <p>Use this to confirm the Bedrock version the container actually announced and to inspect recent startup or handshake errors.</p>
+            \${renderMinecraftLogTail(minecraftStatus?.serverRuntime?.logs)}
+          </details>
         \`;
 
         const packSpecs = [
@@ -4303,6 +4340,29 @@ function htmlPage(basePath: string): string {
               const workloadId = await deployBedrockWorkload();
               setLocalActionOutput(actionOutput, 'Redeployed Bedrock server ' + workloadId + '.', 'ok');
               setStatus(\`Redeployed Bedrock server \${workloadId}\`);
+            } catch (error) {
+              setLocalActionOutput(actionOutput, error.message, 'error');
+              setStatus(error.message, 'error');
+            }
+          });
+        });
+
+        element.querySelector('[data-action="refresh-status"]').addEventListener('click', async () => {
+          const button = element.querySelector('[data-action="refresh-status"]');
+          await withBusyButton(button, 'Refreshing…', async () => {
+            try {
+              setLocalActionOutput(actionOutput, 'Refreshing Bedrock runtime details…', 'progress');
+              const refreshed = await refreshMinecraftStatus(workload.id);
+              setLocalActionOutput(
+                actionOutput,
+                'Refreshed Bedrock status. Version: '
+                  + (refreshed.serverRuntime?.bedrockVersion || 'unknown')
+                  + '. Image: '
+                  + (refreshed.server?.configuredImage || minecraft.image)
+                  + '.',
+                'ok'
+              );
+              setStatus('Refreshed Bedrock status for ' + workload.id);
             } catch (error) {
               setLocalActionOutput(actionOutput, error.message, 'error');
               setStatus(error.message, 'error');
@@ -4802,6 +4862,36 @@ function htmlPage(basePath: string): string {
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#39;');
+    }
+
+    function formatInlineValue(value, empty = 'not yet') {
+      if (value === null || value === undefined || value === '') {
+        return empty;
+      }
+      return escapeHtml(String(value));
+    }
+
+    function renderMinecraftLogTail(logs) {
+      if (!logs) {
+        return '<p>Log tail has not been checked yet.</p>';
+      }
+      const lineCount = Number.isFinite(logs.requestedLines) ? logs.requestedLines : 100;
+      const fetchedLine = logs.fetchedAt
+        ? '<p><strong>Fetched:</strong> ' + escapeHtml(formatTimestamp(logs.fetchedAt)) + '</p>'
+        : '';
+      const errorLine = logs.error
+        ? '<p><strong>Log Error:</strong> ' + escapeHtml(logs.error) + '</p>'
+        : '';
+      const lines = Array.isArray(logs.lines) ? logs.lines : [];
+      const body = lines.length > 0
+        ? '<pre class="log-output">' + escapeHtml(lines.join('\n')) + '</pre>'
+        : '<p>No server log lines were returned.</p>';
+      return [
+        '<p><strong>Window:</strong> last ' + escapeHtml(String(lineCount)) + ' lines</p>',
+        fetchedLine,
+        errorLine,
+        body
+      ].join('');
     }
 
     function renderMinecraftActionResult(result, emptyMessage) {

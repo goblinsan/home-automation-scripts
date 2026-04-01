@@ -4,7 +4,15 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
-import { installServiceProfileFiles, runServiceProfileAgent, smokeTestWithRetry, syncServiceProfileRuntime } from '../src/lib/deploy.ts';
+import {
+  extractDownloadedBedrockVersion,
+  extractLatestBedrockVersion,
+  installServiceProfileFiles,
+  parseRemoteContainerInspectOutput,
+  runServiceProfileAgent,
+  smokeTestWithRetry,
+  syncServiceProfileRuntime
+} from '../src/lib/deploy.ts';
 import type { GatewayConfig } from '../src/lib/config.ts';
 
 function createConfig(root: string): GatewayConfig {
@@ -259,4 +267,30 @@ test('smokeTestWithRetry tolerates startup delays', async (t) => {
       });
     });
   }
+});
+
+test('parseRemoteContainerInspectOutput includes image metadata', () => {
+  const status = parseRemoteContainerInspectOutput(
+    'gateway-bedrock-server',
+    '{"Status":"running","Running":true,"StartedAt":"2026-04-01T20:00:00Z"}@@{"19132/udp":[{"HostIp":"0.0.0.0","HostPort":"19132"}]}@@"host"@@"itzg/minecraft-bedrock-server:latest"@@"sha256:bedrock123"@@"2026-04-01T19:55:00Z"'
+  );
+
+  assert.equal(status.exists, true);
+  assert.equal(status.running, true);
+  assert.equal(status.networkMode, 'host');
+  assert.equal(status.configuredImage, 'itzg/minecraft-bedrock-server:latest');
+  assert.equal(status.imageId, 'sha256:bedrock123');
+  assert.equal(status.createdAt, '2026-04-01T19:55:00Z');
+});
+
+test('extract Bedrock versions from server logs', () => {
+  const logs = [
+    '[2026-04-01 20:40:10 INFO] Downloading Bedrock server version 1.26.12.3',
+    '[2026-04-01 20:40:14 INFO] Version: 1.26.12.3',
+    '[2026-04-01 20:40:18 INFO] Server started.',
+    '[2026-04-01 20:42:01 INFO] Version: 1.26.12.4'
+  ].join('\n');
+
+  assert.equal(extractDownloadedBedrockVersion(logs), '1.26.12.3');
+  assert.equal(extractLatestBedrockVersion(logs), '1.26.12.4');
 });

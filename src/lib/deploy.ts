@@ -594,8 +594,24 @@ export interface RemoteContainerStatus {
   running: boolean;
   networkMode?: string;
   startedAt?: string;
+  createdAt?: string;
+  configuredImage?: string;
+  imageId?: string;
   ports?: Record<string, unknown> | null;
   error?: string;
+}
+
+export interface MinecraftLogTail {
+  requestedLines: number;
+  fetchedAt: string | null;
+  lines: string[];
+  error?: string;
+}
+
+export interface MinecraftServerRuntimeStatus {
+  bedrockVersion: string | null;
+  downloadedVersion: string | null;
+  logs: MinecraftLogTail;
 }
 
 export interface MinecraftWorkloadStatus {
@@ -604,6 +620,7 @@ export interface MinecraftWorkloadStatus {
   configuredServerPort: number | null;
   worker: RemoteContainerStatus;
   server: RemoteContainerStatus;
+  serverRuntime: MinecraftServerRuntimeStatus;
   autoUpdate: MinecraftAutoUpdateStatus;
   lastManualUpdateResult: MinecraftActionResult | null;
 }
@@ -720,6 +737,84 @@ function buildPiProxyRegistryUrl(config: GatewayConfig): string {
   return `${baseUrl}${path}`;
 }
 
+function emptyMinecraftLogTail(requestedLines: number): MinecraftLogTail {
+  return {
+    requestedLines,
+    fetchedAt: null,
+    lines: []
+  };
+}
+
+function emptyMinecraftServerRuntimeStatus(requestedLines: number): MinecraftServerRuntimeStatus {
+  return {
+    bedrockVersion: null,
+    downloadedVersion: null,
+    logs: emptyMinecraftLogTail(requestedLines)
+  };
+}
+
+export function extractLatestBedrockVersion(logOutput: string): string | null {
+  let version: string | null = null;
+  for (const line of logOutput.split(/\r?\n/u)) {
+    const match = line.match(/Version:\s*([0-9][0-9.]*)/u);
+    if (match) {
+      version = match[1];
+    }
+  }
+  return version;
+}
+
+export function extractDownloadedBedrockVersion(logOutput: string): string | null {
+  let version: string | null = null;
+  for (const line of logOutput.split(/\r?\n/u)) {
+    const match = line.match(/Downloading Bedrock server version ([0-9][0-9.]*)/u);
+    if (match) {
+      version = match[1];
+    }
+  }
+  return version;
+}
+
+export function parseRemoteContainerInspectOutput(containerName: string, output: string): RemoteContainerStatus {
+  const trimmed = output.trim();
+  if (trimmed === '__MISSING__') {
+    return {
+      containerName,
+      exists: false,
+      status: 'missing',
+      running: false
+    };
+  }
+
+  const [
+    stateJson = '{}',
+    portsJson = 'null',
+    networkModeJson = 'null',
+    configuredImageJson = 'null',
+    imageIdJson = 'null',
+    createdAtJson = 'null'
+  ] = trimmed.split('@@');
+  const state = JSON.parse(stateJson) as { Status?: string; Running?: boolean; StartedAt?: string };
+  const ports = JSON.parse(portsJson) as Record<string, unknown> | null;
+  const networkMode = JSON.parse(networkModeJson) as string | null;
+  const configuredImage = JSON.parse(configuredImageJson) as string | null;
+  const imageId = JSON.parse(imageIdJson) as string | null;
+  const createdAt = JSON.parse(createdAtJson) as string | null;
+
+  return {
+    containerName,
+    exists: true,
+    status: typeof state.Status === 'string' ? state.Status : 'unknown',
+    running: Boolean(state.Running),
+    networkMode: typeof networkMode === 'string' && networkMode.length > 0 ? networkMode : undefined,
+    startedAt: typeof state.StartedAt === 'string' ? state.StartedAt : undefined,
+    createdAt: typeof createdAt === 'string' ? createdAt : undefined,
+    configuredImage: typeof configuredImage === 'string' ? configuredImage : undefined,
+    imageId: typeof imageId === 'string' ? imageId : undefined,
+    ports
+  };
+}
+
 async function bootstrapMinecraftWorld(node: WorkerNodeConfig, workload: RemoteWorkloadConfig, context: CommandContext): Promise<void> {
   await runRemoteShell(node, `chmod +x ${shellQuote(`${getRemoteWorkloadStackDir(node, workload)}/scripts/bootstrap-world.sh`)}`, context);
   await runRemoteShell(node, `${getRemoteWorkloadStackDir(node, workload)}/scripts/bootstrap-world.sh`, context);
@@ -779,7 +874,7 @@ async function prepareScheduledContainerJobSource(
 async function inspectRemoteContainer(node: WorkerNodeConfig, containerName: string): Promise<RemoteContainerStatus> {
   const inspectCommand = [
     `if ${node.dockerCommand} inspect ${shellQuote(containerName)} >/dev/null 2>&1; then`,
-    `${node.dockerCommand} inspect ${shellQuote(containerName)} --format ${shellQuote('{{json .State}}@@{{json .NetworkSettings.Ports}}@@{{.HostConfig.NetworkMode}}')};`,
+    `${node.dockerCommand} inspect ${shellQuote(containerName)} --format ${shellQuote('{{json .State}}@@{{json .NetworkSettings.Ports}}@@{{json .HostConfig.NetworkMode}}@@{{json .Config.Image}}@@{{json .Image}}@@{{json .Created}}')};`,
     'else',
     `printf '__MISSING__';`,
     'fi'
@@ -795,29 +890,8 @@ async function inspectRemoteContainer(node: WorkerNodeConfig, containerName: str
     };
   }
 
-  const output = result.stdout.trim();
-  if (output === '__MISSING__') {
-    return {
-      containerName,
-      exists: false,
-      status: 'missing',
-      running: false
-    };
-  }
-
-  const [stateJson = '{}', portsJson = 'null', networkMode = ''] = output.split('@@');
   try {
-    const state = JSON.parse(stateJson) as { Status?: string; Running?: boolean; StartedAt?: string };
-    const ports = JSON.parse(portsJson) as Record<string, unknown> | null;
-    return {
-      containerName,
-      exists: true,
-      status: typeof state.Status === 'string' ? state.Status : 'unknown',
-      running: Boolean(state.Running),
-      networkMode: networkMode || undefined,
-      startedAt: typeof state.StartedAt === 'string' ? state.StartedAt : undefined,
-      ports
-    };
+    return parseRemoteContainerInspectOutput(containerName, result.stdout);
   } catch (error) {
     return {
       containerName,
@@ -827,6 +901,82 @@ async function inspectRemoteContainer(node: WorkerNodeConfig, containerName: str
       error: error instanceof Error ? error.message : String(error)
     };
   }
+}
+
+async function inspectRemoteMinecraftRuntime(
+  node: WorkerNodeConfig,
+  containerName: string,
+  logLineCount = 100
+): Promise<MinecraftServerRuntimeStatus> {
+  const requestedLines = Number.isFinite(logLineCount) && logLineCount > 0
+    ? Math.max(1, Math.floor(logLineCount))
+    : 100;
+  const versionCommand = [
+    `if ${node.dockerCommand} inspect ${shellQuote(containerName)} >/dev/null 2>&1; then`,
+    `VERSION="$(${node.dockerCommand} logs ${shellQuote(containerName)} 2>&1 | sed -n 's/.*Version: \\\\{0,1\\\\}\\([0-9][0-9.]*\\).*/\\1/p' | tail -n 1)"`,
+    `DOWNLOADED="$(${node.dockerCommand} logs ${shellQuote(containerName)} 2>&1 | sed -n 's/.*Downloading Bedrock server version \\([0-9][0-9.]*\\).*/\\1/p' | tail -n 1)"`,
+    `printf '%s@@%s' "$VERSION" "$DOWNLOADED"`,
+    'else',
+    `printf '__MISSING__';`,
+    'fi'
+  ].join('\n');
+  const logTailCommand = [
+    `if ${node.dockerCommand} inspect ${shellQuote(containerName)} >/dev/null 2>&1; then`,
+    `${node.dockerCommand} logs --tail ${requestedLines} ${shellQuote(containerName)} 2>&1`,
+    'else',
+    `printf '__MISSING__';`,
+    'fi'
+  ].join('\n');
+  const [versionResult, logTailResult] = await Promise.all([
+    runRemoteShellCapture(node, versionCommand),
+    runRemoteShellCapture(node, logTailCommand)
+  ]);
+  const logs: MinecraftLogTail = {
+    requestedLines,
+    fetchedAt: new Date().toISOString(),
+    lines: []
+  };
+
+  if (versionResult.code !== 0) {
+    return {
+      bedrockVersion: null,
+      downloadedVersion: null,
+      logs: {
+        ...logs,
+        error: versionResult.stderr.trim() || versionResult.stdout.trim() || `log inspection failed (${versionResult.code})`
+      }
+    };
+  }
+
+  const versionOutput = versionResult.stdout.trim();
+  if (versionOutput === '__MISSING__') {
+    return emptyMinecraftServerRuntimeStatus(requestedLines);
+  }
+
+  let [bedrockVersion = '', downloadedVersion = ''] = versionOutput.split('@@');
+  bedrockVersion = bedrockVersion.trim();
+  downloadedVersion = downloadedVersion.trim();
+
+  if (logTailResult.code !== 0) {
+    logs.error = logTailResult.stderr.trim() || logTailResult.stdout.trim() || `log tail failed (${logTailResult.code})`;
+  } else {
+    const logOutput = logTailResult.stdout.trimEnd();
+    if (logOutput !== '__MISSING__' && logOutput.length > 0) {
+      logs.lines = logOutput.split(/\r?\n/u);
+      if (!bedrockVersion) {
+        bedrockVersion = extractLatestBedrockVersion(logOutput) || '';
+      }
+      if (!downloadedVersion) {
+        downloadedVersion = extractDownloadedBedrockVersion(logOutput) || '';
+      }
+    }
+  }
+
+  return {
+    bedrockVersion: bedrockVersion || null,
+    downloadedVersion: downloadedVersion || null,
+    logs
+  };
 }
 
 function getDatePartsForTimeZone(date: Date, timeZone: string): {
@@ -1199,7 +1349,10 @@ export async function getMinecraftWorkloadStatus(config: GatewayConfig, workload
     readRemoteJsonFile(node, `${runtimeDir}/worker-config.json`),
     readRemoteJsonFile(node, `${runtimeDir}/worker-state.json`)
   ]);
-  const workerTimeZone = worker.running ? await readRemoteWorkerTimeZone(node, workerContainerName) : null;
+  const [workerTimeZone, serverRuntime] = await Promise.all([
+    worker.running ? readRemoteWorkerTimeZone(node, workerContainerName) : Promise.resolve(null),
+    server.exists ? inspectRemoteMinecraftRuntime(node, serverContainerName, 100) : Promise.resolve(emptyMinecraftServerRuntimeStatus(100))
+  ]);
   const workerState = workerStateSnapshot.value && typeof workerStateSnapshot.value === 'object'
     ? workerStateSnapshot.value as {
       tasks?: Record<string, { lastResult?: MinecraftActionResult; lastRunAt?: string }>;
@@ -1216,6 +1369,7 @@ export async function getMinecraftWorkloadStatus(config: GatewayConfig, workload
     configuredServerPort: workload.minecraft.serverPort ?? null,
     worker,
     server,
+    serverRuntime,
     autoUpdate: buildMinecraftAutoUpdateStatus(workload, worker, workerConfigSnapshot, workerStateSnapshot, workerTimeZone),
     lastManualUpdateResult
   };
