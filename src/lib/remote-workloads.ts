@@ -240,6 +240,7 @@ set -eu
 MODE="\${GCP_BEDROCK_UPDATE_MODE:-safe}"
 SINCE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 BEFORE_IMAGE_ID="$(/bin/sh -lc ${JSON.stringify(`${node.dockerCommand} inspect -f '{{.Image}}' ${containerName} 2>/dev/null || true`)})"
+BEFORE_VERSION="$(/bin/sh -lc ${JSON.stringify(`${composeCommand} logs server 2>/dev/null | sed -n 's/.*Version: \\{0,1\\}\\([0-9][0-9.]*\\).*/\\1/p' | tail -n 1`)})"
 
 if [ "$MODE" != "force" ]; then
   /bin/sh -lc ${JSON.stringify(`${composeCommand} exec -T server send-command list >/dev/null 2>&1 || true`)}
@@ -268,21 +269,77 @@ fi
 /bin/sh -lc ${JSON.stringify(`${stackDir}/scripts/bootstrap-world.sh`)}
 /bin/sh -lc ${JSON.stringify(`${composeCommand} up -d server`)}
 AFTER_IMAGE_ID="$(/bin/sh -lc ${JSON.stringify(`${node.dockerCommand} inspect -f '{{.Image}}' ${containerName} 2>/dev/null || true`)})"
+AFTER_LOGS=""
+AFTER_VERSION=""
+DOWNLOADED_VERSION=""
+
+for _attempt in 1 2 3 4 5 6 7 8 9 10; do
+  AFTER_LOGS="$(/bin/sh -lc ${JSON.stringify(`${composeCommand} logs --since "$SINCE" server 2>/dev/null || true`)})"
+  AFTER_VERSION="$(printf '%s\n' "$AFTER_LOGS" | sed -n 's/.*Version: \\{0,1\\}\\([0-9][0-9.]*\\).*/\\1/p' | tail -n 1)"
+  DOWNLOADED_VERSION="$(printf '%s\n' "$AFTER_LOGS" | sed -n 's/.*Downloading Bedrock server version \\([0-9][0-9.]*\\).*/\\1/p' | tail -n 1)"
+  if [ -n "$AFTER_VERSION" ] || [ -n "$DOWNLOADED_VERSION" ]; then
+    break
+  fi
+  sleep 2
+done
+
+if [ -n "$AFTER_VERSION" ]; then
+  if [ -n "$BEFORE_VERSION" ] && [ "$BEFORE_VERSION" != "$AFTER_VERSION" ]; then
+    if [ "$MODE" = "force" ]; then
+      echo "__GCP_UPDATE_STATUS__ force-updated"
+      echo "__GCP_UPDATE_DETAIL__ Force mode changed server version from $BEFORE_VERSION to $AFTER_VERSION"
+    else
+      echo "__GCP_UPDATE_STATUS__ updated-version"
+      echo "__GCP_UPDATE_DETAIL__ Server version changed from $BEFORE_VERSION to $AFTER_VERSION"
+    fi
+    exit 0
+  fi
+
+  if [ -z "$BEFORE_VERSION" ]; then
+    if [ "$MODE" = "force" ]; then
+      echo "__GCP_UPDATE_STATUS__ force-updated"
+      echo "__GCP_UPDATE_DETAIL__ Force mode restarted the server on version $AFTER_VERSION"
+    else
+      echo "__GCP_UPDATE_STATUS__ updated-version"
+      echo "__GCP_UPDATE_DETAIL__ Server restarted on version $AFTER_VERSION"
+    fi
+    exit 0
+  fi
+
+  echo "__GCP_UPDATE_STATUS__ no-version-change"
+  if [ "$MODE" = "force" ]; then
+    echo "__GCP_UPDATE_DETAIL__ Force mode restarted the server, but version remained $AFTER_VERSION"
+  else
+    echo "__GCP_UPDATE_DETAIL__ Server restarted, but version remained $AFTER_VERSION"
+  fi
+  exit 0
+fi
+
+if [ -n "$DOWNLOADED_VERSION" ]; then
+  if [ "$MODE" = "force" ]; then
+    echo "__GCP_UPDATE_STATUS__ force-updated"
+    echo "__GCP_UPDATE_DETAIL__ Force mode downloaded Bedrock server version $DOWNLOADED_VERSION"
+  else
+    echo "__GCP_UPDATE_STATUS__ updated-version"
+    echo "__GCP_UPDATE_DETAIL__ Downloaded Bedrock server version $DOWNLOADED_VERSION"
+  fi
+  exit 0
+fi
 
 if [ -n "$BEFORE_IMAGE_ID" ] && [ -n "$AFTER_IMAGE_ID" ] && [ "$BEFORE_IMAGE_ID" = "$AFTER_IMAGE_ID" ]; then
   echo "__GCP_UPDATE_STATUS__ no-image-change"
   if [ "$MODE" = "force" ]; then
-    echo "__GCP_UPDATE_DETAIL__ Force mode ran, but the server image digest was unchanged after pull"
+    echo "__GCP_UPDATE_DETAIL__ Force mode restarted the container, but no new Bedrock version or image change was detected"
   else
-    echo "__GCP_UPDATE_DETAIL__ Server image digest unchanged after pull"
+    echo "__GCP_UPDATE_DETAIL__ No new Bedrock version or image change was detected"
   fi
 else
   if [ "$MODE" = "force" ]; then
     echo "__GCP_UPDATE_STATUS__ force-updated"
-    echo "__GCP_UPDATE_DETAIL__ Force mode bypassed safety checks and applied the update"
+    echo "__GCP_UPDATE_DETAIL__ Force mode bypassed safety checks and recreated the container"
   else
     echo "__GCP_UPDATE_STATUS__ updated"
-    echo "__GCP_UPDATE_DETAIL__ Server image digest changed or container was recreated"
+    echo "__GCP_UPDATE_DETAIL__ Server container was recreated"
   fi
 fi
 `;

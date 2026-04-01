@@ -255,10 +255,14 @@ function summarizeUpdateResult(status, detail) {
   switch (status) {
     case 'force-updated':
       return detail || 'Force update applied';
+    case 'updated-version':
+      return detail || 'Server version updated';
     case 'updated':
       return detail || 'Server image updated';
+    case 'no-version-change':
+      return detail || 'Server restarted, but the version did not change';
     case 'no-image-change':
-      return detail || 'No newer server image was applied';
+      return detail || 'No new Bedrock version or image change was detected';
     case 'skipped-player-count-unknown':
       return detail || 'Skipped because player count could not be determined';
     case 'skipped-players-online':
