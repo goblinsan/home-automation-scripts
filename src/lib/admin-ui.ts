@@ -515,8 +515,11 @@ function htmlPage(basePath: string): string {
     button:disabled,
     button.is-busy {
       cursor: progress;
-      opacity: 0.56;
-      filter: grayscale(0.15);
+      opacity: 0.52;
+      filter: grayscale(0.3);
+      background: #e7eceb;
+      border-color: rgba(16, 50, 53, 0.16);
+      color: rgba(22, 51, 54, 0.72);
     }
     button.primary {
       background: var(--accent-strong);
@@ -592,23 +595,96 @@ function htmlPage(basePath: string): string {
     #status {
       min-height: 0;
       font-size: 13px;
-      color: rgba(255, 255, 255, 0.92);
-      border: 1px solid rgba(255, 255, 255, 0.22);
-      background: rgba(255, 255, 255, 0.1);
+      color: #163336;
+      border: 1px solid rgba(16, 50, 53, 0.18);
+      background: rgba(255, 255, 255, 0.96);
       padding: 10px 12px;
-      width: 260px;
+      width: 100%;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .status-ok {
-      color: rgba(255, 255, 255, 0.92);
-      border-color: rgba(255, 255, 255, 0.22);
+      color: #163336;
+      border-color: rgba(16, 50, 53, 0.18);
     }
     .status-error {
-      color: #ffd7d7;
+      color: #7c1f1f;
       border-color: rgba(143, 48, 48, 0.65);
-      background: rgba(143, 48, 48, 0.18);
+      background: rgba(255, 235, 235, 0.96);
+    }
+    .status-progress {
+      color: #6c4a00;
+      border-color: rgba(183, 128, 0, 0.45);
+      background: rgba(255, 246, 220, 0.98);
+    }
+    .action-dock {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      width: min(420px, calc(100vw - 36px));
+      display: grid;
+      gap: 10px;
+      z-index: 999;
+      pointer-events: none;
+    }
+    .action-dock > * {
+      pointer-events: auto;
+    }
+    .action-feed {
+      border: 1px solid rgba(16, 50, 53, 0.18);
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 12px 28px rgba(17, 30, 38, 0.16);
+      max-height: 220px;
+      overflow: auto;
+    }
+    .action-feed-empty {
+      margin: 0;
+      padding: 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .action-entry {
+      padding: 10px 12px;
+      border-top: 1px solid rgba(16, 50, 53, 0.08);
+      background: rgba(255, 255, 255, 0.96);
+    }
+    .action-entry:first-child {
+      border-top: 0;
+    }
+    .action-entry strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+    .action-entry time {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .action-entry.error strong {
+      color: #7c1f1f;
+    }
+    .action-entry.progress strong {
+      color: #8b5d00;
+    }
+    .inline-action-output {
+      border: 1px solid var(--line);
+      background: #fcfcfa;
+      padding: 12px;
+      font-size: 14px;
+    }
+    .inline-action-output.is-error {
+      border-color: rgba(143, 48, 48, 0.45);
+      background: #fff3f3;
+    }
+    .inline-action-output.is-progress {
+      border-color: rgba(183, 128, 0, 0.35);
+      background: #fff8e6;
+    }
+    .inline-action-output strong {
+      display: block;
+      margin-bottom: 6px;
     }
     .aside-stack {
       order: 2;
@@ -866,6 +942,12 @@ function htmlPage(basePath: string): string {
       padding: 18px 20px;
     }
     @media (max-width: 980px) {
+      .action-dock {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        width: auto;
+      }
       main { grid-template-columns: 1fr; }
       .editor-panel { order: 1; }
       .aside-stack { order: 2; }
@@ -893,7 +975,6 @@ function htmlPage(basePath: string): string {
           <p>Configure gateway services, agents, workflows, and deployment state from one control surface.</p>
         </div>
         <div class="header-actions">
-          <div id="status">Current</div>
           <button id="refreshButton">Refresh</button>
           <button id="saveButton" class="primary">Save</button>
         </div>
@@ -1630,6 +1711,12 @@ function htmlPage(basePath: string): string {
       </details>
     </aside>
   </main>
+  <div class="action-dock">
+    <div id="status" class="status-ok">Current</div>
+    <div id="actionFeed" class="action-feed">
+      <p class="action-feed-empty">No recent actions.</p>
+    </div>
+  </div>
   <script>
     const state = {
       config: null,
@@ -1653,11 +1740,37 @@ function htmlPage(basePath: string): string {
     };
     const basePath = document.querySelector('meta[name="gateway-base-path"]').content || '/';
 
-    function setStatus(message, kind = 'ok') {
+    function pushActionFeed(message, kind = 'ok') {
+      const feed = document.getElementById('actionFeed');
+      if (!feed) {
+        return;
+      }
+      const empty = feed.querySelector('.action-feed-empty');
+      if (empty) {
+        empty.remove();
+      }
+      const entry = document.createElement('div');
+      entry.className = 'action-entry ' + (kind === 'error' ? 'error' : kind === 'progress' ? 'progress' : 'ok');
+      const title = document.createElement('strong');
+      title.textContent = message;
+      const time = document.createElement('time');
+      time.textContent = new Date().toLocaleTimeString();
+      entry.appendChild(title);
+      entry.appendChild(time);
+      feed.prepend(entry);
+      while (feed.children.length > 8) {
+        feed.removeChild(feed.lastElementChild);
+      }
+    }
+
+    function setStatus(message, kind = 'ok', options = {}) {
       const status = document.getElementById('status');
       status.textContent = message;
       status.title = message;
-      status.className = kind === 'error' ? 'status-error' : 'status-ok';
+      status.className = kind === 'error' ? 'status-error' : kind === 'progress' ? 'status-progress' : 'status-ok';
+      if (options.log !== false) {
+        pushActionFeed(message, kind);
+      }
     }
 
     async function withBusyButton(button, pendingLabel, task) {
@@ -1685,6 +1798,14 @@ function htmlPage(basePath: string): string {
         button.textContent = originalLabel;
         button.style.removeProperty('width');
       }
+    }
+
+    function setLocalActionOutput(container, message, kind = 'ok') {
+      if (!container) {
+        return;
+      }
+      container.className = 'inline-action-output' + (kind === 'error' ? ' is-error' : kind === 'progress' ? ' is-progress' : '');
+      container.innerHTML = '<strong>Action Output</strong><div>' + escapeHtml(message) + '</div><div>' + escapeHtml(new Date().toLocaleString()) + '</div>';
     }
 
     function joinBase(path) {
@@ -3693,6 +3814,10 @@ function htmlPage(basePath: string): string {
               <button data-action="ban">Ban</button>
             </div>
           </div>
+          <div class="inline-action-output" data-action-output>
+            <strong>Action Output</strong>
+            <div>No recent action output for this server.</div>
+          </div>
           <div class="card">
             <div class="split-actions">
               <div>
@@ -3749,6 +3874,14 @@ function htmlPage(basePath: string): string {
         });
 
         const remoteIndex = state.config.remoteWorkloads.findIndex((candidate) => candidate === workload);
+        const actionOutput = element.querySelector('[data-action-output]');
+        setLocalActionOutput(
+          actionOutput,
+          summarizeMinecraftActionResult(
+            lastManualUpdateResult || autoUpdate?.lastResult,
+            'No recent action output for this server.'
+          )
+        );
         const updateMinecraftField = (field, value, removeWhenEmpty = false, shouldRerender = false) => {
           const targetWorkload = state.config.remoteWorkloads[remoteIndex];
           targetWorkload.minecraft = targetWorkload.minecraft || createDefaultMinecraftConfig();
@@ -3794,9 +3927,12 @@ function htmlPage(basePath: string): string {
           const button = element.querySelector('[data-action="apply"]');
           await withBusyButton(button, 'Applying…', async () => {
             try {
+              setLocalActionOutput(actionOutput, 'Applying Bedrock server configuration to the worker node…', 'progress');
               const workloadId = await deployBedrockWorkload();
+              setLocalActionOutput(actionOutput, 'Applied Bedrock server ' + workloadId + '.', 'ok');
               setStatus(\`Applied Bedrock server \${workloadId}\`);
             } catch (error) {
+              setLocalActionOutput(actionOutput, error.message, 'error');
               setStatus(error.message, 'error');
             }
           });
@@ -3806,9 +3942,12 @@ function htmlPage(basePath: string): string {
           const button = element.querySelector('[data-action="redeploy"]');
           await withBusyButton(button, 'Redeploying…', async () => {
             try {
+              setLocalActionOutput(actionOutput, 'Redeploying Bedrock server and remote gateway-worker…', 'progress');
               const workloadId = await deployBedrockWorkload();
+              setLocalActionOutput(actionOutput, 'Redeployed Bedrock server ' + workloadId + '.', 'ok');
               setStatus(\`Redeployed Bedrock server \${workloadId}\`);
             } catch (error) {
+              setLocalActionOutput(actionOutput, error.message, 'error');
               setStatus(error.message, 'error');
             }
           });
@@ -3823,10 +3962,13 @@ function htmlPage(basePath: string): string {
             const button = element.querySelector(\`[data-action="\${buttonAction}"]\`);
             await withBusyButton(button, 'Working…', async () => {
               try {
+                setLocalActionOutput(actionOutput, 'Running ' + action + '…', 'progress');
                 await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/\${action}\`, {});
-                await refreshMinecraftStatus(workload.id);
+                const refreshed = await refreshMinecraftStatus(workload.id);
+                setLocalActionOutput(actionOutput, 'Bedrock action completed: ' + action + '. Worker: ' + describeContainerStatus(refreshed.worker) + '. Server: ' + describeContainerStatus(refreshed.server) + '.', 'ok');
                 setStatus(\`Bedrock action completed: \${action}\`);
               } catch (error) {
+                setLocalActionOutput(actionOutput, error.message, 'error');
                 setStatus(error.message, 'error');
               }
             });
@@ -3837,12 +3979,15 @@ function htmlPage(basePath: string): string {
           const button = element.querySelector('[data-action="update-now"]');
           await withBusyButton(button, 'Updating…', async () => {
             try {
+              setLocalActionOutput(actionOutput, 'Running safe Bedrock update…', 'progress');
               await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/update-request\`, {
                 mode: 'now'
               });
-              await refreshMinecraftStatus(workload.id);
+              const refreshed = await refreshMinecraftStatus(workload.id);
+              setLocalActionOutput(actionOutput, summarizeMinecraftActionResult(refreshed.lastManualUpdateResult, 'Safe Bedrock update finished.'), 'ok');
               setStatus('Queued Bedrock update now');
             } catch (error) {
+              setLocalActionOutput(actionOutput, error.message, 'error');
               setStatus(error.message, 'error');
             }
           });
@@ -3852,10 +3997,13 @@ function htmlPage(basePath: string): string {
           const button = element.querySelector('[data-action="force-update-now"]');
           await withBusyButton(button, 'Forcing…', async () => {
             try {
+              setLocalActionOutput(actionOutput, 'Running forced Bedrock update…', 'progress');
               await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/force-update\`, {});
-              await refreshMinecraftStatus(workload.id);
+              const refreshed = await refreshMinecraftStatus(workload.id);
+              setLocalActionOutput(actionOutput, summarizeMinecraftActionResult(refreshed.lastManualUpdateResult, 'Forced Bedrock update finished.'), 'ok');
               setStatus('Forced Bedrock update completed');
             } catch (error) {
+              setLocalActionOutput(actionOutput, error.message, 'error');
               setStatus(error.message, 'error');
             }
           });
@@ -3869,13 +4017,16 @@ function htmlPage(basePath: string): string {
               if (!Number.isFinite(delayMinutes) || delayMinutes < 0) {
                 throw new Error('Update delay must be a non-negative number of minutes');
               }
+              setLocalActionOutput(actionOutput, 'Scheduling Bedrock update in ' + delayMinutes + ' minute(s)…', 'progress');
               await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/update-request\`, {
                 mode: 'minutes',
                 delayMinutes
               });
-              await refreshMinecraftStatus(workload.id);
+              const refreshed = await refreshMinecraftStatus(workload.id);
+              setLocalActionOutput(actionOutput, describeManualUpdate(refreshed.manualUpdate), 'ok');
               setStatus(\`Queued Bedrock update in \${delayMinutes} minute(s)\`);
             } catch (error) {
+              setLocalActionOutput(actionOutput, error.message, 'error');
               setStatus(error.message, 'error');
             }
           });
@@ -3893,13 +4044,16 @@ function htmlPage(basePath: string): string {
               if (Number.isNaN(runAt.getTime())) {
                 throw new Error(\`Invalid update time: \${rawValue}\`);
               }
+              setLocalActionOutput(actionOutput, 'Scheduling Bedrock update for ' + runAt.toLocaleString() + '…', 'progress');
               await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/update-request\`, {
                 mode: 'at',
                 runAt: runAt.toISOString()
               });
-              await refreshMinecraftStatus(workload.id);
+              const refreshed = await refreshMinecraftStatus(workload.id);
+              setLocalActionOutput(actionOutput, describeManualUpdate(refreshed.manualUpdate), 'ok');
               setStatus(\`Queued Bedrock update for \${runAt.toLocaleString()}\`);
             } catch (error) {
+              setLocalActionOutput(actionOutput, error.message, 'error');
               setStatus(error.message, 'error');
             }
           });
@@ -3909,10 +4063,13 @@ function htmlPage(basePath: string): string {
           const button = element.querySelector('[data-action="cancel-scheduled-update"]');
           await withBusyButton(button, 'Cancelling…', async () => {
             try {
+              setLocalActionOutput(actionOutput, 'Cancelling pending Bedrock update…', 'progress');
               await requestJson('DELETE', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/update-request\`);
-              await refreshMinecraftStatus(workload.id);
+              const refreshed = await refreshMinecraftStatus(workload.id);
+              setLocalActionOutput(actionOutput, describeManualUpdate(refreshed.manualUpdate), 'ok');
               setStatus('Cancelled pending Bedrock update');
             } catch (error) {
+              setLocalActionOutput(actionOutput, error.message, 'error');
               setStatus(error.message, 'error');
             }
           });
@@ -3926,14 +4083,17 @@ function htmlPage(basePath: string): string {
                 const message = element.querySelector('[data-control="broadcastMessage"]').value.trim();
                 const player = element.querySelector('[data-control="player"]').value.trim();
                 const reason = element.querySelector('[data-control="reason"]').value.trim();
+                setLocalActionOutput(actionOutput, 'Running ' + action + '…', 'progress');
                 await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/\${action}\`, {
                   ...(message ? { message } : {}),
                   ...(player ? { player } : {}),
                   ...(reason ? { reason } : {})
                 });
                 await refreshMinecraftStatus(workload.id);
+                setLocalActionOutput(actionOutput, 'Bedrock action completed: ' + action + '.', 'ok');
                 setStatus(\`Bedrock action completed: \${action}\`);
               } catch (error) {
+                setLocalActionOutput(actionOutput, error.message, 'error');
                 setStatus(error.message, 'error');
               }
             });
@@ -4081,7 +4241,7 @@ function htmlPage(basePath: string): string {
       render();
       await refreshAllMinecraftStatuses({ silent: true });
       renderBedrockServers();
-      setStatus('Current');
+      setStatus('Current', 'ok', { log: false });
     }
 
     async function fetchRuntime() {
@@ -4303,6 +4463,20 @@ function htmlPage(basePath: string): string {
         stdoutBlock,
         stderrBlock
       ].join('');
+    }
+
+    function summarizeMinecraftActionResult(result, fallback) {
+      if (!result) {
+        return fallback;
+      }
+      const parts = [result.summary || fallback];
+      if (result.detail && result.detail !== result.summary) {
+        parts.push(result.detail);
+      }
+      if (result.recordedAt) {
+        parts.push('Recorded ' + formatTimestamp(result.recordedAt));
+      }
+      return parts.join(' | ');
     }
 
     function formatPortMappings(ports, networkMode) {
@@ -4555,7 +4729,7 @@ function htmlPage(basePath: string): string {
         try {
           await fetchConfig();
           await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime()]);
-          setStatus('Current');
+          setStatus('Current', 'ok', { log: false });
         } catch (error) {
           setStatus(error.message, 'error');
         }
@@ -4910,6 +5084,18 @@ function htmlPage(basePath: string): string {
         setStatus(error.message, 'error');
       }
     });
+
+    document.addEventListener('click', (event) => {
+      const button = event.target instanceof Element ? event.target.closest('button') : null;
+      if (!button || button.disabled || button.dataset.tab || button.dataset.openTab) {
+        return;
+      }
+      const label = (button.textContent || '').trim();
+      if (!label) {
+        return;
+      }
+      setStatus('Working: ' + label, 'progress', { log: true });
+    }, true);
 
     fetchConfig()
       .then(() => Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime(), fetchTtsVoices(), fetchChatProviders()]))
