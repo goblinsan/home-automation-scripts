@@ -3698,12 +3698,14 @@ function htmlPage(basePath: string): string {
               <div>
                 <span class="pill">Manual Update</span>
                 <p>Manual updates use the safe <code>update-if-empty</code> path and will skip if players are online.</p>
+                <p><strong>Override:</strong> <code>Force Update</code> bypasses the player-count safety gate.</p>
                 <p><strong>Current Queue State:</strong> \${describeManualUpdate(manualUpdate)}</p>
                 \${renderMinecraftActionResult(lastManualUpdateResult, 'No manual update result recorded yet.')}
               </div>
             </div>
             <div class="toolbar">
               <button data-action="update-now">Update Now</button>
+              <button data-action="force-update-now" class="danger">Force Update</button>
               <button data-action="cancel-scheduled-update" \${manualUpdate?.status === 'pending' ? '' : 'disabled'}>Cancel Pending Update</button>
             </div>
             <div class="row">
@@ -3840,6 +3842,19 @@ function htmlPage(basePath: string): string {
               });
               await refreshMinecraftStatus(workload.id);
               setStatus('Queued Bedrock update now');
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
+        });
+
+        element.querySelector('[data-action="force-update-now"]').addEventListener('click', async () => {
+          const button = element.querySelector('[data-action="force-update-now"]');
+          await withBusyButton(button, 'Forcing…', async () => {
+            try {
+              await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/minecraft/force-update\`, {});
+              await refreshMinecraftStatus(workload.id);
+              setStatus('Forced Bedrock update completed');
             } catch (error) {
               setStatus(error.message, 'error');
             }
@@ -5214,7 +5229,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       const agentRunMatch = path.match(/^\/api\/chat-platform\/agents\/([^/]+)\/run$/);
       const remoteWorkloadDeployMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/deploy$/);
       const remoteWorkloadStatusMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/status$/);
-      const remoteMinecraftActionMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/(start|stop|restart|broadcast|kick|ban|update-if-empty)$/);
+      const remoteMinecraftActionMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/(start|stop|restart|broadcast|kick|ban|update-if-empty|force-update)$/);
       const remoteMinecraftUpdateRequestMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/update-request$/);
 
       if (request.method === 'GET' && path === '/') {
@@ -5428,7 +5443,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         await controlMinecraftWorkload(
           config,
           decodeURIComponent(remoteMinecraftActionMatch[1]),
-          remoteMinecraftActionMatch[2] as 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty',
+          remoteMinecraftActionMatch[2] as 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty' | 'force-update',
           body,
           { dryRun: false, log: () => undefined }
         );

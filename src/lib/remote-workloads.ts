@@ -237,25 +237,31 @@ function renderMinecraftUpdateScript(node: WorkerNodeConfig, workload: RemoteWor
   return `#!/bin/sh
 set -eu
 
+MODE="\${GCP_BEDROCK_UPDATE_MODE:-safe}"
 SINCE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-/bin/sh -lc ${JSON.stringify(`${composeCommand} exec -T server send-command list >/dev/null 2>&1 || true`)}
-sleep 2
-LOGS="$(/bin/sh -lc ${JSON.stringify(`${composeCommand} logs --since "$SINCE" server 2>/dev/null || true`)})"
-ONLINE="$(printf '%s\n' "$LOGS" | sed -n 's/.*There are \\([0-9][0-9]*\\)\\/[0-9][0-9]* players online.*/\\1/p' | tail -n 1)"
 BEFORE_IMAGE_ID="$(/bin/sh -lc ${JSON.stringify(`${node.dockerCommand} inspect -f '{{.Image}}' ${containerName} 2>/dev/null || true`)})"
 
-if [ -z "$ONLINE" ]; then
-  echo "__GCP_UPDATE_STATUS__ skipped-player-count-unknown"
-  echo "__GCP_UPDATE_DETAIL__ Could not determine player count from Bedrock logs"
-  echo "Could not determine player count; skipping update"
-  exit 0
-fi
+if [ "$MODE" != "force" ]; then
+  /bin/sh -lc ${JSON.stringify(`${composeCommand} exec -T server send-command list >/dev/null 2>&1 || true`)}
+  sleep 2
+  LOGS="$(/bin/sh -lc ${JSON.stringify(`${composeCommand} logs --since "$SINCE" server 2>/dev/null || true`)})"
+  ONLINE="$(printf '%s\n' "$LOGS" | sed -n 's/.*There are \\([0-9][0-9]*\\)\\/[0-9][0-9]* players online.*/\\1/p' | tail -n 1)"
 
-if [ "$ONLINE" != "0" ]; then
-  echo "__GCP_UPDATE_STATUS__ skipped-players-online"
-  echo "__GCP_UPDATE_DETAIL__ Players online: $ONLINE"
-  echo "Players online: $ONLINE; skipping update"
-  exit 0
+  if [ -z "$ONLINE" ]; then
+    echo "__GCP_UPDATE_STATUS__ skipped-player-count-unknown"
+    echo "__GCP_UPDATE_DETAIL__ Could not determine player count from Bedrock logs"
+    echo "Could not determine player count; skipping update"
+    exit 0
+  fi
+
+  if [ "$ONLINE" != "0" ]; then
+    echo "__GCP_UPDATE_STATUS__ skipped-players-online"
+    echo "__GCP_UPDATE_DETAIL__ Players online: $ONLINE"
+    echo "Players online: $ONLINE; skipping update"
+    exit 0
+  fi
+else
+  echo "__GCP_UPDATE_DETAIL__ Force mode bypassed player-count safety checks"
 fi
 
 /bin/sh -lc ${JSON.stringify(`${composeCommand} pull server`)}
@@ -265,10 +271,19 @@ AFTER_IMAGE_ID="$(/bin/sh -lc ${JSON.stringify(`${node.dockerCommand} inspect -f
 
 if [ -n "$BEFORE_IMAGE_ID" ] && [ -n "$AFTER_IMAGE_ID" ] && [ "$BEFORE_IMAGE_ID" = "$AFTER_IMAGE_ID" ]; then
   echo "__GCP_UPDATE_STATUS__ no-image-change"
-  echo "__GCP_UPDATE_DETAIL__ Server image digest unchanged after pull"
+  if [ "$MODE" = "force" ]; then
+    echo "__GCP_UPDATE_DETAIL__ Force mode ran, but the server image digest was unchanged after pull"
+  else
+    echo "__GCP_UPDATE_DETAIL__ Server image digest unchanged after pull"
+  fi
 else
-  echo "__GCP_UPDATE_STATUS__ updated"
-  echo "__GCP_UPDATE_DETAIL__ Server image digest changed or container was recreated"
+  if [ "$MODE" = "force" ]; then
+    echo "__GCP_UPDATE_STATUS__ force-updated"
+    echo "__GCP_UPDATE_DETAIL__ Force mode bypassed safety checks and applied the update"
+  else
+    echo "__GCP_UPDATE_STATUS__ updated"
+    echo "__GCP_UPDATE_DETAIL__ Server image digest changed or container was recreated"
+  fi
 fi
 `;
 }

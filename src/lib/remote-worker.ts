@@ -253,6 +253,8 @@ function sleep(ms) {
 
 function summarizeUpdateResult(status, detail) {
   switch (status) {
+    case 'force-updated':
+      return detail || 'Force update applied';
     case 'updated':
       return detail || 'Server image updated';
     case 'no-image-change':
@@ -438,6 +440,25 @@ async function runMinecraftAction(config, workload, action, payload) {
         };
         if (output.code !== 0) {
           const error = new Error(result.summary || 'Safe update failed');
+          error.result = result;
+          throw error;
+        }
+        return result;
+      }
+    case 'force-update':
+      if (!workload.minecraft?.updateScript) {
+        throw new Error('Update script is not configured for workload ' + workload.id);
+      }
+      await runShell('chmod +x ' + shellQuote(workload.minecraft.updateScript));
+      {
+        const updateCommand = 'GCP_BEDROCK_UPDATE_MODE=force ' + shellQuote(workload.minecraft.updateScript);
+        const output = await runShellCapture(updateCommand);
+        const result = {
+          action,
+          ...parseMinecraftUpdateResult(output.stdout, output.stderr)
+        };
+        if (output.code !== 0) {
+          const error = new Error(result.summary || 'Force update failed');
           error.result = result;
           throw error;
         }

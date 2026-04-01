@@ -608,7 +608,7 @@ export interface MinecraftWorkloadStatus {
   lastManualUpdateResult: MinecraftActionResult | null;
 }
 
-type MinecraftControlAction = 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty';
+type MinecraftControlAction = 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty' | 'force-update';
 
 export interface MinecraftAutoUpdateStatus {
   status: 'running' | 'disabled' | 'not-deployed' | 'worker-stopped' | 'misconfigured';
@@ -638,6 +638,34 @@ export interface MinecraftActionResult {
   stdout?: string;
   stderr?: string;
   recordedAt?: string;
+}
+
+function getLatestMinecraftActionResult(
+  tasks: Record<string, { lastResult?: MinecraftActionResult; lastRunAt?: string }> | undefined,
+  keys: string[]
+): MinecraftActionResult | null {
+  if (!tasks) {
+    return null;
+  }
+
+  let latest: MinecraftActionResult | null = null;
+  let latestTime = 0;
+
+  for (const key of keys) {
+    const task = tasks[key];
+    const result = task?.lastResult;
+    if (!result || typeof result !== 'object') {
+      continue;
+    }
+    const timestamp = Date.parse(result.recordedAt || task.lastRunAt || '');
+    const sortableTime = Number.isNaN(timestamp) ? 0 : timestamp;
+    if (!latest || sortableTime >= latestTime) {
+      latest = result;
+      latestTime = sortableTime;
+    }
+  }
+
+  return latest;
 }
 
 function requireRemoteWorkloadEnabled(workload: RemoteWorkloadConfig): void {
@@ -1132,10 +1160,13 @@ export async function getMinecraftWorkloadStatus(config: GatewayConfig, workload
   const workerTimeZone = worker.running ? await readRemoteWorkerTimeZone(node, workerContainerName) : null;
   const workerState = workerStateSnapshot.value && typeof workerStateSnapshot.value === 'object'
     ? workerStateSnapshot.value as {
-      tasks?: Record<string, { lastResult?: MinecraftActionResult }>;
+      tasks?: Record<string, { lastResult?: MinecraftActionResult; lastRunAt?: string }>;
     }
     : null;
-  const manualTask = workerState?.tasks?.[`minecraft-control:update-if-empty:${workload.id}`];
+  const lastManualUpdateResult = getLatestMinecraftActionResult(workerState?.tasks, [
+    `minecraft-control:update-if-empty:${workload.id}`,
+    `minecraft-control:force-update:${workload.id}`
+  ]);
 
   return {
     workloadId: workload.id,
@@ -1144,6 +1175,6 @@ export async function getMinecraftWorkloadStatus(config: GatewayConfig, workload
     worker,
     server,
     autoUpdate: buildMinecraftAutoUpdateStatus(workload, worker, workerConfigSnapshot, workerStateSnapshot, workerTimeZone),
-    lastManualUpdateResult: manualTask?.lastResult && typeof manualTask.lastResult === 'object' ? manualTask.lastResult : null
+    lastManualUpdateResult
   };
 }

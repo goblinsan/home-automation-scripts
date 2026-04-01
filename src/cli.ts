@@ -225,7 +225,7 @@ async function main(): Promise<void> {
     case 'control-minecraft': {
       const workloadId = requireStringArg(args, 'workload');
       const action = requireStringArg(args, 'action');
-      if (!['start', 'stop', 'restart', 'broadcast', 'kick', 'ban', 'update-if-empty'].includes(action)) {
+      if (!['start', 'stop', 'restart', 'broadcast', 'kick', 'ban', 'update-if-empty', 'force-update'].includes(action)) {
         throw new Error(`Invalid minecraft action: ${action}`);
       }
       const dryRun = args['dry-run'] === true;
@@ -233,7 +233,7 @@ async function main(): Promise<void> {
       await controlMinecraftWorkload(
         config,
         workloadId,
-        action as 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty',
+        action as 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty' | 'force-update',
         {
           message: typeof args.message === 'string' ? args.message : undefined,
           player: typeof args.player === 'string' ? args.player : undefined,
@@ -275,7 +275,7 @@ async function main(): Promise<void> {
   import-workflow-seed --base-url <url> [--file <path>] [--dry-run]
   install-control-plane-service --config <path> [--dry-run]
   deploy-remote-workload --config <path> --workload <id> [--revision <sha>] [--out <dir>] [--dry-run]
-  control-minecraft --config <path> --workload <id> --action <start|stop|restart|broadcast|kick|ban|update-if-empty> [--message <text>] [--player <name>] [--reason <text>] [--dry-run]
+  control-minecraft --config <path> --workload <id> --action <start|stop|restart|broadcast|kick|ban|update-if-empty|force-update> [--message <text>] [--player <name>] [--reason <text>] [--dry-run]
   smoke-test --url <url>`);
   }
 }
