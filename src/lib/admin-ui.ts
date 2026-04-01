@@ -4884,7 +4884,7 @@ function htmlPage(basePath: string): string {
         : '';
       const lines = Array.isArray(logs.lines) ? logs.lines : [];
       const body = lines.length > 0
-        ? '<pre class="log-output">' + escapeHtml(lines.join('\n')) + '</pre>'
+        ? '<pre class="log-output">' + escapeHtml(lines.join('\\n')) + '</pre>'
         : '<p>No server log lines were returned.</p>';
       return [
         '<p><strong>Window:</strong> last ' + escapeHtml(String(lineCount)) + ' lines</p>',
