@@ -249,6 +249,7 @@ test('buildArtifacts renders remote workload bundles for core nodes', async () =
   const behaviorManifest = await readFile(join(outDir, 'nodes', 'core-node', 'workloads', 'bedrock-main', 'runtime', 'world_behavior_packs.json'), 'utf8');
   const piProxyPackageJson = await readFile(join(outDir, 'nodes', 'pi-node', 'pi-proxy', 'package.json'), 'utf8');
   const piProxyConfig = await readFile(join(outDir, 'nodes', 'pi-node', 'pi-proxy', 'proxy-config.json'), 'utf8');
+  const piProxyScript = await readFile(join(outDir, 'nodes', 'pi-node', 'pi-proxy', 'proxy.mjs'), 'utf8');
   const piProxyService = await readFile(join(outDir, 'nodes', 'pi-node', 'pi-proxy', 'systemd', 'bedrock-lan-proxy.service'), 'utf8');
 
   assert.match(jobCompose, /node jobs\/kulrs_activity\.js/);
@@ -277,5 +278,8 @@ test('buildArtifacts renders remote workload bundles for core nodes', async () =
   assert.match(behaviorManifest, /11111111-1111-1111-1111-111111111111/);
   assert.match(piProxyPackageJson, /bedrock-protocol/);
   assert.match(piProxyConfig, /http:\/\/192\.168\.0\.200:4173\/api\/minecraft\/server-registry/);
+  assert.match(piProxyScript, /packet .* for/);
+  assert.match(piProxyScript, /join event for/);
+  assert.match(piProxyScript, /transfer requested for/);
   assert.match(piProxyService, /ExecStart=\/usr\/bin\/node \/opt\/bedrock-lan-proxy\/proxy\.mjs \/opt\/bedrock-lan-proxy\/proxy-config\.json/);
 });

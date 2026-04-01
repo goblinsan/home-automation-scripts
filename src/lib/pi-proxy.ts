@@ -132,6 +132,72 @@ function closeProxyServer(record) {
   }
 }
 
+function formatError(error) {
+  if (!error) {
+    return 'unknown error';
+  }
+  if (error instanceof Error) {
+    return error.stack || error.message;
+  }
+  if (typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message;
+  }
+  return String(error);
+}
+
+function formatClientAddress(client) {
+  const address = client?.socket?.address;
+  if (typeof address !== 'function') {
+    return 'unknown';
+  }
+  try {
+    const value = address.call(client.socket);
+    if (value && typeof value === 'object' && 'address' in value && 'port' in value) {
+      return String(value.address) + ':' + String(value.port);
+    }
+  } catch (error) {
+    return 'unavailable (' + formatError(error) + ')';
+  }
+  return 'unknown';
+}
+
+function attachClientDebugLogging(client, spec) {
+  let packetLogCount = 0;
+  const maxPacketLogs = 12;
+
+  client.on('packet', (_packet, metadata) => {
+    if (packetLogCount >= maxPacketLogs) {
+      return;
+    }
+    const packetName = metadata && typeof metadata === 'object' && 'name' in metadata
+      ? String(metadata.name)
+      : 'unknown';
+    packetLogCount += 1;
+    console.log('[pi-proxy] packet ' + packetName + ' for ' + spec.workloadId + ' from ' + formatClientAddress(client));
+  });
+
+  client.on('join', () => {
+    console.log('[pi-proxy] join event for ' + spec.workloadId + '; transferring to ' + spec.targetHost + ':' + spec.targetPort);
+    client.transfer({
+      host: spec.targetHost,
+      port: spec.targetPort
+    });
+    console.log('[pi-proxy] transfer requested for ' + spec.workloadId + ' to ' + spec.targetHost + ':' + spec.targetPort);
+  });
+
+  client.on('disconnect', (reason) => {
+    console.log('[pi-proxy] disconnect event for ' + spec.workloadId + ': ' + formatError(reason));
+  });
+
+  client.on('close', (reason) => {
+    console.log('[pi-proxy] client close for ' + spec.workloadId + ': ' + formatError(reason));
+  });
+
+  client.on('error', (error) => {
+    console.error('[pi-proxy] client error for ' + spec.workloadId + ': ' + formatError(error));
+  });
+}
+
 function createProxyServer(spec) {
   const server = bedrock.createServer({
     host: runtimeConfig.listenHost,
@@ -144,18 +210,25 @@ function createProxyServer(spec) {
     }
   });
 
+  server.on('listening', () => {
+    console.log('[pi-proxy] listening on ' + runtimeConfig.listenHost + ':' + spec.localPort + ' for ' + spec.workloadId + ' -> ' + spec.targetHost + ':' + spec.targetPort);
+  });
+
   server.on('connect', (client) => {
-    console.log('[pi-proxy] player connected to ' + spec.workloadId + ' via ' + spec.localPort);
-    client.on('join', () => {
-      client.transfer({
-        host: spec.targetHost,
-        port: spec.targetPort
-      });
-    });
+    console.log('[pi-proxy] player connected to ' + spec.workloadId + ' via ' + spec.localPort + ' from ' + formatClientAddress(client));
+    attachClientDebugLogging(client, spec);
+  });
+
+  server.on('session', () => {
+    console.log('[pi-proxy] session event for ' + spec.workloadId + ' on ' + spec.localPort);
+  });
+
+  server.on('close', () => {
+    console.log('[pi-proxy] server closed for ' + spec.workloadId + ' on ' + spec.localPort);
   });
 
   server.on('error', (error) => {
-    console.error('[pi-proxy] server error for ' + spec.workloadId, error);
+    console.error('[pi-proxy] server error for ' + spec.workloadId + ': ' + formatError(error));
   });
 
   return server;
