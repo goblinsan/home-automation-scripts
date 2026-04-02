@@ -119,4 +119,5 @@ The Raspberry Pi is now modeled through:
 
 That lets the control-plane UI manage both the registry contract and the
 deployed `bedrock-lan-proxy.service` on the Pi, while Bedrock world hosting
-remains on the core node.
+remains on the core node. The same UI now also exposes the relay's live
+session counts and per-client activity from the Pi runtime state.

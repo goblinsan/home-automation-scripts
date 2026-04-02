@@ -105,6 +105,10 @@ The intended flow is:
 The admin UI can now deploy and restart that Pi proxy service over SSH, using
 the same control-plane config that defines the Bedrock worlds it advertises.
 
+The Pi Proxy panel also shows live relay state pulled from `proxy-state.json`,
+including the relay mode, active session counts, and per-client activity for
+currently connected Bedrock sessions.
+
 The Bedrock tab also exposes live server observability for each deployed world:
 
 - the configured image ref and the image ID the container is actually using

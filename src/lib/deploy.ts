@@ -660,6 +660,7 @@ export interface MinecraftActionResult {
 export interface PiProxyRuntimeState {
   updatedAt?: string;
   registryUrl?: string;
+  mode?: string;
   lastError?: string | null;
   servers?: Array<{
     workloadId?: string;
@@ -670,6 +671,18 @@ export interface PiProxyRuntimeState {
     targetHost?: string;
     targetPort?: number;
     localPort?: number;
+    sessionCount?: number;
+    sessions?: Array<{
+      client?: string;
+      upstreamLocalPort?: number | null;
+      createdAt?: string;
+      lastClientPacketAt?: string | null;
+      lastTargetPacketAt?: string | null;
+      clientPackets?: number;
+      targetPackets?: number;
+      clientBytes?: number;
+      targetBytes?: number;
+    }>;
   }>;
 }
 

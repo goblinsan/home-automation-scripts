@@ -253,9 +253,7 @@ function createRelaySession(record, clientAddress, clientPort) {
     record.serverSocket.send(message, session.clientPort, session.clientAddress, (error) => {
       if (error) {
         console.error('[pi-proxy] failed to relay upstream response to ' + key + ': ' + formatError(error));
-        return;
       }
-      console.log('[pi-proxy] relayed ' + message.length + ' byte(s) from ' + formatEndpoint(remote.address, remote.port) + ' to client ' + key + ' for ' + record.spec.workloadId);
     });
   });
 
@@ -270,6 +268,7 @@ function createRelaySession(record, clientAddress, clientPort) {
   upstreamSocket.bind(0);
   record.sessions.set(key, session);
   console.log('[pi-proxy] created relay session for ' + record.spec.workloadId + ' client ' + key + ' -> ' + formatEndpoint(record.spec.targetHost, record.spec.targetPort));
+  void writeRuntimeStateFromRecords(null);
   return session;
 }
 
@@ -302,7 +301,6 @@ function createProxyServer(spec) {
     session.lastActivityMs = Date.now();
     session.clientPackets += 1;
     session.clientBytes += message.length;
-    console.log('[pi-proxy] received ' + message.length + ' byte(s) from client ' + key + ' for ' + spec.workloadId + '; forwarding to ' + formatEndpoint(spec.targetHost, spec.targetPort));
     session.upstreamSocket.send(message, spec.targetPort, spec.targetHost, (error) => {
       if (error) {
         console.error('[pi-proxy] failed to relay client packet for ' + spec.workloadId + ' client ' + key + ': ' + formatError(error));
@@ -368,7 +366,6 @@ async function reconcile() {
   }
 
   await writeRuntimeStateFromRecords(null);
-  console.log('[pi-proxy] wrote state for ' + nextSpecs.length + ' world(s)');
 }
 
 async function main() {

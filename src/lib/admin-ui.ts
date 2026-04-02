@@ -3206,6 +3206,20 @@ function htmlPage(basePath: string): string {
       const meta = document.getElementById('piProxyRegistryMeta');
       const container = document.getElementById('piProxyRegistryContainer');
       const actionOutput = document.getElementById('piProxyActionOutput');
+      const runtimeServers = Array.isArray(state.piProxyStatus?.runtimeState?.servers)
+        ? state.piProxyStatus.runtimeState.servers
+        : [];
+      const runtimeServerByWorkloadId = new Map(
+        runtimeServers
+          .filter((server) => server && server.workloadId)
+          .map((server) => [server.workloadId, server])
+      );
+      const totalRelaySessions = runtimeServers.reduce((sum, server) => {
+        if (typeof server?.sessionCount === 'number' && Number.isFinite(server.sessionCount)) {
+          return sum + server.sessionCount;
+        }
+        return sum + (Array.isArray(server?.sessions) ? server.sessions.length : 0);
+      }, 0);
 
       if (!state.piProxyStatus) {
         serviceMeta.innerHTML = '<div><strong>Service:</strong> status not checked yet</div>';
@@ -3215,14 +3229,17 @@ function htmlPage(basePath: string): string {
           '<div><strong>Detail:</strong> ' + escapeHtml(state.piProxyStatus.error) + '</div>'
         ].join('');
       } else {
-        const runtimeServers = Array.isArray(state.piProxyStatus.runtimeState?.servers)
-          ? state.piProxyStatus.runtimeState.servers.length
-          : 0;
         serviceMeta.innerHTML = [
           '<div><strong>Node:</strong> ' + escapeHtml(state.piProxyStatus.nodeId || profile.nodeId || 'unset') + '</div>',
           '<div><strong>Service State:</strong> ' + escapeHtml(state.piProxyStatus.activeState + '/' + state.piProxyStatus.subState) + '</div>',
           '<div><strong>Installed:</strong> ' + escapeHtml(state.piProxyStatus.serviceInstalled ? 'yes' : 'no') + '</div>',
-          '<div><strong>Advertised Locally:</strong> ' + escapeHtml(String(runtimeServers)) + '</div>',
+          '<div><strong>Advertised Locally:</strong> ' + escapeHtml(String(runtimeServers.length)) + '</div>',
+          '<div><strong>Relay Mode:</strong> ' + escapeHtml(state.piProxyStatus.runtimeState?.mode || 'unknown') + '</div>',
+          '<div><strong>Active Sessions:</strong> ' + escapeHtml(String(totalRelaySessions)) + '</div>',
+          '<div><strong>Runtime Updated:</strong> ' + escapeHtml(formatTimestamp(state.piProxyStatus.runtimeState?.updatedAt)) + '</div>',
+          (state.piProxyStatus.runtimeState?.lastError
+            ? '<div><strong>Runtime Error:</strong> ' + escapeHtml(state.piProxyStatus.runtimeState.lastError) + '</div>'
+            : ''),
           '<div><strong>Summary:</strong> ' + escapeHtml(state.piProxyStatus.summary || 'unknown') + '</div>'
         ].join('');
       }
@@ -3261,6 +3278,45 @@ function htmlPage(basePath: string): string {
 
       container.innerHTML = '';
       servers.forEach((server) => {
+        const runtimeServer = runtimeServerByWorkloadId.get(server.workloadId);
+        const runtimeSessions = Array.isArray(runtimeServer?.sessions) ? runtimeServer.sessions : [];
+        let lastActivityAt = null;
+        let lastActivityTime = 0;
+        runtimeSessions.forEach((session) => {
+          [
+            session?.lastClientPacketAt,
+            session?.lastTargetPacketAt,
+            session?.createdAt
+          ].forEach((value) => {
+            const parsed = Date.parse(value || '');
+            if (!Number.isNaN(parsed) && parsed >= lastActivityTime) {
+              lastActivityTime = parsed;
+              lastActivityAt = value;
+            }
+          });
+        });
+        const relaySessionCount = typeof runtimeServer?.sessionCount === 'number' && Number.isFinite(runtimeServer.sessionCount)
+          ? runtimeServer.sessionCount
+          : runtimeSessions.length;
+        const sessionDetails = runtimeSessions.length === 0
+          ? ''
+          : [
+            '<details class="card card-quiet">',
+            '<summary><strong>Active Relay Sessions</strong> (' + escapeHtml(String(runtimeSessions.length)) + ')</summary>',
+            runtimeSessions.map((session) => [
+              '<div class="meta-list">',
+              '<div><strong>Client:</strong> ' + formatInlineValue(session?.client) + '</div>',
+              '<div><strong>Upstream Local Port:</strong> ' + formatInlineValue(session?.upstreamLocalPort, 'pending') + '</div>',
+              '<div><strong>Created:</strong> ' + escapeHtml(formatTimestamp(session?.createdAt)) + '</div>',
+              '<div><strong>Last Client Packet:</strong> ' + escapeHtml(formatTimestamp(session?.lastClientPacketAt)) + '</div>',
+              '<div><strong>Last Upstream Packet:</strong> ' + escapeHtml(formatTimestamp(session?.lastTargetPacketAt)) + '</div>',
+              '<div><strong>Client Traffic:</strong> ' + escapeHtml(String(session?.clientPackets ?? 0)) + ' packet(s), ' + escapeHtml(String(session?.clientBytes ?? 0)) + ' byte(s)</div>',
+              '<div><strong>Upstream Traffic:</strong> ' + escapeHtml(String(session?.targetPackets ?? 0)) + ' packet(s), ' + escapeHtml(String(session?.targetBytes ?? 0)) + ' byte(s)</div>',
+              '</div>'
+            ].join('')).join(''),
+            '</details>'
+          ].join('')
+          : '';
         const element = document.createElement('div');
         element.className = 'card';
         element.innerHTML = [
@@ -3272,10 +3328,14 @@ function htmlPage(basePath: string): string {
           '<div><strong>MOTD:</strong> ' + escapeHtml(server.motd || server.serverName || '') + '</div>',
           '<div><strong>Level Name:</strong> ' + escapeHtml(server.levelName || server.worldName || '') + '</div>',
           '<div><strong>Relay Target:</strong> ' + escapeHtml(server.targetHost + ':' + String(server.targetPort || 'unknown')) + '</div>',
+          '<div><strong>Relay Listen Port:</strong> ' + escapeHtml(String(runtimeServer?.localPort || profile.listenPort)) + '</div>',
+          '<div><strong>Relay Sessions:</strong> ' + escapeHtml(String(relaySessionCount)) + '</div>',
+          '<div><strong>Last Activity:</strong> ' + escapeHtml(formatTimestamp(lastActivityAt)) + '</div>',
           '<div><strong>Node:</strong> ' + escapeHtml(server.nodeId) + '</div>',
           '<div><strong>Network Mode:</strong> ' + escapeHtml(server.networkMode || 'unknown') + '</div>',
           '<div><strong>Started:</strong> ' + escapeHtml(formatTimestamp(server.startedAt)) + '</div>',
-          '</div>'
+          '</div>',
+          sessionDetails
         ].join('');
         container.appendChild(element);
       });

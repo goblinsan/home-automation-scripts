@@ -280,8 +280,8 @@ test('buildArtifacts renders remote workload bundles for core nodes', async () =
   assert.match(piProxyConfig, /http:\/\/192\.168\.0\.200:4173\/api\/minecraft\/server-registry/);
   assert.match(piProxyScript, /import dgram from 'node:dgram'/);
   assert.match(piProxyScript, /created relay session/);
-  assert.match(piProxyScript, /received /);
-  assert.match(piProxyScript, /relayed /);
+  assert.match(piProxyScript, /pruning idle session/);
+  assert.match(piProxyScript, /sessionCount: record\.sessions\.size/);
   assert.match(piProxyScript, /mode: 'udp-relay'/);
   assert.match(piProxyService, /ExecStart=\/usr\/bin\/node \/opt\/bedrock-lan-proxy\/proxy\.mjs \/opt\/bedrock-lan-proxy\/proxy-config\.json/);
 });
