@@ -336,18 +336,24 @@ async function cancelMinecraftManualUpdate(
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
   response.statusCode = statusCode;
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
+  response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  response.setHeader('Pragma', 'no-cache');
   response.end(`${JSON.stringify(payload)}\n`);
 }
 
 function sendHtml(response: ServerResponse, html: string): void {
   response.statusCode = 200;
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
+  response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  response.setHeader('Pragma', 'no-cache');
   response.end(html);
 }
 
 function sendText(response: ServerResponse, statusCode: number, text: string): void {
   response.statusCode = statusCode;
   response.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  response.setHeader('Pragma', 'no-cache');
   response.end(text);
 }
 
@@ -1966,7 +1972,30 @@ function htmlPage(basePath: string): string {
       },
       activeTab: 'overview'
     };
-    const basePath = document.querySelector('meta[name="gateway-base-path"]').content || '/';
+    function normalizeClientBasePath(pathValue) {
+      if (!pathValue || pathValue === '/') {
+        return '/';
+      }
+      if (pathValue.endsWith('/')) {
+        return pathValue;
+      }
+      const lastSlash = pathValue.lastIndexOf('/');
+      if (lastSlash <= 0) {
+        return pathValue + '/';
+      }
+      const tail = pathValue.slice(lastSlash + 1);
+      return tail.includes('.') ? pathValue.slice(0, lastSlash + 1) : pathValue + '/';
+    }
+
+    function resolveClientBasePath() {
+      const metaBasePath = document.querySelector('meta[name="gateway-base-path"]')?.content || '/';
+      if (metaBasePath && metaBasePath !== '/') {
+        return normalizeClientBasePath(metaBasePath);
+      }
+      return normalizeClientBasePath(window.location.pathname || '/');
+    }
+
+    const basePath = resolveClientBasePath();
     let actionFeedCollapseTimer = null;
 
     function applyActionFeedVisibility() {
