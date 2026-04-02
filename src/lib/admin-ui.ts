@@ -121,6 +121,23 @@ interface TtsStatusSnapshot {
   voices: unknown;
 }
 
+interface KulrsActivityRuntimeStatus {
+  jobId: string;
+  configuredEnabled: boolean;
+  timerInstalled: boolean;
+  timerActiveState: string;
+  timerSubState: string;
+  timerUnitFileState: string;
+  serviceInstalled: boolean;
+  serviceActiveState: string;
+  serviceSubState: string;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  summary: string;
+  driftDetected: boolean;
+  error?: string;
+}
+
 interface TtsVoiceRecord {
   id: string;
   name?: string;
@@ -331,6 +348,125 @@ async function cancelMinecraftManualUpdate(
   record.message = 'Cancelled pending safe update';
   await saveMinecraftManualUpdateScheduler(scheduler);
   return record;
+}
+
+async function runLocalCommandCapture(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  const { spawn } = await import('node:child_process');
+  return await new Promise((resolve, reject) => {
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    child.stdout.on('data', (chunk) => {
+      stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    });
+    child.stderr.on('data', (chunk) => {
+      stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      resolve({
+        code: code ?? 1,
+        stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+        stderr: Buffer.concat(stderrChunks).toString('utf8')
+      });
+    });
+  });
+}
+
+function parseSystemdShowOutput(output: string): Record<string, string> {
+  return Object.fromEntries(
+    output
+      .split('\n')
+      .map((line) => {
+        const separatorIndex = line.indexOf('=');
+        if (separatorIndex <= 0) {
+          return null;
+        }
+        return [line.slice(0, separatorIndex), line.slice(separatorIndex + 1)];
+      })
+      .filter((entry): entry is [string, string] => Array.isArray(entry))
+  );
+}
+
+function parseSystemdTimestamp(value: string | undefined): string | null {
+  if (!value || value === 'n/a' || value === '0') {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? value : new Date(parsed).toISOString();
+}
+
+async function getKulrsActivityRuntimeStatus(config: GatewayConfig): Promise<KulrsActivityRuntimeStatus> {
+  const kulrsJob = getAllScheduledJobs(config).find((job) => job.id === 'gateway-api-kulrs-activity');
+  if (!kulrsJob) {
+    throw new Error('KULRS scheduled job definition is missing');
+  }
+
+  const timerName = `${kulrsJob.id}.timer`;
+  const serviceName = `${kulrsJob.id}.service`;
+  const [timerResult, serviceResult] = await Promise.all([
+    runLocalCommandCapture('systemctl', [
+      'show',
+      timerName,
+      '-p', 'LoadState',
+      '-p', 'ActiveState',
+      '-p', 'SubState',
+      '-p', 'UnitFileState',
+      '-p', 'NextElapseUSecRealtime',
+      '-p', 'LastTriggerUSec'
+    ]),
+    runLocalCommandCapture('systemctl', [
+      'show',
+      serviceName,
+      '-p', 'LoadState',
+      '-p', 'ActiveState',
+      '-p', 'SubState'
+    ])
+  ]);
+
+  const timerFields = parseSystemdShowOutput(timerResult.stdout);
+  const serviceFields = parseSystemdShowOutput(serviceResult.stdout);
+  const timerInstalled = timerFields.LoadState ? timerFields.LoadState !== 'not-found' : timerResult.code === 0;
+  const serviceInstalled = serviceFields.LoadState ? serviceFields.LoadState !== 'not-found' : serviceResult.code === 0;
+  const timerActiveState = timerFields.ActiveState || (timerInstalled ? 'unknown' : 'missing');
+  const timerSubState = timerFields.SubState || (timerInstalled ? 'unknown' : 'missing');
+  const timerUnitFileState = timerFields.UnitFileState || (timerInstalled ? 'unknown' : 'not-found');
+  const serviceActiveState = serviceFields.ActiveState || (serviceInstalled ? 'unknown' : 'missing');
+  const serviceSubState = serviceFields.SubState || (serviceInstalled ? 'unknown' : 'missing');
+  const nextRunAt = parseSystemdTimestamp(timerFields.NextElapseUSecRealtime);
+  const lastRunAt = parseSystemdTimestamp(timerFields.LastTriggerUSec);
+  const timerOperational = timerInstalled && (timerActiveState === 'active' || timerUnitFileState === 'enabled');
+  const driftDetected = kulrsJob.enabled !== timerOperational;
+  const summary = kulrsJob.enabled
+    ? timerOperational
+      ? 'Configured enabled and timer is active on the host'
+      : 'Configured enabled, but the host timer is not active'
+    : timerOperational
+      ? 'Configured disabled, but the host timer is still active'
+      : 'Configured disabled and no active host timer detected';
+
+  const errorParts = [
+    timerResult.code !== 0 && timerResult.stderr.trim().length > 0 ? `timer: ${timerResult.stderr.trim()}` : '',
+    serviceResult.code !== 0 && serviceResult.stderr.trim().length > 0 ? `service: ${serviceResult.stderr.trim()}` : ''
+  ].filter(Boolean);
+
+  return {
+    jobId: kulrsJob.id,
+    configuredEnabled: kulrsJob.enabled,
+    timerInstalled,
+    timerActiveState,
+    timerSubState,
+    timerUnitFileState,
+    serviceInstalled,
+    serviceActiveState,
+    serviceSubState,
+    nextRunAt,
+    lastRunAt,
+    summary,
+    driftDetected,
+    ...(errorParts.length > 0 ? { error: errorParts.join(' | ') } : {})
+  };
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
@@ -1336,6 +1472,7 @@ function htmlPage(basePath: string): string {
               <label>Description
                 <input id="kulrsDescription" />
               </label>
+              <div id="kulrsStatus" class="meta-list"></div>
               <div class="row">
                 <label>Firebase API Key
                   <input id="kulrsFirebaseApiKey" type="password" />
@@ -1961,6 +2098,7 @@ function htmlPage(basePath: string): string {
       ttsVoices: [],
       piProxyRegistry: null,
       piProxyStatus: null,
+      kulrsActivityStatus: null,
       actionFeedCollapsed: false,
       agentRun: {
         agentId: '',
@@ -2563,6 +2701,26 @@ function htmlPage(basePath: string): string {
       document.getElementById('kulrsDescription').value = kulrs.description;
       document.getElementById('kulrsFirebaseApiKey').value = kulrs.firebaseApiKey;
       document.getElementById('kulrsUnsplashAccessKey').value = kulrs.unsplashAccessKey;
+      const statusMeta = document.getElementById('kulrsStatus');
+      if (!state.kulrsActivityStatus) {
+        statusMeta.innerHTML = '<div><strong>Runtime Status:</strong> not checked yet</div>';
+      } else if (state.kulrsActivityStatus.error) {
+        statusMeta.innerHTML = [
+          '<div><strong>Runtime Status:</strong> error</div>',
+          '<div><strong>Detail:</strong> ' + escapeHtml(state.kulrsActivityStatus.error) + '</div>'
+        ].join('');
+      } else {
+        statusMeta.innerHTML = [
+          '<div><strong>Config Enabled:</strong> ' + escapeHtml(state.kulrsActivityStatus.configuredEnabled ? 'yes' : 'no') + '</div>',
+          '<div><strong>Timer State:</strong> ' + escapeHtml(state.kulrsActivityStatus.timerActiveState + '/' + state.kulrsActivityStatus.timerSubState) + '</div>',
+          '<div><strong>Timer Installed:</strong> ' + escapeHtml(state.kulrsActivityStatus.timerInstalled ? 'yes' : 'no') + '</div>',
+          '<div><strong>Timer Unit File:</strong> ' + escapeHtml(state.kulrsActivityStatus.timerUnitFileState || 'unknown') + '</div>',
+          '<div><strong>Last Run:</strong> ' + escapeHtml(formatTimestamp(state.kulrsActivityStatus.lastRunAt)) + '</div>',
+          '<div><strong>Next Run:</strong> ' + escapeHtml(formatTimestamp(state.kulrsActivityStatus.nextRunAt)) + '</div>',
+          '<div><strong>Drift:</strong> ' + escapeHtml(state.kulrsActivityStatus.driftDetected ? 'yes' : 'no') + '</div>',
+          '<div><strong>Summary:</strong> ' + escapeHtml(state.kulrsActivityStatus.summary || 'unknown') + '</div>'
+        ].join('');
+      }
 
       const container = document.getElementById('kulrsBotsContainer');
       container.innerHTML = '';
@@ -4696,6 +4854,7 @@ function htmlPage(basePath: string): string {
           case 'services':
             return [
               fetchRuntime(),
+              fetchKulrsActivityStatus(),
               fetchTtsVoices(),
               fetchChatProviders()
             ];
@@ -4741,6 +4900,21 @@ function htmlPage(basePath: string): string {
       }
       state.runtime = await response.json();
       renderRuntime();
+    }
+
+    async function fetchKulrsActivityStatus() {
+      if (!state.config) {
+        state.kulrsActivityStatus = null;
+        renderKulrsActivityProfile();
+        return null;
+      }
+      try {
+        state.kulrsActivityStatus = await requestJson('GET', '/api/service-profiles/kulrs-activity/status');
+      } catch (error) {
+        state.kulrsActivityStatus = { error: error.message };
+      }
+      renderKulrsActivityProfile();
+      return state.kulrsActivityStatus;
     }
 
     async function fetchWorkflows() {
@@ -6139,6 +6313,12 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       if (request.method === 'GET' && path === '/api/service-profiles/pi-proxy/status') {
         const config = await loadGatewayConfig(options.configPath);
         sendJson(response, 200, await getPiProxyServiceStatus(config));
+        return;
+      }
+
+      if (request.method === 'GET' && path === '/api/service-profiles/kulrs-activity/status') {
+        const config = await loadGatewayConfig(options.configPath);
+        sendJson(response, 200, await getKulrsActivityRuntimeStatus(config));
         return;
       }
 
