@@ -174,6 +174,53 @@ function attachEmitterLogging(emitter, label, events) {
   }
 }
 
+function summarizeValue(value) {
+  if (value === null || value === undefined) {
+    return String(value);
+  }
+  if (value instanceof Error) {
+    return value.message;
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (typeof value === 'object') {
+    try {
+      const keys = Object.keys(value);
+      return '{' + keys.slice(0, 8).join(',') + (keys.length > 8 ? ',…' : '') + '}';
+    } catch (error) {
+      return 'object(' + formatError(error) + ')';
+    }
+  }
+  return typeof value;
+}
+
+function attachEmitTrace(emitter, label, maxEvents = 50) {
+  if (!emitter || typeof emitter.emit !== 'function') {
+    console.log('[pi-proxy] ' + label + ' emit trace unavailable');
+    return;
+  }
+  if (emitter.__gcpEmitTraceAttached) {
+    return;
+  }
+  emitter.__gcpEmitTraceAttached = true;
+  const originalEmit = emitter.emit.bind(emitter);
+  let eventCount = 0;
+  emitter.emit = function tracedEmit(eventName, ...args) {
+    if (eventCount < maxEvents) {
+      eventCount += 1;
+      const details = args.length > 0
+        ? ' ' + args.slice(0, 3).map((value) => summarizeValue(value)).join(' | ')
+        : '';
+      console.log('[pi-proxy] ' + label + ' emit ' + String(eventName) + details);
+      if (eventCount === maxEvents) {
+        console.log('[pi-proxy] ' + label + ' emit trace limit reached');
+      }
+    }
+    return originalEmit(eventName, ...args);
+  };
+}
+
 function attachSocketDebugLogging(server, spec) {
   const attach = (socket, label) => {
     if (!socket || typeof socket.on !== 'function') {
@@ -271,6 +318,9 @@ function createProxyServer(spec) {
 
   console.log('[pi-proxy] created proxy server object for ' + spec.workloadId + ' on ' + runtimeConfig.listenHost + ':' + spec.localPort + ' keys=' + Object.keys(server || {}).join(','));
   attachEmitterLogging(server, 'server', ['listening', 'session', 'connect', 'close']);
+  attachEmitTrace(server, 'server');
+  attachEmitTrace(server?.raknet, 'server.raknet');
+  attachEmitTrace(server?.RakServer, 'server.RakServer');
   attachSocketDebugLogging(server, spec);
 
   server.on('listening', () => {

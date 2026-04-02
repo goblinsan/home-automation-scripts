@@ -283,5 +283,7 @@ test('buildArtifacts renders remote workload bundles for core nodes', async () =
   assert.match(piProxyScript, /transfer requested for/);
   assert.match(piProxyScript, /raw udp message for/);
   assert.match(piProxyScript, /server\.socket never became available/);
+  assert.match(piProxyScript, /emit trace limit reached/);
+  assert.match(piProxyScript, /server\.raknet/);
   assert.match(piProxyService, /ExecStart=\/usr\/bin\/node \/opt\/bedrock-lan-proxy\/proxy\.mjs \/opt\/bedrock-lan-proxy\/proxy-config\.json/);
 });
