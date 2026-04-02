@@ -4657,13 +4657,51 @@ function htmlPage(basePath: string): string {
       }
       state.config = await response.json();
       render();
-      await Promise.all([
-        refreshAllMinecraftStatuses({ silent: true }),
-        fetchPiProxyStatus({ silent: true })
-      ]);
-      renderBedrockServers();
-      renderPiProxyProfile();
       setStatus('Current', 'ok', { log: false });
+    }
+
+    async function loadTabData(tab, options = {}) {
+      const settled = await Promise.allSettled((() => {
+        switch (tab) {
+          case 'services':
+            return [
+              fetchRuntime(),
+              fetchTtsVoices(),
+              fetchChatProviders()
+            ];
+          case 'agents':
+            return [
+              fetchTtsVoices(),
+              fetchChatProviders()
+            ];
+          case 'workflows':
+            return [
+              fetchWorkflows(),
+              fetchJobsCatalog(),
+              fetchRuntime()
+            ];
+          case 'bedrock':
+            return [
+              refreshAllMinecraftStatuses({ silent: true, skipRegistry: true }),
+              fetchPiProxyStatus({ silent: true }),
+              fetchRuntime()
+            ];
+          default:
+            return [fetchRuntime()];
+        }
+      })());
+
+      if (options.silent) {
+        return settled;
+      }
+
+      const failures = settled
+        .filter((result) => result.status === 'rejected')
+        .map((result) => result.reason instanceof Error ? result.reason.message : String(result.reason));
+      if (failures.length > 0) {
+        setStatus(failures[0], 'error');
+      }
+      return settled;
     }
 
     async function fetchRuntime() {
@@ -4958,9 +4996,6 @@ function htmlPage(basePath: string): string {
     async function refreshMinecraftStatus(workloadId, options = {}) {
       const status = await requestJson('GET', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/status');
       state.minecraftStatuses[workloadId] = status;
-      if (!options.skipRegistry && state.config?.serviceProfiles.piProxy.enabled) {
-        await fetchPiProxyRegistry({ silent: true });
-      }
       if (!options.silent) {
         renderBedrockServers();
         renderPiProxyProfile();
@@ -5037,9 +5072,6 @@ function htmlPage(basePath: string): string {
           };
         }
       }));
-      if (!options.skipRegistry && state.config?.serviceProfiles.piProxy.enabled) {
-        await fetchPiProxyRegistry({ silent: true });
-      }
       if (!options.silent) {
         renderBedrockServers();
         renderPiProxyProfile();
@@ -5051,13 +5083,7 @@ function htmlPage(basePath: string): string {
       const result = await requestJson('POST', '/api/config', state.config);
       state.config = result.config;
       render();
-      await Promise.all([
-        fetchWorkflows(),
-        fetchJobsCatalog(),
-        fetchRuntime(),
-        refreshAllMinecraftStatuses({ silent: true }),
-        fetchPiProxyStatus({ silent: true })
-      ]);
+      await loadTabData(state.activeTab, { silent: true });
       return result;
     }
 
@@ -5067,9 +5093,10 @@ function htmlPage(basePath: string): string {
     }
 
     document.querySelectorAll('.tab-button').forEach((button) => {
-      button.addEventListener('click', () => {
+      button.addEventListener('click', async () => {
         state.activeTab = button.dataset.tab || 'overview';
         render();
+        await loadTabData(state.activeTab);
       });
     });
 
@@ -5093,9 +5120,10 @@ function htmlPage(basePath: string): string {
     });
 
     document.querySelectorAll('[data-open-tab]').forEach((button) => {
-      button.addEventListener('click', () => {
+      button.addEventListener('click', async () => {
         state.activeTab = button.dataset.openTab || 'overview';
         render();
+        await loadTabData(state.activeTab);
       });
     });
 
@@ -5341,13 +5369,7 @@ function htmlPage(basePath: string): string {
           const result = await requestJson('POST', '/api/build', state.config);
           state.config = result.config;
           render();
-          await Promise.all([
-            fetchWorkflows(),
-            fetchJobsCatalog(),
-            fetchRuntime(),
-            refreshAllMinecraftStatuses({ silent: true }),
-            fetchPiProxyStatus({ silent: true })
-          ]);
+          await loadTabData(state.activeTab, { silent: true });
           setStatus(result.message || 'Saved');
         } catch (error) {
           setStatus(error.message, 'error');
@@ -5360,7 +5382,7 @@ function htmlPage(basePath: string): string {
       await withBusyButton(button, 'Refreshing…', async () => {
         try {
           await fetchConfig();
-          await Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime()]);
+          await loadTabData(state.activeTab, { silent: true });
           setStatus('Current', 'ok', { log: false });
         } catch (error) {
           setStatus(error.message, 'error');
@@ -5731,14 +5753,16 @@ function htmlPage(basePath: string): string {
     }, true);
 
     fetchConfig()
-      .then(() => Promise.all([fetchWorkflows(), fetchJobsCatalog(), fetchRuntime(), fetchTtsVoices(), fetchChatProviders()]))
+      .then(() => loadTabData(state.activeTab, { silent: true }))
       .catch((error) => setStatus(error.message, 'error'));
     applyActionFeedVisibility();
     setInterval(() => {
       fetchRuntime().catch(() => undefined);
     }, 15000);
     setInterval(() => {
-      refreshAllMinecraftStatuses().catch(() => undefined);
+      if (state.activeTab === 'bedrock') {
+        refreshAllMinecraftStatuses({ silent: true, skipRegistry: true }).catch(() => undefined);
+      }
     }, 60000);
   </script>
 </body>
