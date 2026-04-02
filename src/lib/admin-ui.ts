@@ -2098,12 +2098,13 @@ function htmlPage(basePath: string): string {
     }
 
     function joinBase(path) {
+      const normalizedPath = path.startsWith('/api/') ? '/__admin' + path : path;
       if (basePath === '/') {
-        return path.startsWith('/') ? path : \`/\${path}\`;
+        return normalizedPath.startsWith('/') ? normalizedPath : \`/\${normalizedPath}\`;
       }
       const normalizedBase = basePath.endsWith('/') ? basePath : \`\${basePath}/\`;
-      const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
-      return \`\${normalizedBase}\${normalizedPath}\`;
+      const relativePath = normalizedPath.startsWith('/') ? normalizedPath.slice(1) : normalizedPath;
+      return \`\${normalizedBase}\${relativePath}\`;
     }
 
     function syncRawJson() {
@@ -5805,7 +5806,15 @@ async function loadRequestConfig(request: IncomingMessage): Promise<GatewayConfi
 
 function getRequestPath(request: IncomingMessage): string {
   const requestUrl = request.url ?? '/';
-  return requestUrl.split('?')[0] ?? '/';
+  const path = requestUrl.split('?')[0] ?? '/';
+  if (path === '/__admin') {
+    return '/';
+  }
+  if (path.startsWith('/__admin/')) {
+    const normalized = path.slice('/__admin'.length);
+    return normalized.length > 0 ? normalized : '/';
+  }
+  return path;
 }
 
 async function proxyGatewayApiRequest(
