@@ -3271,7 +3271,7 @@ function htmlPage(basePath: string): string {
           '<div class="meta-list">',
           '<div><strong>MOTD:</strong> ' + escapeHtml(server.motd || server.serverName || '') + '</div>',
           '<div><strong>Level Name:</strong> ' + escapeHtml(server.levelName || server.worldName || '') + '</div>',
-          '<div><strong>Transfer Target:</strong> ' + escapeHtml(server.targetHost + ':' + String(server.targetPort || 'unknown')) + '</div>',
+          '<div><strong>Relay Target:</strong> ' + escapeHtml(server.targetHost + ':' + String(server.targetPort || 'unknown')) + '</div>',
           '<div><strong>Node:</strong> ' + escapeHtml(server.nodeId) + '</div>',
           '<div><strong>Network Mode:</strong> ' + escapeHtml(server.networkMode || 'unknown') + '</div>',
           '<div><strong>Started:</strong> ' + escapeHtml(formatTimestamp(server.startedAt)) + '</div>',

@@ -94,13 +94,13 @@ runtime state:
 
 - `serverName` becomes the advertised Bedrock `motd`
 - `worldName` becomes the advertised Bedrock `levelName`
-- `node.host` and the resolved Bedrock port become the transfer target
+- `node.host` and the resolved Bedrock port become the upstream relay target
 
 The intended flow is:
 
 1. the Pi proxy service polls the registry from the configured control-plane URL
 2. it advertises those worlds on the local Xbox LAN segment
-3. on join, it transfers the player to the real Bedrock server on the worker node
+3. on join, it relays the Bedrock UDP session to the real Bedrock server on the worker node
 
 The admin UI can now deploy and restart that Pi proxy service over SSH, using
 the same control-plane config that defines the Bedrock worlds it advertises.

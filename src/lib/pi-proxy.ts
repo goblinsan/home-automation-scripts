@@ -20,10 +20,7 @@ function renderPiProxyPackageJson(): string {
     name: 'gateway-bedrock-lan-proxy',
     version: '0.1.0',
     private: true,
-    type: 'module',
-    dependencies: {
-      'bedrock-protocol': 'latest'
-    }
+    type: 'module'
   });
 }
 
@@ -67,13 +64,15 @@ function renderPiProxySystemdUnit(config: GatewayConfig): string {
 }
 
 function renderPiProxyScript(): string {
-  return `import bedrock from 'bedrock-protocol';
+  return `import dgram from 'node:dgram';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 const configPath = process.argv[2] || './proxy-config.json';
 const activeServers = new Map();
 let runtimeConfig = null;
+const SESSION_IDLE_MS = 120000;
+const SESSION_PRUNE_INTERVAL_MS = 30000;
 
 async function loadConfig() {
   const raw = await readFile(configPath, 'utf8');
@@ -120,14 +119,30 @@ function specsDiffer(left, right) {
 }
 
 function closeProxyServer(record) {
-  if (!record?.server) {
+  if (!record) {
     return;
   }
-  if (typeof record.server.close === 'function') {
+  if (record.pruneTimer) {
     try {
-      record.server.close();
+      clearInterval(record.pruneTimer);
     } catch (error) {
-      console.error('[pi-proxy] failed to close server', error);
+      console.error('[pi-proxy] failed to clear prune timer', error);
+    }
+  }
+  for (const session of record.sessions?.values?.() || []) {
+    if (session.upstreamSocket && typeof session.upstreamSocket.close === 'function') {
+      try {
+        session.upstreamSocket.close();
+      } catch (error) {
+        console.error('[pi-proxy] failed to close upstream socket', error);
+      }
+    }
+  }
+  if (record.serverSocket && typeof record.serverSocket.close === 'function') {
+    try {
+      record.serverSocket.close();
+    } catch (error) {
+      console.error('[pi-proxy] failed to close relay socket', error);
     }
   }
 }
@@ -145,206 +160,169 @@ function formatError(error) {
   return String(error);
 }
 
-function formatClientAddress(client) {
-  const address = client?.socket?.address;
-  if (typeof address !== 'function') {
-    return 'unknown';
-  }
-  try {
-    const value = address.call(client.socket);
-    if (value && typeof value === 'object' && 'address' in value && 'port' in value) {
-      return String(value.address) + ':' + String(value.port);
+function formatEndpoint(host, port) {
+  return String(host) + ':' + String(port);
+}
+
+function createSessionKey(host, port) {
+  return formatEndpoint(host, port);
+}
+
+function summarizeSession(session) {
+  return {
+    client: formatEndpoint(session.clientAddress, session.clientPort),
+    upstreamLocalPort: session.upstreamLocalPort,
+    createdAt: session.createdAt,
+    lastClientPacketAt: session.lastClientPacketAt,
+    lastTargetPacketAt: session.lastTargetPacketAt,
+    clientPackets: session.clientPackets,
+    targetPackets: session.targetPackets,
+    clientBytes: session.clientBytes,
+    targetBytes: session.targetBytes
+  };
+}
+
+function writeRuntimeStateFromRecords(lastError = null) {
+  return writeState({
+    updatedAt: new Date().toISOString(),
+    registryUrl: runtimeConfig.registryUrl,
+    mode: 'udp-relay',
+    lastError,
+    servers: Array.from(activeServers.values()).map((record) => ({
+      workloadId: record.spec.workloadId,
+      serverName: record.spec.serverName,
+      worldName: record.spec.worldName,
+      motd: record.spec.motd,
+      levelName: record.spec.levelName,
+      targetHost: record.spec.targetHost,
+      targetPort: record.spec.targetPort,
+      localPort: record.spec.localPort,
+      sessionCount: record.sessions.size,
+      sessions: Array.from(record.sessions.values()).map((session) => summarizeSession(session))
+    }))
+  });
+}
+
+function pruneIdleSessions(record) {
+  const now = Date.now();
+  for (const [key, session] of record.sessions.entries()) {
+    if (now - session.lastActivityMs < SESSION_IDLE_MS) {
+      continue;
     }
-  } catch (error) {
-    return 'unavailable (' + formatError(error) + ')';
-  }
-  return 'unknown';
-}
-
-function attachEmitterLogging(emitter, label, events) {
-  if (!emitter || typeof emitter.on !== 'function') {
-    console.log('[pi-proxy] ' + label + ' emitter unavailable');
-    return;
-  }
-  for (const eventName of events) {
-    emitter.on(eventName, (...args) => {
-      const detail = args.length > 0 ? ' ' + args.map((value) => formatError(value)).join(' | ') : '';
-      console.log('[pi-proxy] ' + label + ' event ' + eventName + detail);
-    });
-  }
-}
-
-function summarizeValue(value) {
-  if (value === null || value === undefined) {
-    return String(value);
-  }
-  if (value instanceof Error) {
-    return value.message;
-  }
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  if (typeof value === 'object') {
+    console.log('[pi-proxy] pruning idle session ' + key + ' for ' + record.spec.workloadId);
     try {
-      const keys = Object.keys(value);
-      return '{' + keys.slice(0, 8).join(',') + (keys.length > 8 ? ',…' : '') + '}';
+      session.upstreamSocket.close();
     } catch (error) {
-      return 'object(' + formatError(error) + ')';
+      console.error('[pi-proxy] failed to close idle session ' + key + ': ' + formatError(error));
     }
+    record.sessions.delete(key);
   }
-  return typeof value;
+  void writeRuntimeStateFromRecords(null);
 }
 
-function attachEmitTrace(emitter, label, maxEvents = 50) {
-  if (!emitter || typeof emitter.emit !== 'function') {
-    console.log('[pi-proxy] ' + label + ' emit trace unavailable');
-    return;
-  }
-  if (emitter.__gcpEmitTraceAttached) {
-    return;
-  }
-  emitter.__gcpEmitTraceAttached = true;
-  const originalEmit = emitter.emit.bind(emitter);
-  let eventCount = 0;
-  emitter.emit = function tracedEmit(eventName, ...args) {
-    if (eventCount < maxEvents) {
-      eventCount += 1;
-      const details = args.length > 0
-        ? ' ' + args.slice(0, 3).map((value) => summarizeValue(value)).join(' | ')
-        : '';
-      console.log('[pi-proxy] ' + label + ' emit ' + String(eventName) + details);
-      if (eventCount === maxEvents) {
-        console.log('[pi-proxy] ' + label + ' emit trace limit reached');
+function createRelaySession(record, clientAddress, clientPort) {
+  const key = createSessionKey(clientAddress, clientPort);
+  const upstreamSocket = dgram.createSocket('udp4');
+  const session = {
+    key,
+    clientAddress,
+    clientPort,
+    upstreamSocket,
+    upstreamLocalPort: null,
+    createdAt: new Date().toISOString(),
+    lastClientPacketAt: null,
+    lastTargetPacketAt: null,
+    lastActivityMs: Date.now(),
+    clientPackets: 0,
+    targetPackets: 0,
+    clientBytes: 0,
+    targetBytes: 0
+  };
+
+  upstreamSocket.on('listening', () => {
+    const address = upstreamSocket.address();
+    session.upstreamLocalPort = address && typeof address === 'object' && 'port' in address ? Number(address.port) : null;
+    console.log('[pi-proxy] relay upstream listening for ' + record.spec.workloadId + ' client ' + key + ' on local port ' + String(session.upstreamLocalPort));
+  });
+
+  upstreamSocket.on('message', (message, remote) => {
+    session.lastTargetPacketAt = new Date().toISOString();
+    session.lastActivityMs = Date.now();
+    session.targetPackets += 1;
+    session.targetBytes += message.length;
+    record.serverSocket.send(message, session.clientPort, session.clientAddress, (error) => {
+      if (error) {
+        console.error('[pi-proxy] failed to relay upstream response to ' + key + ': ' + formatError(error));
+        return;
       }
-    }
-    return originalEmit(eventName, ...args);
-  };
-}
-
-function attachSocketDebugLogging(server, spec) {
-  const attach = (socket, label) => {
-    if (!socket || typeof socket.on !== 'function') {
-      return false;
-    }
-    if (socket.__gcpDebugAttached) {
-      return true;
-    }
-    socket.__gcpDebugAttached = true;
-    console.log('[pi-proxy] attached socket debug to ' + label + ' for ' + spec.workloadId + ' on ' + spec.localPort);
-    socket.on('listening', () => {
-      console.log('[pi-proxy] socket listening for ' + spec.workloadId + ' on ' + spec.localPort);
+      console.log('[pi-proxy] relayed ' + message.length + ' byte(s) from ' + formatEndpoint(remote.address, remote.port) + ' to client ' + key + ' for ' + record.spec.workloadId);
     });
-    socket.on('message', (_message, remote) => {
-      const remoteLabel = remote && typeof remote === 'object' && 'address' in remote && 'port' in remote
-        ? String(remote.address) + ':' + String(remote.port)
-        : 'unknown';
-      console.log('[pi-proxy] raw udp message for ' + spec.workloadId + ' from ' + remoteLabel + ' on ' + spec.localPort);
-    });
-    socket.on('close', () => {
-      console.log('[pi-proxy] socket close for ' + spec.workloadId + ' on ' + spec.localPort);
-    });
-    socket.on('error', (error) => {
-      console.error('[pi-proxy] socket error for ' + spec.workloadId + ' on ' + spec.localPort + ': ' + formatError(error));
-    });
-    return true;
-  };
-
-  if (attach(server?.socket, 'server.socket')) {
-    return;
-  }
-
-  let attempts = 0;
-  const timer = setInterval(() => {
-    attempts += 1;
-    if (attach(server?.socket, 'server.socket')) {
-      clearInterval(timer);
-      return;
-    }
-    if (attempts >= 20) {
-      clearInterval(timer);
-      console.log('[pi-proxy] server.socket never became available for ' + spec.workloadId + ' on ' + spec.localPort);
-    }
-  }, 500);
-}
-
-function attachClientDebugLogging(client, spec) {
-  let packetLogCount = 0;
-  const maxPacketLogs = 12;
-
-  client.on('packet', (_packet, metadata) => {
-    if (packetLogCount >= maxPacketLogs) {
-      return;
-    }
-    const packetName = metadata && typeof metadata === 'object' && 'name' in metadata
-      ? String(metadata.name)
-      : 'unknown';
-    packetLogCount += 1;
-    console.log('[pi-proxy] packet ' + packetName + ' for ' + spec.workloadId + ' from ' + formatClientAddress(client));
   });
 
-  client.on('join', () => {
-    console.log('[pi-proxy] join event for ' + spec.workloadId + '; transferring to ' + spec.targetHost + ':' + spec.targetPort);
-    client.transfer({
-      host: spec.targetHost,
-      port: spec.targetPort
-    });
-    console.log('[pi-proxy] transfer requested for ' + spec.workloadId + ' to ' + spec.targetHost + ':' + spec.targetPort);
+  upstreamSocket.on('error', (error) => {
+    console.error('[pi-proxy] upstream socket error for ' + record.spec.workloadId + ' client ' + key + ': ' + formatError(error));
   });
 
-  client.on('disconnect', (reason) => {
-    console.log('[pi-proxy] disconnect event for ' + spec.workloadId + ': ' + formatError(reason));
+  upstreamSocket.on('close', () => {
+    console.log('[pi-proxy] upstream socket closed for ' + record.spec.workloadId + ' client ' + key);
   });
 
-  client.on('close', (reason) => {
-    console.log('[pi-proxy] client close for ' + spec.workloadId + ': ' + formatError(reason));
-  });
-
-  client.on('error', (error) => {
-    console.error('[pi-proxy] client error for ' + spec.workloadId + ': ' + formatError(error));
-  });
+  upstreamSocket.bind(0);
+  record.sessions.set(key, session);
+  console.log('[pi-proxy] created relay session for ' + record.spec.workloadId + ' client ' + key + ' -> ' + formatEndpoint(record.spec.targetHost, record.spec.targetPort));
+  return session;
 }
 
 function createProxyServer(spec) {
-  const server = bedrock.createServer({
-    host: runtimeConfig.listenHost,
-    port: spec.localPort,
-    offline: true,
-    raknetBackend: 'jsp-raknet',
-    motd: {
-      motd: spec.motd,
-      levelName: spec.levelName
+  const serverSocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+  const record = {
+    spec,
+    serverSocket,
+    sessions: new Map(),
+    pruneTimer: null
+  };
+
+  serverSocket.on('listening', () => {
+    serverSocket.setBroadcast(true);
+    const address = serverSocket.address();
+    const label = address && typeof address === 'object'
+      ? formatEndpoint(address.address, address.port)
+      : formatEndpoint(runtimeConfig.listenHost, spec.localPort);
+    console.log('[pi-proxy] listening on ' + label + ' for ' + spec.workloadId + ' -> ' + formatEndpoint(spec.targetHost, spec.targetPort));
+  });
+
+  serverSocket.on('message', (message, remote) => {
+    const key = createSessionKey(remote.address, remote.port);
+    let session = record.sessions.get(key);
+    if (!session) {
+      session = createRelaySession(record, remote.address, remote.port);
     }
+
+    session.lastClientPacketAt = new Date().toISOString();
+    session.lastActivityMs = Date.now();
+    session.clientPackets += 1;
+    session.clientBytes += message.length;
+    console.log('[pi-proxy] received ' + message.length + ' byte(s) from client ' + key + ' for ' + spec.workloadId + '; forwarding to ' + formatEndpoint(spec.targetHost, spec.targetPort));
+    session.upstreamSocket.send(message, spec.targetPort, spec.targetHost, (error) => {
+      if (error) {
+        console.error('[pi-proxy] failed to relay client packet for ' + spec.workloadId + ' client ' + key + ': ' + formatError(error));
+      }
+    });
   });
 
-  console.log('[pi-proxy] created proxy server object for ' + spec.workloadId + ' on ' + runtimeConfig.listenHost + ':' + spec.localPort + ' keys=' + Object.keys(server || {}).join(','));
-  attachEmitterLogging(server, 'server', ['listening', 'session', 'connect', 'close']);
-  attachEmitTrace(server, 'server');
-  attachEmitTrace(server?.raknet, 'server.raknet');
-  attachEmitTrace(server?.RakServer, 'server.RakServer');
-  attachSocketDebugLogging(server, spec);
-
-  server.on('listening', () => {
-    console.log('[pi-proxy] listening on ' + runtimeConfig.listenHost + ':' + spec.localPort + ' for ' + spec.workloadId + ' -> ' + spec.targetHost + ':' + spec.targetPort);
+  serverSocket.on('error', (error) => {
+    console.error('[pi-proxy] relay socket error for ' + spec.workloadId + ': ' + formatError(error));
   });
 
-  server.on('connect', (client) => {
-    console.log('[pi-proxy] player connected to ' + spec.workloadId + ' via ' + spec.localPort + ' from ' + formatClientAddress(client));
-    attachClientDebugLogging(client, spec);
+  serverSocket.on('close', () => {
+    console.log('[pi-proxy] relay socket closed for ' + spec.workloadId + ' on ' + spec.localPort);
   });
 
-  server.on('session', () => {
-    console.log('[pi-proxy] session event for ' + spec.workloadId + ' on ' + spec.localPort);
-  });
-
-  server.on('close', () => {
-    console.log('[pi-proxy] server closed for ' + spec.workloadId + ' on ' + spec.localPort);
-  });
-
-  server.on('error', (error) => {
-    console.error('[pi-proxy] server error for ' + spec.workloadId + ': ' + formatError(error));
-  });
-
-  return server;
+  serverSocket.bind(spec.localPort, runtimeConfig.listenHost);
+  record.pruneTimer = setInterval(() => {
+    pruneIdleSessions(record);
+  }, SESSION_PRUNE_INTERVAL_MS);
+  return record;
 }
 
 async function fetchRegistryServers() {
@@ -368,23 +346,6 @@ async function reconcile() {
   const nextSpecs = registryServers.map((entry, index) => normalizeEntry(entry, index));
   const nextKeys = new Set(nextSpecs.map((entry) => entry.key));
 
-  await writeState({
-    updatedAt: new Date().toISOString(),
-    registryUrl: runtimeConfig.registryUrl,
-    lastError: null,
-    servers: nextSpecs.map((spec) => ({
-      workloadId: spec.workloadId,
-      serverName: spec.serverName,
-      worldName: spec.worldName,
-      motd: spec.motd,
-      levelName: spec.levelName,
-      targetHost: spec.targetHost,
-      targetPort: spec.targetPort,
-      localPort: spec.localPort
-    }))
-  });
-  console.log('[pi-proxy] wrote state for ' + nextSpecs.length + ' world(s)');
-
   for (const [key, record] of activeServers.entries()) {
     if (!nextKeys.has(key)) {
       console.log('[pi-proxy] removing proxy ' + key);
@@ -402,12 +363,12 @@ async function reconcile() {
       } else {
         console.log('[pi-proxy] creating proxy ' + spec.key);
       }
-      activeServers.set(spec.key, {
-        spec,
-        server: createProxyServer(spec)
-      });
+      activeServers.set(spec.key, createProxyServer(spec));
     }
   }
+
+  await writeRuntimeStateFromRecords(null);
+  console.log('[pi-proxy] wrote state for ' + nextSpecs.length + ' world(s)');
 }
 
 async function main() {
@@ -419,21 +380,7 @@ async function main() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('[pi-proxy] reconcile failed', error);
-      await writeState({
-        updatedAt: new Date().toISOString(),
-        registryUrl: runtimeConfig.registryUrl,
-        lastError: message,
-        servers: Array.from(activeServers.values()).map((record) => ({
-          workloadId: record.spec.workloadId,
-          serverName: record.spec.serverName,
-          worldName: record.spec.worldName,
-          motd: record.spec.motd,
-          levelName: record.spec.levelName,
-          targetHost: record.spec.targetHost,
-          targetPort: record.spec.targetPort,
-          localPort: record.spec.localPort
-        }))
-      });
+      await writeRuntimeStateFromRecords(message);
     }
   };
 

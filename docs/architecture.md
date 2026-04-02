@@ -106,8 +106,8 @@ boundaries, so the architecture now includes an external LAN proxy role:
   `serverName` and `worldName` values for running worlds
 - a physical Raspberry Pi on the Xbox subnet runs
   `bedrock-lan-proxy.service` and polls that registry
-- the Pi advertises LAN-visible worlds locally, then transfers players to the
-  real Bedrock target host and port on join
+- the Pi advertises LAN-visible worlds locally and relays the Bedrock UDP
+  session to the real target host and port on join
 
 That split keeps Bedrock world hosting on the core node while still giving
 consoles a LAN-discovery path on a different network segment.
