@@ -161,6 +161,65 @@ function formatClientAddress(client) {
   return 'unknown';
 }
 
+function attachEmitterLogging(emitter, label, events) {
+  if (!emitter || typeof emitter.on !== 'function') {
+    console.log('[pi-proxy] ' + label + ' emitter unavailable');
+    return;
+  }
+  for (const eventName of events) {
+    emitter.on(eventName, (...args) => {
+      const detail = args.length > 0 ? ' ' + args.map((value) => formatError(value)).join(' | ') : '';
+      console.log('[pi-proxy] ' + label + ' event ' + eventName + detail);
+    });
+  }
+}
+
+function attachSocketDebugLogging(server, spec) {
+  const attach = (socket, label) => {
+    if (!socket || typeof socket.on !== 'function') {
+      return false;
+    }
+    if (socket.__gcpDebugAttached) {
+      return true;
+    }
+    socket.__gcpDebugAttached = true;
+    console.log('[pi-proxy] attached socket debug to ' + label + ' for ' + spec.workloadId + ' on ' + spec.localPort);
+    socket.on('listening', () => {
+      console.log('[pi-proxy] socket listening for ' + spec.workloadId + ' on ' + spec.localPort);
+    });
+    socket.on('message', (_message, remote) => {
+      const remoteLabel = remote && typeof remote === 'object' && 'address' in remote && 'port' in remote
+        ? String(remote.address) + ':' + String(remote.port)
+        : 'unknown';
+      console.log('[pi-proxy] raw udp message for ' + spec.workloadId + ' from ' + remoteLabel + ' on ' + spec.localPort);
+    });
+    socket.on('close', () => {
+      console.log('[pi-proxy] socket close for ' + spec.workloadId + ' on ' + spec.localPort);
+    });
+    socket.on('error', (error) => {
+      console.error('[pi-proxy] socket error for ' + spec.workloadId + ' on ' + spec.localPort + ': ' + formatError(error));
+    });
+    return true;
+  };
+
+  if (attach(server?.socket, 'server.socket')) {
+    return;
+  }
+
+  let attempts = 0;
+  const timer = setInterval(() => {
+    attempts += 1;
+    if (attach(server?.socket, 'server.socket')) {
+      clearInterval(timer);
+      return;
+    }
+    if (attempts >= 20) {
+      clearInterval(timer);
+      console.log('[pi-proxy] server.socket never became available for ' + spec.workloadId + ' on ' + spec.localPort);
+    }
+  }, 500);
+}
+
 function attachClientDebugLogging(client, spec) {
   let packetLogCount = 0;
   const maxPacketLogs = 12;
@@ -209,6 +268,10 @@ function createProxyServer(spec) {
       levelName: spec.levelName
     }
   });
+
+  console.log('[pi-proxy] created proxy server object for ' + spec.workloadId + ' on ' + runtimeConfig.listenHost + ':' + spec.localPort + ' keys=' + Object.keys(server || {}).join(','));
+  attachEmitterLogging(server, 'server', ['listening', 'session', 'connect', 'close']);
+  attachSocketDebugLogging(server, spec);
 
   server.on('listening', () => {
     console.log('[pi-proxy] listening on ' + runtimeConfig.listenHost + ':' + spec.localPort + ' for ' + spec.workloadId + ' -> ' + spec.targetHost + ':' + spec.targetPort);
