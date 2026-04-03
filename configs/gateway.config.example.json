@@ -124,7 +124,7 @@
     {
       "id": "pi-node",
       "enabled": true,
-      "description": "Raspberry Pi behind the Deco mesh running the Bedrock LAN proxy (forwarded from 198.51.100.75:2222 to 203.0.113.60:22)",
+      "description": "Example edge-side Raspberry Pi running the Bedrock LAN proxy (forwarded from 198.51.100.75:2222 to 203.0.113.60:22)",
       "host": "198.51.100.75",
       "sshUser": "deploy",
       "sshPort": 2222,
@@ -405,7 +405,7 @@
       ],
       "tts": {
         "enabled": true,
-        "baseUrl": "http://198.51.100.172:5000",
+        "baseUrl": "http://198.51.100.111:5000",
         "defaultVoice": "Alan Marvin",
         "generatePath": "/tts",
         "streamPath": "/tts/stream",

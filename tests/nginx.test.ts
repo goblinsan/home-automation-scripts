@@ -125,7 +125,7 @@ test('renderGatewaySite includes admin ui route when enabled', () => {
 
 test('renderGatewaySite includes dedicated hostname blocks for apps', () => {
   const output = renderGatewaySite(config);
-  assert.match(output, /server_name chat\.gateway.example.test;/);
+  assert.match(output, /server_name chat\.gateway\.example\.test;/);
   assert.match(output, /client_header_buffer_size 16k;/);
   assert.match(output, /large_client_header_buffers 4 32k;/);
   assert.match(output, /location \/ \{/);

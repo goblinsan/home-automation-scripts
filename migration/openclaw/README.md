@@ -20,7 +20,7 @@ The model choice here is an inference from the existing chat-platform examples:
 - model: `qwen/qwen3-32b`
 - endpoint: `http://198.51.100.172:1234`
 
-If the LM Studio host at `198.51.100.172` is serving a different model ID, only
+If the example LM Studio host at `198.51.100.172` is serving a different model ID, only
 the `model` field needs to change.
 
 ## Workflow Seed

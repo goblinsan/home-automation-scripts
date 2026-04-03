@@ -6,4 +6,6 @@ generated/
 .vscode/
 *.log
 *.log.*
-
+configs/*.local.json
+configs/*.private.json
+docs/local/

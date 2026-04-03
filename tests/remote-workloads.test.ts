@@ -345,7 +345,7 @@ test('buildArtifacts renders remote workload bundles for core nodes', async () =
   assert.match(minecraftBootstrapScript, /chmod -R a\+rwX/);
   assert.match(behaviorManifest, /11111111-1111-1111-1111-111111111111/);
   assert.doesNotMatch(piProxyPackageJson, /bedrock-protocol/);
-  assert.match(piProxyConfig, /http:\/\/192\.168\.0\.200:4173\/api\/minecraft\/server-registry/);
+  assert.match(piProxyConfig, /http:\/\/198\.51\.100\.200:4173\/api\/minecraft\/server-registry/);
   assert.match(piProxyScript, /import dgram from 'node:dgram'/);
   assert.match(piProxyScript, /created relay session/);
   assert.match(piProxyScript, /pruning idle session/);

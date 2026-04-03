@@ -117,7 +117,7 @@ test('renderGatewayChatPlatformEnv includes derived local tts settings', async (
   });
 
   assert.match(output, /TTS_ENABLED=true/);
-  assert.match(output, /TTS_BASE_URL=http:\/\/192\.168\.0\.111:5000/);
+  assert.match(output, /TTS_BASE_URL=http:\/\/198\.51\.100\.111:5000/);
   assert.match(output, /TTS_DEFAULT_VOICE=assistant_v1/);
 });
 
