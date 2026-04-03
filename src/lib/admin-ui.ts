@@ -1869,6 +1869,8 @@ function htmlPage(basePath: string): string {
               <div class="toolbar">
                 <button id="addRemoteWorkloadButton">Add Container Job</button>
                 <button id="addContainerServiceWorkloadButton">Add Container Service</button>
+                <button id="addSttTranscriptWorkloadButton">Add STT Transcript</button>
+                <button id="addSttDiarizationWorkloadButton">Add STT Diarization</button>
                 <button id="addBedrockWorkloadButton">Add Bedrock Server</button>
               </div>
             </div>
@@ -3792,6 +3794,80 @@ function htmlPage(basePath: string): string {
             port: 8000,
             path: '/health',
             expectedStatus: 200
+          }
+        }
+      };
+    }
+
+    function createSttTranscriptWorkload() {
+      return {
+        id: 'stt-transcript',
+        enabled: true,
+        nodeId: firstWorkerNodeId(),
+        description: 'GPU-backed transcript API using Insanely Fast Whisper',
+        kind: 'container-service',
+        service: {
+          image: 'yoeven/insanely-fast-whisper-api:latest',
+          networkMode: 'bridge',
+          restartPolicy: 'unless-stopped',
+          autoStart: true,
+          runtimeClass: 'nvidia',
+          environment: [
+            {
+              key: 'ADMIN_KEY',
+              value: '',
+              secret: true,
+              description: 'Optional admin token for the API'
+            }
+          ],
+          volumeMounts: [],
+          jsonFiles: [],
+          ports: [
+            { published: 9001, target: 9000, protocol: 'tcp' }
+          ],
+          healthCheck: {
+            protocol: 'tcp',
+            port: 9001
+          }
+        }
+      };
+    }
+
+    function createSttDiarizationWorkload() {
+      return {
+        id: 'stt-diarization',
+        enabled: true,
+        nodeId: firstWorkerNodeId(),
+        description: 'GPU-backed transcript + speaker diarization API using Insanely Fast Whisper',
+        kind: 'container-service',
+        service: {
+          image: 'yoeven/insanely-fast-whisper-api:latest',
+          networkMode: 'bridge',
+          restartPolicy: 'unless-stopped',
+          autoStart: true,
+          runtimeClass: 'nvidia',
+          environment: [
+            {
+              key: 'HF_TOKEN',
+              value: '',
+              secret: true,
+              description: 'Required for pyannote diarization models'
+            },
+            {
+              key: 'ADMIN_KEY',
+              value: '',
+              secret: true,
+              description: 'Optional admin token for the API'
+            }
+          ],
+          volumeMounts: [],
+          jsonFiles: [],
+          ports: [
+            { published: 9002, target: 9000, protocol: 'tcp' }
+          ],
+          healthCheck: {
+            protocol: 'tcp',
+            port: 9002
           }
         }
       };
@@ -5951,6 +6027,18 @@ function htmlPage(basePath: string): string {
     });
     document.getElementById('addContainerServiceWorkloadButton').addEventListener('click', () => {
       state.config.remoteWorkloads.push(createDefaultContainerServiceWorkload());
+      renderRemoteWorkloads();
+      renderBedrockServers();
+      syncRawJson();
+    });
+    document.getElementById('addSttTranscriptWorkloadButton').addEventListener('click', () => {
+      state.config.remoteWorkloads.push(createSttTranscriptWorkload());
+      renderRemoteWorkloads();
+      renderBedrockServers();
+      syncRawJson();
+    });
+    document.getElementById('addSttDiarizationWorkloadButton').addEventListener('click', () => {
+      state.config.remoteWorkloads.push(createSttDiarizationWorkload());
       renderRemoteWorkloads();
       renderBedrockServers();
       syncRawJson();
