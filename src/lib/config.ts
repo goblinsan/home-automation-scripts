@@ -114,6 +114,35 @@ export interface ScheduledContainerJobWorkloadConfig {
   jsonFiles: JsonFileConfig[];
 }
 
+export interface ContainerServicePortConfig {
+  published: number;
+  target: number;
+  protocol: 'tcp' | 'udp';
+  hostIp?: string;
+}
+
+export interface ContainerServiceHealthCheckConfig {
+  protocol: 'http' | 'tcp';
+  port: number;
+  path?: string;
+  expectedStatus?: number;
+}
+
+export interface ContainerServiceWorkloadConfig {
+  image?: string;
+  build?: ScheduledContainerJobBuildConfig;
+  networkMode: 'host' | 'bridge';
+  restartPolicy: 'unless-stopped' | 'always' | 'no';
+  autoStart: boolean;
+  runtimeClass: 'default' | 'nvidia';
+  command?: string;
+  environment: EnvironmentVariableConfig[];
+  volumeMounts: VolumeMountConfig[];
+  jsonFiles: JsonFileConfig[];
+  ports: ContainerServicePortConfig[];
+  healthCheck?: ContainerServiceHealthCheckConfig;
+}
+
 export interface MinecraftBedrockWorkloadConfig {
   image: string;
   networkMode: 'host' | 'bridge';
@@ -148,8 +177,9 @@ export interface RemoteWorkloadConfig {
   enabled: boolean;
   nodeId: string;
   description: string;
-  kind: 'scheduled-container-job' | 'minecraft-bedrock-server';
+  kind: 'scheduled-container-job' | 'container-service' | 'minecraft-bedrock-server';
   job?: ScheduledContainerJobWorkloadConfig;
+  service?: ContainerServiceWorkloadConfig;
   minecraft?: MinecraftBedrockWorkloadConfig;
 }
 
@@ -563,6 +593,89 @@ function parseScheduledContainerJobWorkloadConfig(value: unknown, field: string)
     };
 }
 
+function parseContainerServicePortConfig(value: unknown, field: string): ContainerServicePortConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  const protocol = value.protocol;
+  if (protocol !== undefined && protocol !== 'tcp' && protocol !== 'udp') {
+    throw new Error(`Invalid protocol for ${field}.protocol`);
+  }
+
+  return {
+    published: assertPositiveInteger(value.published, `${field}.published`),
+    target: assertPositiveInteger(value.target, `${field}.target`),
+    protocol: protocol === 'udp' ? 'udp' : 'tcp',
+    hostIp: typeof value.hostIp === 'string' ? value.hostIp : undefined
+  };
+}
+
+function parseContainerServiceHealthCheckConfig(value: unknown, field: string): ContainerServiceHealthCheckConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  const protocol = value.protocol;
+  if (protocol !== 'http' && protocol !== 'tcp') {
+    throw new Error(`Invalid protocol for ${field}.protocol`);
+  }
+
+  return {
+    protocol,
+    port: assertPositiveInteger(value.port, `${field}.port`),
+    path: typeof value.path === 'string' ? value.path : undefined,
+    expectedStatus: value.expectedStatus === undefined ? undefined : assertPositiveInteger(value.expectedStatus, `${field}.expectedStatus`)
+  };
+}
+
+function parseContainerServiceWorkloadConfig(value: unknown, field: string): ContainerServiceWorkloadConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  const image = typeof value.image === 'string' ? value.image : undefined;
+  const build = value.build === undefined ? undefined : parseScheduledContainerJobBuildConfig(value.build, `${field}.build`);
+  if (!image && !build) {
+    throw new Error(`Expected ${field}.image or ${field}.build`);
+  }
+
+  const restartPolicy = value.restartPolicy;
+  if (restartPolicy !== undefined && restartPolicy !== 'unless-stopped' && restartPolicy !== 'always' && restartPolicy !== 'no') {
+    throw new Error(`Invalid restartPolicy for ${field}.restartPolicy`);
+  }
+
+  const runtimeClass = value.runtimeClass;
+  if (runtimeClass !== undefined && runtimeClass !== 'default' && runtimeClass !== 'nvidia') {
+    throw new Error(`Invalid runtimeClass for ${field}.runtimeClass`);
+  }
+
+  return {
+    image,
+    build,
+    networkMode: value.networkMode === 'host' ? 'host' : 'bridge',
+    restartPolicy: restartPolicy === 'always' || restartPolicy === 'no' ? restartPolicy : 'unless-stopped',
+    autoStart: typeof value.autoStart === 'boolean' ? value.autoStart : true,
+    runtimeClass: runtimeClass === 'nvidia' ? 'nvidia' : 'default',
+    command: typeof value.command === 'string' ? value.command : undefined,
+    environment: Array.isArray(value.environment)
+      ? value.environment.map((entry, index) => parseEnvironmentVariableConfig(entry, `${field}.environment[${index}]`))
+      : [],
+    volumeMounts: Array.isArray(value.volumeMounts)
+      ? value.volumeMounts.map((entry, index) => parseVolumeMountConfig(entry, `${field}.volumeMounts[${index}]`))
+      : [],
+    jsonFiles: Array.isArray(value.jsonFiles)
+      ? value.jsonFiles.map((entry, index) => parseJsonFileConfig(entry, `${field}.jsonFiles[${index}]`))
+      : [],
+    ports: Array.isArray(value.ports)
+      ? value.ports.map((entry, index) => parseContainerServicePortConfig(entry, `${field}.ports[${index}]`))
+      : [],
+    healthCheck: value.healthCheck === undefined
+      ? undefined
+      : parseContainerServiceHealthCheckConfig(value.healthCheck, `${field}.healthCheck`)
+  };
+}
+
 function parseMinecraftBedrockPackConfig(value: unknown, field: string): MinecraftBedrockPackConfig {
   if (!isRecord(value)) {
     throw new Error(`Expected object for ${field}`);
@@ -626,7 +739,7 @@ function parseRemoteWorkloadConfig(value: unknown, index: number): RemoteWorkloa
   }
 
   const kind = value.kind;
-  if (kind !== 'scheduled-container-job' && kind !== 'minecraft-bedrock-server') {
+  if (kind !== 'scheduled-container-job' && kind !== 'container-service' && kind !== 'minecraft-bedrock-server') {
     throw new Error(`Invalid kind for remoteWorkloads[${index}].kind`);
   }
 
@@ -638,6 +751,9 @@ function parseRemoteWorkloadConfig(value: unknown, index: number): RemoteWorkloa
     kind,
     job: kind === 'scheduled-container-job'
       ? parseScheduledContainerJobWorkloadConfig(value.job, `remoteWorkloads[${index}].job`)
+      : undefined,
+    service: kind === 'container-service'
+      ? parseContainerServiceWorkloadConfig(value.service, `remoteWorkloads[${index}].service`)
       : undefined,
     minecraft: kind === 'minecraft-bedrock-server'
       ? parseMinecraftBedrockWorkloadConfig(value.minecraft, `remoteWorkloads[${index}].minecraft`)

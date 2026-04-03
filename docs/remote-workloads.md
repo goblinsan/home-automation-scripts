@@ -25,6 +25,7 @@ without installing host-level timer units or requiring Node on the worker host.
 The first supported workload kinds are:
 
 - `scheduled-container-job`
+- `container-service`
 - `minecraft-bedrock-server`
 
 For Bedrock on consoles, `networkMode: "host"` is the recommended setting when
@@ -47,6 +48,7 @@ Depending on workload kind, the bundle can include:
 - `worker/compose.yml`
 - `compose.yml`
 - `job.env`
+- `service.env`
 - `Dockerfile`
 - `runtime/*.json`
 - `scripts/*.sh`
@@ -60,6 +62,20 @@ Depending on workload kind, the bundle can include:
 3. prepares source checkout/build state on the worker node
 4. builds or starts the remote container workload
 5. rebuilds/restarts the `gateway-worker` container so the latest schedules and actions are active
+
+`container-service` workloads are the general path for long-running remote APIs
+such as LLM inference, Whisper/STT, TTS, and computer vision services. They are
+deployed directly as Docker Compose services on the selected node and can be:
+
+- assigned to a specific worker with `nodeId`
+- switched between `bridge` and `host` networking
+- given optional HTTP or TCP health checks
+- started, stopped, restarted, and redeployed from the control-plane UI
+
+Manual balancing between nodes is done by changing `nodeId`, applying the
+updated config, and then starting the service on the new node. This is the
+intended pattern for GPU-bound services that may need to move between hosts as
+capacity changes.
 
 ## Bedrock Control
 
@@ -118,5 +134,6 @@ The Bedrock tab also exposes live server observability for each deployed world:
 ## Current Use Cases
 
 - KULRS palette/activity job as a scheduled container workload on the core node
+- long-running inference APIs such as Gemma, Whisper, TTS, and CV services as `container-service` workloads on GPU-capable nodes
 - Minecraft Bedrock worlds as long-running container workloads with admin
   controls and worker-managed update schedules

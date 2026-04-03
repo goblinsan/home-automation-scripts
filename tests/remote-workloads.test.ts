@@ -85,6 +85,24 @@ function createConfig(root: string): GatewayConfig {
         systemdEnableTimerCommand: 'sudo systemctl enable --now',
         dockerCommand: 'docker',
         dockerComposeCommand: 'docker compose'
+      },
+      {
+        id: 'tags-node',
+        enabled: true,
+        description: 'GPU worker node',
+        host: '198.51.100.63',
+        sshUser: 'deploy',
+        sshPort: 22,
+        buildRoot: '/data/docker/builds/gateway-workloads',
+        stackRoot: '/data/docker/stacks/gateway-workloads',
+        volumeRoot: '/data/docker/volumes/gateway-workloads',
+        workerPollIntervalSeconds: 15,
+        nodeCommand: '/usr/bin/node',
+        systemdUnitDirectory: '/etc/systemd/system',
+        systemdReloadCommand: 'sudo systemctl daemon-reload',
+        systemdEnableTimerCommand: 'sudo systemctl enable --now',
+        dockerCommand: 'docker',
+        dockerComposeCommand: 'docker compose'
       }
     ],
     remoteWorkloads: [
@@ -122,6 +140,45 @@ function createConfig(root: string): GatewayConfig {
               }
             }
           ]
+        }
+      },
+      {
+        id: 'gemma-inference',
+        enabled: true,
+        nodeId: 'tags-node',
+        description: 'Small LLM inference endpoint',
+        kind: 'container-service',
+        service: {
+          image: 'ghcr.io/example/gemma-service:latest',
+          networkMode: 'bridge',
+          restartPolicy: 'unless-stopped',
+          autoStart: true,
+          runtimeClass: 'nvidia',
+          command: 'python serve.py --host 0.0.0.0 --port 8000',
+          environment: [
+            { key: 'MODEL_ID', value: 'google/gemma-3-2b-it', secret: false }
+          ],
+          volumeMounts: [
+            { source: '/data/models/gemma', target: '/models', readOnly: false }
+          ],
+          jsonFiles: [
+            {
+              relativePath: 'routing.json',
+              payload: {
+                nodeRole: 'gpu',
+                service: 'llm'
+              }
+            }
+          ],
+          ports: [
+            { published: 8011, target: 8000, protocol: 'tcp' }
+          ],
+          healthCheck: {
+            protocol: 'http',
+            port: 8011,
+            path: '/health',
+            expectedStatus: 200
+          }
         }
       },
       {
@@ -239,6 +296,10 @@ test('buildArtifacts renders remote workload bundles for core nodes', async () =
   const jobCompose = await readFile(join(outDir, 'nodes', 'core-node', 'workloads', 'kulrs-palette', 'compose.yml'), 'utf8');
   const jobDockerfile = await readFile(join(outDir, 'nodes', 'core-node', 'workloads', 'kulrs-palette', 'Dockerfile'), 'utf8');
   const jobJson = await readFile(join(outDir, 'nodes', 'core-node', 'workloads', 'kulrs-palette', 'runtime', 'kulrs.json'), 'utf8');
+  const serviceCompose = await readFile(join(outDir, 'nodes', 'tags-node', 'workloads', 'gemma-inference', 'compose.yml'), 'utf8');
+  const serviceEnv = await readFile(join(outDir, 'nodes', 'tags-node', 'workloads', 'gemma-inference', 'service.env'), 'utf8');
+  const serviceRuntimeJson = await readFile(join(outDir, 'nodes', 'tags-node', 'workloads', 'gemma-inference', 'runtime', 'routing.json'), 'utf8');
+  const serviceReadme = await readFile(join(outDir, 'nodes', 'tags-node', 'workloads', 'gemma-inference', 'README.txt'), 'utf8');
   const workerConfig = await readFile(join(outDir, 'nodes', 'core-node', 'worker', 'worker-config.json'), 'utf8');
   const workerScript = await readFile(join(outDir, 'nodes', 'core-node', 'worker', 'gateway-worker.mjs'), 'utf8');
   const workerDockerfile = await readFile(join(outDir, 'nodes', 'core-node', 'worker', 'Dockerfile'), 'utf8');
@@ -256,6 +317,13 @@ test('buildArtifacts renders remote workload bundles for core nodes', async () =
   assert.match(jobCompose, /\/runtime:ro/);
   assert.match(jobDockerfile, /FROM node:24-bookworm-slim/);
   assert.match(jobJson, /firebase-test/);
+  assert.match(serviceCompose, /ghcr\.io\/example\/gemma-service:latest/);
+  assert.match(serviceCompose, /8011:8000\/tcp/);
+  assert.match(serviceCompose, /gpus: all/);
+  assert.match(serviceCompose, /python serve\.py --host 0\.0\.0\.0 --port 8000/);
+  assert.match(serviceEnv, /MODEL_ID=google\/gemma-3-2b-it/);
+  assert.match(serviceRuntimeJson, /"nodeRole": "gpu"/);
+  assert.match(serviceReadme, /\/data\/docker\/volumes\/gateway-workloads\/gemma-inference/);
   assert.match(workerConfig, /"\s*runtimeDir": "\/runtime"/);
   assert.match(workerConfig, /"\s*pollIntervalSeconds": 15/);
   assert.match(workerConfig, /"\s*schedule": "\*:0\/30"/);

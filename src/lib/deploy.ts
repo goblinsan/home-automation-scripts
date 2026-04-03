@@ -625,7 +625,20 @@ export interface MinecraftWorkloadStatus {
   lastManualUpdateResult: MinecraftActionResult | null;
 }
 
+export interface ContainerServiceWorkloadStatus {
+  workloadId: string;
+  nodeId: string;
+  healthCheck?: {
+    protocol: string;
+    target: string;
+    status: 'ok' | 'error' | 'unknown';
+    detail: string;
+  };
+  service: RemoteContainerStatus;
+}
+
 type MinecraftControlAction = 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty' | 'force-update';
+type ContainerServiceControlAction = 'start' | 'stop' | 'restart';
 
 export interface MinecraftAutoUpdateStatus {
   status: 'running' | 'disabled' | 'not-deployed' | 'worker-stopped' | 'misconfigured';
@@ -866,13 +879,18 @@ async function prepareScheduledContainerJobSource(
   revisionOverride: string | undefined,
   context: CommandContext
 ): Promise<void> {
-  if (!(workload.kind === 'scheduled-container-job' && workload.job)) {
+  const build = workload.kind === 'scheduled-container-job'
+    ? workload.job?.build
+    : workload.kind === 'container-service'
+      ? workload.service?.build
+      : undefined;
+  if (!build) {
     return;
   }
 
   const sourceDir = getRemoteWorkloadSourceDir(node, workload);
-  const revision = revisionOverride ?? workload.job.build.defaultRevision;
-  const repoUrl = workload.job.build.repoUrl;
+  const revision = revisionOverride ?? build.defaultRevision;
+  const repoUrl = build.repoUrl;
 
   await runRemoteShell(node, `mkdir -p ${shellQuote(join(sourceDir, '..'))}`, context);
   await runRemoteShell(
@@ -1321,6 +1339,26 @@ export async function deployRemoteWorkload(
     return;
   }
 
+  if (workload.kind === 'container-service' && workload.service) {
+    await runRemoteShell(node, `mkdir -p ${shellQuote(getRemoteWorkloadDataDir(node, workload))}`, context);
+    await prepareScheduledContainerJobSource(node, workload, revisionOverride, context);
+    if (workload.service.build?.strategy === 'generated-node') {
+      await runRemoteShell(
+        node,
+        `cp ${shellQuote(`${stackDir}/Dockerfile`)} ${shellQuote(`${node.buildRoot}/${workload.id}/Dockerfile`)}`,
+        context
+      );
+    }
+    if (workload.service.autoStart) {
+      await runRemoteShell(
+        node,
+        `${node.dockerComposeCommand} -f ${shellQuote(`${stackDir}/compose.yml`)} --project-name ${shellQuote(getRemoteWorkloadProjectName(workload))} up -d --build service`,
+        context
+      );
+    }
+    return;
+  }
+
   if (workload.kind === 'minecraft-bedrock-server' && workload.minecraft) {
     await runRemoteShell(node, `mkdir -p ${shellQuote(`${getRemoteWorkloadDataDir(node, workload)}/data`)}`, context);
     await restartRemoteWorker(node, context);
@@ -1344,6 +1382,94 @@ export async function controlMinecraftWorkload(
 
   const node = getWorkerNode(config, workload.nodeId);
   await invokeRemoteWorkerControl(node, workload.id, action, payload, context);
+}
+
+export async function controlContainerServiceWorkload(
+  config: GatewayConfig,
+  workloadId: string,
+  action: ContainerServiceControlAction,
+  context: CommandContext
+): Promise<void> {
+  const workload = getRemoteWorkload(config, workloadId);
+  if (!(workload.kind === 'container-service' && workload.service)) {
+    throw new Error(`Remote workload ${workloadId} is not a container-service workload`);
+  }
+
+  const node = getWorkerNode(config, workload.nodeId);
+  const composeCommand = `${node.dockerComposeCommand} -f ${shellQuote(`${getRemoteWorkloadStackDir(node, workload)}/compose.yml`)} --project-name ${shellQuote(getRemoteWorkloadProjectName(workload))}`;
+  const shellCommand = action === 'start'
+    ? `${composeCommand} up -d service`
+    : action === 'stop'
+      ? `${composeCommand} stop service`
+      : `${composeCommand} restart service`;
+  await runRemoteShell(node, shellCommand, context);
+}
+
+async function probeContainerServiceHealth(
+  node: WorkerNodeConfig,
+  containerName: string,
+  healthCheck: NonNullable<NonNullable<RemoteWorkloadConfig['service']>['healthCheck']>
+): Promise<{ protocol: string; target: string; status: 'ok' | 'error' | 'unknown'; detail: string }> {
+  const target = healthCheck.protocol === 'http'
+    ? `http://127.0.0.1:${healthCheck.port}${healthCheck.path || '/'}`
+    : `127.0.0.1:${healthCheck.port}`;
+  const command = healthCheck.protocol === 'http'
+    ? `if ${node.dockerCommand} inspect ${shellQuote(containerName)} >/dev/null 2>&1; then code="$(curl -sS -o /dev/null -w '%{http_code}' ${shellQuote(target)} || true)"; printf '%s' "$code"; else printf '__MISSING__'; fi`
+    : `if ${node.dockerCommand} inspect ${shellQuote(containerName)} >/dev/null 2>&1; then nc -z 127.0.0.1 ${shellQuote(String(healthCheck.port))} >/dev/null 2>&1 && printf 'ok' || printf 'fail'; else printf '__MISSING__'; fi`;
+  const result = await runRemoteShellCapture(node, command);
+  if (result.code !== 0) {
+    return {
+      protocol: healthCheck.protocol,
+      target,
+      status: 'error',
+      detail: result.stderr.trim() || result.stdout.trim() || `health probe failed (${result.code})`
+    };
+  }
+  const output = result.stdout.trim();
+  if (output === '__MISSING__') {
+    return {
+      protocol: healthCheck.protocol,
+      target,
+      status: 'unknown',
+      detail: 'Container is missing'
+    };
+  }
+  if (healthCheck.protocol === 'http') {
+    const expectedStatus = healthCheck.expectedStatus ?? 200;
+    return {
+      protocol: healthCheck.protocol,
+      target,
+      status: output === String(expectedStatus) ? 'ok' : 'error',
+      detail: `HTTP ${output || 'unknown'} (expected ${expectedStatus})`
+    };
+  }
+  return {
+    protocol: healthCheck.protocol,
+    target,
+    status: output === 'ok' ? 'ok' : 'error',
+    detail: output === 'ok' ? 'TCP probe succeeded' : 'TCP probe failed'
+  };
+}
+
+export async function getContainerServiceWorkloadStatus(config: GatewayConfig, workloadId: string): Promise<ContainerServiceWorkloadStatus> {
+  const workload = getRemoteWorkload(config, workloadId);
+  if (!(workload.kind === 'container-service' && workload.service)) {
+    throw new Error(`Remote workload ${workloadId} is not a container-service workload`);
+  }
+
+  const node = getWorkerNode(config, workload.nodeId);
+  const serviceContainerName = `${getRemoteWorkloadProjectName(workload)}-service`;
+  const service = await inspectRemoteContainer(node, serviceContainerName);
+  const healthCheck = workload.service.healthCheck
+    ? await probeContainerServiceHealth(node, serviceContainerName, workload.service.healthCheck)
+    : undefined;
+
+  return {
+    workloadId: workload.id,
+    nodeId: node.id,
+    service,
+    ...(healthCheck ? { healthCheck } : {})
+  };
 }
 
 export async function getMinecraftWorkloadStatus(config: GatewayConfig, workloadId: string): Promise<MinecraftWorkloadStatus> {

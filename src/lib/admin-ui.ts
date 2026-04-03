@@ -5,7 +5,9 @@ import { dirname, join } from 'node:path';
 import { buildArtifacts } from './build.ts';
 import { getAllScheduledJobs, getWorkerNode, loadGatewayConfig, parseGatewayConfig, saveGatewayConfig, type GatewayConfig } from './config.ts';
 import {
+  controlContainerServiceWorkload,
   controlMinecraftWorkload,
+  getContainerServiceWorkloadStatus,
   deployPiProxyService,
   deployRemoteWorkload,
   getMinecraftWorkloadStatus,
@@ -1857,8 +1859,8 @@ function htmlPage(basePath: string): string {
           <summary>
             <div class="section-summary-copy">
               <span class="pill">Remote Workloads</span>
-              <h3>Container Jobs + Bedrock Servers</h3>
-              <p>Generic remote workloads. Bedrock also has its own simplified tab.</p>
+              <h3>Container Jobs + Services + Bedrock Servers</h3>
+              <p>Generic remote workloads. Use services for long-running APIs, jobs for scheduled runs, and the Bedrock tab for Minecraft-specific controls.</p>
             </div>
           </summary>
           <div class="section-body">
@@ -1866,6 +1868,7 @@ function htmlPage(basePath: string): string {
               <div></div>
               <div class="toolbar">
                 <button id="addRemoteWorkloadButton">Add Container Job</button>
+                <button id="addContainerServiceWorkloadButton">Add Container Service</button>
                 <button id="addBedrockWorkloadButton">Add Bedrock Server</button>
               </div>
             </div>
@@ -2069,7 +2072,7 @@ function htmlPage(basePath: string): string {
           <p><strong>Automations</strong> are workflow records stored and run by <code>gateway-api</code>.</p>
           <p><strong>Runtime</strong> is where service profiles and generated env/runtime files are configured.</p>
           <p><strong>Secrets</strong> is the credential-focused view for keys, passwords, tokens, and secret env vars.</p>
-          <p><strong>Nodes</strong> defines remote worker nodes and generic remote container jobs.</p>
+          <p><strong>Nodes</strong> defines remote worker nodes plus generic remote jobs, services, and Bedrock workloads.</p>
           <p><strong>Minecraft</strong> is the dedicated Bedrock administration surface.</p>
           <p><strong>Pi Proxy</strong> manages the Raspberry Pi Bedrock LAN proxy service and its live registry wiring for Xbox-visible worlds.</p>
         </div>
@@ -2092,6 +2095,7 @@ function htmlPage(basePath: string): string {
       workflows: [],
       jobsCatalog: [],
       minecraftStatuses: {},
+      remoteServiceStatuses: {},
       chatProviders: [],
       providerModels: {},
       ttsStatus: null,
@@ -3765,6 +3769,34 @@ function htmlPage(basePath: string): string {
       };
     }
 
+    function createDefaultContainerServiceWorkload() {
+      return {
+        id: '',
+        enabled: true,
+        nodeId: firstWorkerNodeId(),
+        description: '',
+        kind: 'container-service',
+        service: {
+          image: '',
+          networkMode: 'bridge',
+          restartPolicy: 'unless-stopped',
+          autoStart: true,
+          runtimeClass: 'default',
+          command: '',
+          environment: [],
+          volumeMounts: [],
+          jsonFiles: [],
+          ports: [],
+          healthCheck: {
+            protocol: 'http',
+            port: 8000,
+            path: '/health',
+            expectedStatus: 200
+          }
+        }
+      };
+    }
+
     function parsePackVersion(value) {
       const trimmed = value.trim();
       if (!trimmed) {
@@ -3892,6 +3924,8 @@ function htmlPage(basePath: string): string {
 
       state.config.remoteWorkloads.forEach((workload, index) => {
         const isJob = workload.kind === 'scheduled-container-job';
+        const isService = workload.kind === 'container-service';
+        const isMinecraft = workload.kind === 'minecraft-bedrock-server';
         const job = workload.job || {
           schedule: '*-*-* 03:00:00',
           timezone: 'America/New_York',
@@ -3909,6 +3943,7 @@ function htmlPage(basePath: string): string {
           volumeMounts: [],
           jsonFiles: []
         };
+        const service = workload.service || createDefaultContainerServiceWorkload().service;
         const minecraft = workload.minecraft || {
           image: 'itzg/minecraft-bedrock-server:latest',
           serverName: '',
@@ -3927,6 +3962,23 @@ function htmlPage(basePath: string): string {
           behaviorPacks: [],
           resourcePacks: []
         };
+        const serviceStatus = workload.id ? state.remoteServiceStatuses[workload.id] : null;
+        const serviceSummary = describeContainerStatus(serviceStatus?.service);
+        const serviceHealthSummary = describeServiceHealthCheck(serviceStatus?.healthCheck);
+        const servicePortSummary = serviceStatus
+          ? formatPortMappings(serviceStatus.service?.ports, serviceStatus.service?.networkMode)
+          : 'not checked yet';
+        const serviceConfiguredImage = serviceStatus?.service?.configuredImage || service.image || 'build-only workload';
+        const serviceImageId = serviceStatus?.service?.imageId || 'not checked yet';
+        const serviceCreatedLine = serviceStatus?.service?.createdAt
+          ? '<p><strong>Created:</strong> ' + formatTimestamp(serviceStatus.service.createdAt) + '</p>'
+          : '';
+        const serviceStartedLine = serviceStatus?.service?.startedAt
+          ? '<p><strong>Started:</strong> ' + formatTimestamp(serviceStatus.service.startedAt) + '</p>'
+          : '';
+        const serviceErrorLine = serviceStatus?.service?.error
+          ? '<p><strong>Service Error:</strong> ' + escapeHtml(serviceStatus.service.error) + '</p>'
+          : '';
         const element = document.createElement('div');
         element.className = 'card';
         element.innerHTML = \`
@@ -3948,7 +4000,8 @@ function htmlPage(basePath: string): string {
             <label>Kind
               <select data-field="kind">
                 <option value="scheduled-container-job" \${isJob ? 'selected' : ''}>scheduled-container-job</option>
-                <option value="minecraft-bedrock-server" \${workload.kind === 'minecraft-bedrock-server' ? 'selected' : ''}>minecraft-bedrock-server</option>
+                <option value="container-service" \${isService ? 'selected' : ''}>container-service</option>
+                <option value="minecraft-bedrock-server" \${isMinecraft ? 'selected' : ''}>minecraft-bedrock-server</option>
               </select>
             </label>
             <label>Deploy Revision<input data-control="deployRevision" placeholder="optional sha/tag" /></label>
@@ -3979,6 +4032,61 @@ function htmlPage(basePath: string): string {
               <label>Environment JSON<textarea data-job-json="environment">\${JSON.stringify(job.environment || [], null, 2)}</textarea></label>
               <label>Volume Mounts JSON<textarea data-job-json="volumeMounts">\${JSON.stringify(job.volumeMounts || [], null, 2)}</textarea></label>
               <label>Runtime JSON Files<textarea data-job-json="jsonFiles">\${JSON.stringify(job.jsonFiles || [], null, 2)}</textarea></label>
+            </div>
+          \` : isService ? \`
+            <div class="card">
+              <div class="split-actions">
+                <div>
+                  <span class="pill">Container Service</span>
+                  <p><strong>Status:</strong> \${serviceSummary}</p>
+                  <p><strong>Network Mode:</strong> \${serviceStatus?.service?.networkMode || service.networkMode}</p>
+                  <p><strong>Ports:</strong> \${servicePortSummary}</p>
+                  <p><strong>Image:</strong> \${formatInlineValue(serviceConfiguredImage)}</p>
+                  <p><strong>Image ID:</strong> \${formatInlineValue(serviceImageId)}</p>
+                  <p><strong>Health:</strong> \${escapeHtml(serviceHealthSummary)}</p>
+                  \${serviceCreatedLine}
+                  \${serviceStartedLine}
+                  \${serviceErrorLine}
+                </div>
+                <div class="toolbar">
+                  <button data-action="service-refresh-status">Refresh Status</button>
+                  <button data-action="service-start">Start</button>
+                  <button data-action="service-stop">Stop</button>
+                  <button data-action="service-restart">Restart</button>
+                </div>
+              </div>
+              <div class="row">
+                <label>Image<input data-service-field="image" value="\${service.image || ''}" placeholder="ghcr.io/example/service:latest" /></label>
+                <label>Network Mode
+                  <select data-service-field="networkMode">
+                    <option value="bridge" \${service.networkMode === 'bridge' ? 'selected' : ''}>bridge</option>
+                    <option value="host" \${service.networkMode === 'host' ? 'selected' : ''}>host</option>
+                  </select>
+                </label>
+                <label>Restart Policy
+                  <select data-service-field="restartPolicy">
+                    <option value="unless-stopped" \${service.restartPolicy === 'unless-stopped' ? 'selected' : ''}>unless-stopped</option>
+                    <option value="always" \${service.restartPolicy === 'always' ? 'selected' : ''}>always</option>
+                    <option value="no" \${service.restartPolicy === 'no' ? 'selected' : ''}>no</option>
+                  </select>
+                </label>
+                <label>Runtime Class
+                  <select data-service-field="runtimeClass">
+                    <option value="default" \${service.runtimeClass === 'default' ? 'selected' : ''}>default</option>
+                    <option value="nvidia" \${service.runtimeClass === 'nvidia' ? 'selected' : ''}>nvidia</option>
+                  </select>
+                </label>
+              </div>
+              <div class="row">
+                <label class="check"><input type="checkbox" data-service-field="autoStart" \${service.autoStart ? 'checked' : ''} /> Auto Start On Deploy</label>
+                <label>Command<input data-service-field="command" value="\${service.command || ''}" placeholder="python app.py --host 0.0.0.0 --port 8000" /></label>
+              </div>
+              <label>Build JSON<textarea data-service-json="build">\${service.build ? JSON.stringify(service.build, null, 2) : ''}</textarea></label>
+              <label>Environment JSON<textarea data-service-json="environment">\${JSON.stringify(service.environment || [], null, 2)}</textarea></label>
+              <label>Volume Mounts JSON<textarea data-service-json="volumeMounts">\${JSON.stringify(service.volumeMounts || [], null, 2)}</textarea></label>
+              <label>Runtime JSON Files<textarea data-service-json="jsonFiles">\${JSON.stringify(service.jsonFiles || [], null, 2)}</textarea></label>
+              <label>Ports JSON<textarea data-service-json="ports">\${JSON.stringify(service.ports || [], null, 2)}</textarea></label>
+              <label>Health Check JSON<textarea data-service-json="healthCheck">\${service.healthCheck ? JSON.stringify(service.healthCheck, null, 2) : ''}</textarea></label>
             </div>
           \` : \`
             <div class="card">
@@ -4046,6 +4154,8 @@ function htmlPage(basePath: string): string {
 
         element.querySelector('[data-action="remove"]').addEventListener('click', () => {
           state.config.remoteWorkloads.splice(index, 1);
+          delete state.remoteServiceStatuses[workload.id];
+          delete state.minecraftStatuses[workload.id];
           renderRemoteWorkloads();
           renderBedrockServers();
           syncRawJson();
@@ -4058,6 +4168,10 @@ function htmlPage(basePath: string): string {
             await persistConfigState();
             const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
             await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {});
+            if (workload.kind === 'container-service') {
+              await refreshContainerServiceStatus(workloadId, { silent: true });
+              renderRemoteWorkloads();
+            }
             setStatus(\`Deployed remote workload \${workloadId}\`);
           } catch (error) {
             setStatus(error.message, 'error');
@@ -4074,10 +4188,16 @@ function htmlPage(basePath: string): string {
             if (field === 'kind') {
               if (input.value === 'scheduled-container-job') {
                 workload.job = job;
+                delete workload.service;
+                delete workload.minecraft;
+              } else if (input.value === 'container-service') {
+                workload.service = service;
+                delete workload.job;
                 delete workload.minecraft;
               } else {
                 workload.minecraft = minecraft;
                 delete workload.job;
+                delete workload.service;
               }
               renderRemoteWorkloads();
               renderBedrockServers();
@@ -4106,6 +4226,46 @@ function htmlPage(basePath: string): string {
             try {
               workload.job = workload.job || job;
               workload.job[textarea.dataset.jobJson] = parseJsonField(textarea.value, []);
+              syncRawJson();
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
+        });
+
+        element.querySelectorAll('input[data-service-field], select[data-service-field]').forEach((input) => {
+          const isCheckbox = input.type === 'checkbox';
+          const eventName = isCheckbox || input.tagName === 'SELECT' ? 'change' : 'input';
+          input.addEventListener(eventName, () => {
+            workload.service = workload.service || createDefaultContainerServiceWorkload().service;
+            const field = input.dataset.serviceField;
+            if (!field) return;
+            if (isCheckbox) {
+              workload.service[field] = input.checked;
+            } else {
+              workload.service[field] = input.value || undefined;
+              if (!input.value) delete workload.service[field];
+            }
+            syncRawJson();
+          });
+        });
+
+        element.querySelectorAll('textarea[data-service-json]').forEach((textarea) => {
+          textarea.addEventListener('change', () => {
+            try {
+              workload.service = workload.service || createDefaultContainerServiceWorkload().service;
+              const field = textarea.dataset.serviceJson;
+              if (!field) return;
+              if (field === 'build' || field === 'healthCheck') {
+                const parsed = parseOptionalJsonText(textarea.value);
+                if (parsed === undefined) {
+                  delete workload.service[field];
+                } else {
+                  workload.service[field] = parsed;
+                }
+              } else {
+                workload.service[field] = parseJsonField(textarea.value, []);
+              }
               syncRawJson();
             } catch (error) {
               setStatus(error.message, 'error');
@@ -4145,6 +4305,37 @@ function htmlPage(basePath: string): string {
             }
           });
         });
+
+        if (workload.kind === 'container-service') {
+          const controlServiceAction = async (action) => {
+            await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workload.id)}/service/\${action}\`, {});
+            return await refreshContainerServiceStatus(workload.id);
+          };
+
+          [
+            ['service-start', 'start'],
+            ['service-stop', 'stop'],
+            ['service-restart', 'restart']
+          ].forEach(([buttonAction, action]) => {
+            element.querySelector(\`[data-action="\${buttonAction}"]\`).addEventListener('click', async () => {
+              try {
+                await controlServiceAction(action);
+                setStatus(\`Container service action completed: \${action}\`);
+              } catch (error) {
+                setStatus(error.message, 'error');
+              }
+            });
+          });
+
+          element.querySelector('[data-action="service-refresh-status"]').addEventListener('click', async () => {
+            try {
+              const refreshed = await refreshContainerServiceStatus(workload.id);
+              setStatus('Container service status refreshed: ' + describeContainerStatus(refreshed.service));
+            } catch (error) {
+              setStatus(error.message, 'error');
+            }
+          });
+        }
 
         if (workload.kind === 'minecraft-bedrock-server') {
           const controlAction = async (action) => {
@@ -4851,6 +5042,11 @@ function htmlPage(basePath: string): string {
     async function loadTabData(tab, options = {}) {
       const settled = await Promise.allSettled((() => {
         switch (tab) {
+          case 'remote':
+            return [
+              fetchRuntime(),
+              refreshAllRemoteServiceStatuses({ silent: true })
+            ];
           case 'services':
             return [
               fetchRuntime(),
@@ -5195,6 +5391,57 @@ function htmlPage(basePath: string): string {
           .join(', ');
         return containerPort + ' -> ' + mapped;
       }).join('; ');
+    }
+
+    function describeServiceHealthCheck(healthCheck) {
+      if (!healthCheck) {
+        return 'not configured';
+      }
+      const target = healthCheck.target || 'unknown target';
+      const detail = healthCheck.detail || 'no detail';
+      if (healthCheck.status === 'ok') {
+        return 'ok | ' + target + ' | ' + detail;
+      }
+      if (healthCheck.status === 'error') {
+        return 'error | ' + target + ' | ' + detail;
+      }
+      return 'unknown | ' + target + ' | ' + detail;
+    }
+
+    async function refreshContainerServiceStatus(workloadId, options = {}) {
+      const status = await requestJson('GET', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/service-status');
+      state.remoteServiceStatuses[workloadId] = status;
+      if (!options.silent) {
+        renderRemoteWorkloads();
+      }
+      return status;
+    }
+
+    async function refreshAllRemoteServiceStatuses(options = {}) {
+      const workloads = state.config
+        ? state.config.remoteWorkloads.filter((workload) => workload.kind === 'container-service' && workload.id)
+        : [];
+      await Promise.all(workloads.map(async (workload) => {
+        try {
+          await refreshContainerServiceStatus(workload.id, { silent: true });
+        } catch (error) {
+          const message = error && typeof error === 'object' && 'message' in error ? error.message : String(error);
+          state.remoteServiceStatuses[workload.id] = {
+            workloadId: workload.id,
+            nodeId: workload.nodeId,
+            service: {
+              containerName: workload.id + '-service',
+              exists: false,
+              status: 'error',
+              running: false,
+              error: message
+            }
+          };
+        }
+      }));
+      if (!options.silent) {
+        renderRemoteWorkloads();
+      }
     }
 
     async function refreshMinecraftStatus(workloadId, options = {}) {
@@ -5702,6 +5949,12 @@ function htmlPage(basePath: string): string {
       renderBedrockServers();
       syncRawJson();
     });
+    document.getElementById('addContainerServiceWorkloadButton').addEventListener('click', () => {
+      state.config.remoteWorkloads.push(createDefaultContainerServiceWorkload());
+      renderRemoteWorkloads();
+      renderBedrockServers();
+      syncRawJson();
+    });
     const addBedrockServerWorkload = () => {
       if (!firstWorkerNodeId()) {
         state.activeTab = 'nodes';
@@ -5963,6 +6216,11 @@ function htmlPage(basePath: string): string {
     setInterval(() => {
       fetchRuntime().catch(() => undefined);
     }, 15000);
+    setInterval(() => {
+      if (state.activeTab === 'remote') {
+        refreshAllRemoteServiceStatuses({ silent: true }).catch(() => undefined);
+      }
+    }, 30000);
     setInterval(() => {
       if (state.activeTab === 'bedrock') {
         refreshAllMinecraftStatuses({ silent: true, skipRegistry: true }).catch(() => undefined);
@@ -6285,6 +6543,8 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       const agentRunMatch = path.match(/^\/api\/chat-platform\/agents\/([^/]+)\/run$/);
       const remoteWorkloadDeployMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/deploy$/);
       const remoteWorkloadStatusMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/status$/);
+      const remoteServiceStatusMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/service-status$/);
+      const remoteServiceActionMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/service\/(start|stop|restart)$/);
       const remoteMinecraftActionMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/(start|stop|restart|broadcast|kick|ban|update-if-empty|force-update)$/);
       const remoteMinecraftUpdateRequestMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/update-request$/);
 
@@ -6528,6 +6788,28 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           ...status,
           manualUpdate: minecraftUpdateScheduler.state.updates[decodeURIComponent(remoteWorkloadStatusMatch[1])] || null
         });
+        return;
+      }
+
+      if (remoteServiceStatusMatch && request.method === 'GET') {
+        const config = await loadGatewayConfig(options.configPath);
+        const status = await getContainerServiceWorkloadStatus(
+          config,
+          decodeURIComponent(remoteServiceStatusMatch[1])
+        );
+        sendJson(response, 200, status);
+        return;
+      }
+
+      if (remoteServiceActionMatch && request.method === 'POST') {
+        const config = await loadGatewayConfig(options.configPath);
+        await controlContainerServiceWorkload(
+          config,
+          decodeURIComponent(remoteServiceActionMatch[1]),
+          remoteServiceActionMatch[2] as 'start' | 'stop' | 'restart',
+          { dryRun: false, log: () => undefined }
+        );
+        sendJson(response, 200, { message: `Container service action completed: ${remoteServiceActionMatch[2]}` });
         return;
       }
 

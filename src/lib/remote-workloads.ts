@@ -1,10 +1,12 @@
 import { join } from 'node:path';
 import type {
+  ContainerServiceWorkloadConfig,
   GatewayConfig,
   JsonFileConfig,
   MinecraftBedrockPackConfig,
   MinecraftBedrockWorkloadConfig,
   RemoteWorkloadConfig,
+  ScheduledContainerJobBuildConfig,
   ScheduledContainerJobWorkloadConfig,
   WorkerNodeConfig
 } from './config.ts';
@@ -88,6 +90,76 @@ function renderScheduledContainerCompose(node: WorkerNodeConfig, workload: Remot
     ...mounts.map((mount) => `      - ${yamlString(mount)}`),
     `    container_name: ${yamlString(`${projectName}-runner`)}`,
     `    restart: ${yamlString('no')}`,
+    ''
+  ].join('\n');
+}
+
+function getRemoteBuildSpec(workload: RemoteWorkloadConfig): ScheduledContainerJobBuildConfig | null {
+  if (workload.kind === 'scheduled-container-job' && workload.job) {
+    return workload.job.build;
+  }
+  if (workload.kind === 'container-service' && workload.service?.build) {
+    return workload.service.build;
+  }
+  return null;
+}
+
+function renderContainerServiceCompose(node: WorkerNodeConfig, workload: RemoteWorkloadConfig, service: ContainerServiceWorkloadConfig): string {
+  const stackDir = getRemoteWorkloadStackDir(node, workload);
+  const sourceDir = getRemoteWorkloadSourceDir(node, workload);
+  const build = getRemoteBuildSpec(workload);
+  const runtimeMounts = service.jsonFiles.length > 0
+    ? [`${stackDir}/runtime:/runtime:ro`]
+    : [];
+  const mounts = runtimeMounts.concat(
+    service.volumeMounts.map((mount) => `${mount.source}:${mount.target}${mount.readOnly ? ':ro' : ''}`)
+  );
+  const buildContext = build
+    ? build.strategy === 'generated-node'
+      ? `${node.buildRoot}/${workload.id}`
+      : `${sourceDir}/${build.contextPath}`
+    : null;
+  const dockerfilePath = build
+    ? build.strategy === 'generated-node'
+      ? `${node.buildRoot}/${workload.id}/Dockerfile`
+      : `${sourceDir}/${build.dockerfilePath || 'Dockerfile'}`
+    : null;
+  const portLines = service.networkMode === 'host'
+    ? ['    network_mode: "host"']
+    : service.ports.length > 0
+      ? ['    ports:', ...service.ports.map((port) => {
+        const hostPrefix = port.hostIp ? `${port.hostIp}:` : '';
+        return `      - ${yamlString(`${hostPrefix}${port.published}:${port.target}/${port.protocol}`)}`;
+      })]
+      : [];
+  const environmentLines = service.environment.length > 0
+    ? ['    env_file:', `      - ${yamlString(`${stackDir}/service.env`)}`]
+    : [];
+  const commandLines = service.command
+    ? ['    command:', `      - ${yamlString('/bin/sh')}`, `      - ${yamlString('-lc')}`, `      - ${yamlString(service.command)}`]
+    : [];
+  const gpuLines = service.runtimeClass === 'nvidia'
+    ? ['    gpus: all']
+    : [];
+
+  return [
+    'services:',
+    '  service:',
+    ...(buildContext && dockerfilePath
+      ? [
+        '    build:',
+        `      context: ${yamlString(buildContext)}`,
+        `      dockerfile: ${yamlString(dockerfilePath)}`
+      ]
+      : []),
+    ...(service.image ? [`    image: ${yamlString(service.image)}`] : []),
+    ...portLines,
+    ...gpuLines,
+    ...environmentLines,
+    ...commandLines,
+    ...(mounts.length > 0 ? ['    volumes:', ...mounts.map((mount) => `      - ${yamlString(mount)}`)] : []),
+    `    container_name: ${yamlString(`${getRemoteWorkloadProjectName(workload)}-service`)}`,
+    `    restart: ${yamlString(service.restartPolicy)}`,
     ''
   ].join('\n');
 }
@@ -407,6 +479,45 @@ export function renderRemoteWorkloadFiles(
     files.push({
       relativePath: 'README.txt',
       contents: `Stack dir: ${stackDir}\nData dir: ${getRemoteWorkloadDataDir(node, workload)}/data\n`
+    });
+  }
+
+  if (workload.kind === 'container-service' && workload.service) {
+    const stackDir = getRemoteWorkloadStackDir(node, workload);
+    files.push({
+      relativePath: 'compose.yml',
+      contents: renderContainerServiceCompose(node, workload, workload.service)
+    });
+    files.push({
+      relativePath: 'service.env',
+      contents: renderEnvFile(workload.service.environment)
+    });
+
+    if (workload.service.build?.strategy === 'generated-node') {
+      files.push({
+        relativePath: 'Dockerfile',
+        contents: renderGeneratedNodeDockerfile({
+          schedule: '*-*-* 00:00:00',
+          timezone: 'UTC',
+          build: workload.service.build,
+          runCommand: workload.service.command || 'node server.js',
+          environment: [],
+          volumeMounts: [],
+          jsonFiles: []
+        })
+      });
+    }
+
+    for (const file of workload.service.jsonFiles) {
+      files.push({
+        relativePath: join('runtime', file.relativePath),
+        contents: renderJsonRuntimeFile(file)
+      });
+    }
+
+    files.push({
+      relativePath: 'README.txt',
+      contents: `Stack dir: ${stackDir}\nData dir: ${getRemoteWorkloadDataDir(node, workload)}\n`
     });
   }
 
