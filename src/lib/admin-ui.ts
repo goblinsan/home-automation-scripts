@@ -1438,6 +1438,70 @@ function htmlPage(basePath: string): string {
       color: var(--muted);
       font-size: .8rem;
     }
+    .svc-catalog-card {
+      border: 2px solid var(--line);
+      border-radius: 0;
+      padding: 1rem;
+      cursor: pointer;
+      background: #fff;
+      text-align: left;
+      transition: border-color .15s;
+    }
+    .svc-catalog-card:hover {
+      border-color: var(--accent);
+    }
+    .svc-catalog-card.selected {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .svc-catalog-card strong {
+      display: block;
+      color: var(--text);
+      margin-bottom: .25rem;
+    }
+    .svc-catalog-card small {
+      color: var(--muted);
+      font-size: .8rem;
+    }
+    .wizard-form-grid {
+      display: flex;
+      flex-direction: column;
+      gap: .75rem;
+      max-height: 55vh;
+      overflow-y: auto;
+      padding-right: .5rem;
+    }
+    .wizard-field {
+      display: flex;
+      flex-direction: column;
+      gap: .2rem;
+    }
+    .wizard-label {
+      font-weight: 600;
+      font-size: .85rem;
+      color: var(--text);
+    }
+    .wizard-field input,
+    .wizard-field select {
+      padding: .45rem .6rem;
+      border: 1px solid var(--line);
+      font-size: .85rem;
+      font-family: inherit;
+      background: #fff;
+      color: var(--text);
+    }
+    .wizard-field input:focus,
+    .wizard-field select:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+    }
+    .wizard-hint {
+      font-size: .75rem;
+      color: var(--muted);
+    }
+    .wizard-log-line.success { color: #1a7a4c; }
+    .wizard-log-line.error { color: #c0392b; }
+    .wizard-log-line.info { color: var(--muted); }
     .wizard-log {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: .82rem;
@@ -1648,10 +1712,9 @@ function htmlPage(basePath: string): string {
             <div class="split-actions">
               <div></div>
               <div class="toolbar">
+                <button id="openServiceDeployWizardButton" class="primary-action">Deploy a Service</button>
                 <button id="addRemoteWorkloadButton">Add Container Job</button>
                 <button id="addContainerServiceWorkloadButton">Add Container Service</button>
-                <button id="addSttTranscriptWorkloadButton">Add STT Transcript</button>
-                <button id="addSttDiarizationWorkloadButton">Add STT Diarization</button>
                 <button id="addBedrockWorkloadButton">Add Bedrock Server</button>
               </div>
             </div>
@@ -2427,6 +2490,53 @@ function htmlPage(basePath: string): string {
         <div id="wizardStepActions" class="wizard-actions" hidden>
           <button id="wizAddToConfigButton" class="wizard-btn-primary" hidden>Add Node to Config</button>
           <button id="wizCloseFinishedButton" class="wizard-btn-secondary" hidden>Close</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="serviceDeployWizard" class="wizard-dialog">
+    <div class="wizard-content">
+      <div class="wizard-header">
+        <h2>Deploy a Service</h2>
+        <button id="closeSvcWizardButton" class="wizard-close">&times;</button>
+      </div>
+
+      <div id="svcStepCatalog" class="wizard-step">
+        <p class="wizard-desc">Choose a service to deploy to one of your worker nodes.</p>
+        <div class="wizard-preset-grid">
+          <button class="svc-catalog-card" data-svc="stt-service">
+            <strong>Speech to Text</strong>
+            <small>GPU-accelerated transcription API + UI powered by faster-whisper. Drag-and-drop audio, language detection, word timestamps.</small>
+          </button>
+          <button class="svc-catalog-card" data-svc="container-service">
+            <strong>Custom Container Service</strong>
+            <small>Deploy any Docker image as a long-running service with health checks, ports, and volume mounts.</small>
+          </button>
+          <button class="svc-catalog-card" data-svc="container-job">
+            <strong>Scheduled Container Job</strong>
+            <small>Build and run a containerised task on a cron schedule (e.g. data pipelines, backups).</small>
+          </button>
+        </div>
+        <div class="wizard-actions">
+          <button id="svcCatalogCancelBtn" class="wizard-btn-secondary">Cancel</button>
+          <button id="svcCatalogNextBtn" class="wizard-btn-primary" disabled>Next</button>
+        </div>
+      </div>
+
+      <div id="svcStepConfig" class="wizard-step" hidden>
+        <p class="wizard-desc" id="svcConfigDesc">Configure the service for your node.</p>
+        <div id="svcConfigFields" class="wizard-form-grid"></div>
+        <div class="wizard-actions">
+          <button id="svcConfigBackBtn" class="wizard-btn-secondary">Back</button>
+          <button id="svcConfigDeployBtn" class="wizard-btn-primary">Save &amp; Deploy</button>
+        </div>
+      </div>
+
+      <div id="svcStepDeploy" class="wizard-step" hidden>
+        <div id="svcDeployLog" class="wizard-log"></div>
+        <div id="svcDeployActions" class="wizard-actions" hidden>
+          <button id="svcDeployCloseBtn" class="wizard-btn-secondary">Close</button>
         </div>
       </div>
     </div>
@@ -6702,18 +6812,354 @@ function htmlPage(basePath: string): string {
       renderBedrockServers();
       syncRawJson();
     });
-    document.getElementById('addSttTranscriptWorkloadButton').addEventListener('click', () => {
-      state.config.remoteWorkloads.push(createSttTranscriptWorkload());
-      renderRemoteWorkloads();
-      renderBedrockServers();
-      syncRawJson();
-    });
-    document.getElementById('addSttDiarizationWorkloadButton').addEventListener('click', () => {
-      state.config.remoteWorkloads.push(createSttDiarizationWorkload());
-      renderRemoteWorkloads();
-      renderBedrockServers();
-      syncRawJson();
-    });
+    // ─── Service Deploy Wizard ──────────────────────────────────────
+    (function initServiceDeployWizard() {
+      const dialog = document.getElementById('serviceDeployWizard');
+      let selectedSvc = '';
+      let createdWorkloadId = '';
+
+      function openSvcWizard() {
+        if (!firstWorkerNodeId()) {
+          state.activeTab = 'infra';
+          render();
+          switchSubTab('infra', 'infra-nodes');
+          setStatus('Add a worker node first in Nodes, then come back here to deploy a service.', 'error');
+          return;
+        }
+        selectedSvc = '';
+        createdWorkloadId = '';
+        document.getElementById('svcCatalogNextBtn').disabled = true;
+        dialog.querySelectorAll('.svc-catalog-card').forEach(c => c.classList.remove('selected'));
+        showSvcStep('catalog');
+        dialog.showModal();
+      }
+
+      function closeSvcWizard() {
+        dialog.close();
+      }
+
+      function showSvcStep(step) {
+        document.getElementById('svcStepCatalog').hidden = step !== 'catalog';
+        document.getElementById('svcStepConfig').hidden = step !== 'config';
+        document.getElementById('svcStepDeploy').hidden = step !== 'deploy';
+      }
+
+      // ── Catalog step ──
+      dialog.querySelectorAll('.svc-catalog-card').forEach(card => {
+        card.addEventListener('click', () => {
+          dialog.querySelectorAll('.svc-catalog-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+          selectedSvc = card.dataset.svc;
+          document.getElementById('svcCatalogNextBtn').disabled = false;
+        });
+      });
+
+      // ── Config step – builds form dynamically based on selection ──
+      function buildConfigForm() {
+        const container = document.getElementById('svcConfigFields');
+        container.innerHTML = '';
+
+        const nodes = state.config.workerNodes;
+        const defaultNode = firstWorkerNodeId();
+
+        if (selectedSvc === 'stt-service') {
+          document.getElementById('svcConfigDesc').textContent = 'Configure Speech-to-Text service for your GPU node.';
+          container.innerHTML = \`
+            <label class="wizard-field">
+              <span class="wizard-label">Target Node</span>
+              <select id="svcFieldNode">\${nodes.map(n => '<option value="' + n.id + '"' + (n.id === defaultNode ? ' selected' : '') + '>' + n.id + ' (' + n.host + ')' + '</option>').join('')}</select>
+              <span class="wizard-hint">The worker node where this service will be deployed.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Workload ID</span>
+              <input id="svcFieldId" type="text" value="stt-service" />
+              <span class="wizard-hint">Unique identifier for this workload. Keep it short and lowercase.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Git Repo URL</span>
+              <input id="svcFieldRepo" type="text" value="https://github.com/jamescoghlan/stt-service.git" />
+              <span class="wizard-hint">The repo will be cloned and built on the node. Uses docker-compose to bring up the stack.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Published Port</span>
+              <input id="svcFieldPort" type="number" value="5101" />
+              <span class="wizard-hint">Exposed port for the STT API + UI (nginx entry point).</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Data Directory</span>
+              <input id="svcFieldDataDir" type="text" value="/data/stt-service" />
+              <span class="wizard-hint">Host path for persistent data (model cache, uploaded files).</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Whisper Model Size</span>
+              <select id="svcFieldModel">
+                <option value="tiny">tiny – fastest, lowest accuracy</option>
+                <option value="base">base – fast, decent accuracy</option>
+                <option value="small">small – good balance</option>
+                <option value="medium" selected>medium – recommended for RTX 4060</option>
+                <option value="large-v3">large-v3 – best accuracy, needs 6+ GB VRAM</option>
+              </select>
+              <span class="wizard-hint">Larger models are more accurate but use more GPU memory.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Description</span>
+              <input id="svcFieldDesc" type="text" value="Speech-to-Text transcription API + web UI" />
+            </label>
+          \`;
+        } else if (selectedSvc === 'container-service') {
+          document.getElementById('svcConfigDesc').textContent = 'Configure a custom container service.';
+          container.innerHTML = \`
+            <label class="wizard-field">
+              <span class="wizard-label">Target Node</span>
+              <select id="svcFieldNode">\${nodes.map(n => '<option value="' + n.id + '"' + (n.id === defaultNode ? ' selected' : '') + '>' + n.id + ' (' + n.host + ')' + '</option>').join('')}</select>
+              <span class="wizard-hint">The worker node where this service will run.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Workload ID</span>
+              <input id="svcFieldId" type="text" value="" placeholder="my-service" />
+              <span class="wizard-hint">Unique name for this workload (lowercase, hyphens ok).</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Docker Image</span>
+              <input id="svcFieldImage" type="text" value="" placeholder="nginx:latest" />
+              <span class="wizard-hint">The Docker image to pull and run.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Published Port</span>
+              <input id="svcFieldPort" type="number" value="8080" />
+              <span class="wizard-hint">Host port to expose.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Container Port</span>
+              <input id="svcFieldTargetPort" type="number" value="80" />
+              <span class="wizard-hint">Port inside the container to forward to.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">GPU Required</span>
+              <select id="svcFieldGpu">
+                <option value="no" selected>No</option>
+                <option value="yes">Yes (NVIDIA runtime)</option>
+              </select>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Description</span>
+              <input id="svcFieldDesc" type="text" value="" placeholder="Describe the service" />
+            </label>
+          \`;
+        } else if (selectedSvc === 'container-job') {
+          document.getElementById('svcConfigDesc').textContent = 'Configure a scheduled container job.';
+          container.innerHTML = \`
+            <label class="wizard-field">
+              <span class="wizard-label">Target Node</span>
+              <select id="svcFieldNode">\${nodes.map(n => '<option value="' + n.id + '"' + (n.id === defaultNode ? ' selected' : '') + '>' + n.id + ' (' + n.host + ')' + '</option>').join('')}</select>
+              <span class="wizard-hint">The worker node where this job will execute.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Workload ID</span>
+              <input id="svcFieldId" type="text" value="" placeholder="my-job" />
+              <span class="wizard-hint">Unique name for this workload.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Docker Image</span>
+              <input id="svcFieldImage" type="text" value="" placeholder="alpine:latest" />
+              <span class="wizard-hint">The Docker image used for each run.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Command</span>
+              <input id="svcFieldCommand" type="text" value="" placeholder="echo hello" />
+              <span class="wizard-hint">Command to execute inside the container.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Schedule (cron)</span>
+              <input id="svcFieldCron" type="text" value="0 * * * *" />
+              <span class="wizard-hint">Cron expression for how often to run (default: every hour).</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Description</span>
+              <input id="svcFieldDesc" type="text" value="" placeholder="Describe the job" />
+            </label>
+          \`;
+        }
+      }
+
+      // ── Save & Deploy – constructs the workload config and triggers deploy ──
+      async function saveAndDeploy() {
+        const nodeId = document.getElementById('svcFieldNode').value;
+        const workloadId = (document.getElementById('svcFieldId').value || '').trim();
+        const desc = (document.getElementById('svcFieldDesc') || {}).value || '';
+
+        if (!workloadId) {
+          setStatus('Workload ID is required', 'error');
+          return;
+        }
+        if (state.config.remoteWorkloads.some(w => w.id === workloadId)) {
+          setStatus('A workload with ID "' + workloadId + '" already exists', 'error');
+          return;
+        }
+
+        let workload;
+
+        if (selectedSvc === 'stt-service') {
+          const port = parseInt(document.getElementById('svcFieldPort').value, 10) || 5101;
+          const dataDir = document.getElementById('svcFieldDataDir').value || '/data/stt-service';
+          const model = document.getElementById('svcFieldModel').value || 'medium';
+          const repo = document.getElementById('svcFieldRepo').value || '';
+
+          workload = {
+            id: workloadId,
+            enabled: true,
+            nodeId: nodeId,
+            description: desc,
+            kind: 'container-service',
+            service: {
+              image: '',
+              build: repo,
+              networkMode: 'bridge',
+              restartPolicy: 'unless-stopped',
+              autoStart: true,
+              runtimeClass: 'nvidia',
+              command: '',
+              environment: [
+                { key: 'WHISPER_MODEL', value: model, secret: false, description: 'faster-whisper model size' }
+              ],
+              volumeMounts: [
+                { source: dataDir + '/models', target: '/root/.cache/huggingface', readOnly: false },
+                { source: dataDir + '/uploads', target: '/app/uploads', readOnly: false }
+              ],
+              jsonFiles: [],
+              ports: [
+                { published: port, target: 5101, protocol: 'tcp' }
+              ],
+              healthCheck: {
+                protocol: 'http',
+                port: port,
+                path: '/api/health',
+                expectedStatus: 200
+              }
+            }
+          };
+        } else if (selectedSvc === 'container-service') {
+          const port = parseInt(document.getElementById('svcFieldPort').value, 10) || 8080;
+          const targetPort = parseInt(document.getElementById('svcFieldTargetPort').value, 10) || 80;
+          const image = document.getElementById('svcFieldImage').value || '';
+          const gpu = document.getElementById('svcFieldGpu').value === 'yes';
+
+          if (!image) {
+            setStatus('Docker image is required', 'error');
+            return;
+          }
+
+          workload = {
+            id: workloadId,
+            enabled: true,
+            nodeId: nodeId,
+            description: desc,
+            kind: 'container-service',
+            service: {
+              image: image,
+              build: '',
+              networkMode: 'bridge',
+              restartPolicy: 'unless-stopped',
+              autoStart: true,
+              runtimeClass: gpu ? 'nvidia' : 'default',
+              command: '',
+              environment: [],
+              volumeMounts: [],
+              jsonFiles: [],
+              ports: [
+                { published: port, target: targetPort, protocol: 'tcp' }
+              ],
+              healthCheck: null
+            }
+          };
+        } else if (selectedSvc === 'container-job') {
+          const image = document.getElementById('svcFieldImage').value || '';
+          const command = document.getElementById('svcFieldCommand').value || '';
+          const cron = document.getElementById('svcFieldCron').value || '0 * * * *';
+
+          workload = {
+            id: workloadId,
+            enabled: true,
+            nodeId: nodeId,
+            description: desc,
+            kind: 'scheduled-container-job',
+            job: {
+              image: image || 'alpine:latest',
+              build: '',
+              command: command,
+              schedule: cron,
+              environment: [],
+              volumeMounts: [],
+              jsonFiles: []
+            }
+          };
+        }
+
+        if (!workload) return;
+
+        // show deploy step
+        showSvcStep('deploy');
+        const log = document.getElementById('svcDeployLog');
+        const actions = document.getElementById('svcDeployActions');
+        log.innerHTML = '';
+        actions.hidden = true;
+        createdWorkloadId = workloadId;
+
+        function appendLog(text, cls) {
+          const line = document.createElement('div');
+          line.className = 'wizard-log-line' + (cls ? ' ' + cls : '');
+          line.textContent = text;
+          log.appendChild(line);
+          log.scrollTop = log.scrollHeight;
+        }
+
+        appendLog('Adding workload to config…');
+        state.config.remoteWorkloads.push(workload);
+        renderRemoteWorkloads();
+        renderBedrockServers();
+        syncRawJson();
+
+        try {
+          appendLog('Saving configuration…');
+          await persistConfigState();
+          appendLog('Configuration saved ✓', 'success');
+
+          appendLog('Starting deploy of ' + workloadId + '…');
+          const result = await requestJson('POST', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/deploy', {});
+          appendLog(result.message || 'Deploy completed ✓', 'success');
+          appendLog('');
+          appendLog('Service deployed successfully!', 'success');
+          pushActionFeed('Deployed service ' + workloadId);
+        } catch (err) {
+          appendLog('Deploy failed: ' + (err.message || err), 'error');
+          appendLog('');
+          appendLog('The workload config has been saved. You can retry the deploy from the workload card.', 'info');
+        }
+
+        actions.hidden = false;
+      }
+
+      // ── Wire events ──
+      document.getElementById('openServiceDeployWizardButton').addEventListener('click', openSvcWizard);
+      document.getElementById('closeSvcWizardButton').addEventListener('click', closeSvcWizard);
+      document.getElementById('svcCatalogCancelBtn').addEventListener('click', closeSvcWizard);
+      document.getElementById('svcCatalogNextBtn').addEventListener('click', () => {
+        if (!selectedSvc) return;
+        buildConfigForm();
+        showSvcStep('config');
+      });
+      document.getElementById('svcConfigBackBtn').addEventListener('click', () => showSvcStep('catalog'));
+      document.getElementById('svcConfigDeployBtn').addEventListener('click', saveAndDeploy);
+      document.getElementById('svcDeployCloseBtn').addEventListener('click', () => {
+        closeSvcWizard();
+        if (createdWorkloadId) {
+          refreshContainerServiceStatus(createdWorkloadId).catch(() => {});
+        }
+      });
+      dialog.addEventListener('cancel', closeSvcWizard);
+    })();
+    // ─── End Service Deploy Wizard ────────────────────────────────────
+
     const addBedrockServerWorkload = () => {
       if (!firstWorkerNodeId()) {
         state.activeTab = 'infra';
