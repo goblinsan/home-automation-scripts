@@ -18,6 +18,28 @@ commands, and where stack/build/volume data live on that machine.
 `remoteWorkloads` defines workload bundles that are rendered locally by the
 control plane and then copied to a worker node for deployment.
 
+## Add New Node Flow
+
+The Nodes tab includes an in-UI onboarding flow for new worker nodes.
+
+Use it in this order:
+
+1. Open `Nodes`
+2. Read the `Add New Node` checklist
+3. Choose one of the presets:
+   - `Add General Linux Node`
+   - `Add GPU Compute Node`
+   - `Add Raspberry Pi Edge Node`
+4. Edit the generated worker-node record with the real host, node id, SSH user,
+   and storage roots for that machine
+5. Save the config
+6. Add workloads that target the new `nodeId`
+7. Deploy those workloads from the same tab
+
+The presets are intentionally generic and safe to publish. Real machine
+inventory and LAN details should stay in `docs/local/` and in your untracked
+local config.
+
 Each worker node also gets a generated `gateway-worker` container runtime. It
 evaluates workload schedules in-process and handles Bedrock control actions
 without installing host-level timer units or requiring Node on the worker host.

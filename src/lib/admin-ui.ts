@@ -1842,6 +1842,35 @@ function htmlPage(basePath: string): string {
         <details class="card section-card" open>
           <summary>
             <div class="section-summary-copy">
+              <span class="pill">Node Setup</span>
+              <h3>Add New Node</h3>
+              <p>Use a preset to create the node record, then edit the live fields below with the real host and paths for that machine.</p>
+            </div>
+          </summary>
+          <div class="section-body">
+            <div class="card card-quiet">
+              <p><strong>1.</strong> Ensure SSH access works from the control-plane host to the new node.</p>
+              <p><strong>2.</strong> Install Docker and the Compose plugin. For GPU nodes, also install the NVIDIA container runtime.</p>
+              <p><strong>3.</strong> Pick durable directories for build checkouts, compose stacks, and persistent workload volumes.</p>
+              <p><strong>4.</strong> Add the node with a preset below, then replace the placeholder host, node id, and paths in the Worker Nodes editor.</p>
+              <p><strong>5.</strong> Save the config, add workloads, and deploy them to the selected node from this same tab.</p>
+              <p><strong>6.</strong> Keep machine-specific inventory notes in <code>docs/local/</code>, not in tracked repo files.</p>
+            </div>
+            <div class="toolbar">
+              <button id="addGeneralNodePresetButton">Add General Linux Node</button>
+              <button id="addGpuNodePresetButton">Add GPU Compute Node</button>
+              <button id="addPiNodePresetButton">Add Raspberry Pi Edge Node</button>
+            </div>
+            <div class="meta-list">
+              <div><strong>General Linux preset:</strong> standard Docker worker with <code>/srv/gateway-workloads/...</code> roots.</div>
+              <div><strong>GPU Compute preset:</strong> Docker + NVIDIA worker with <code>/data/docker/...</code> roots, suited for LLM/STT/CV APIs.</div>
+              <div><strong>Raspberry Pi preset:</strong> lighter edge node with <code>/opt/gateway-control-plane/...</code> roots, suited for proxy-style services.</div>
+            </div>
+          </div>
+        </details>
+        <details class="card section-card" open>
+          <summary>
+            <div class="section-summary-copy">
               <span class="pill">Nodes</span>
               <h3>Worker Nodes</h3>
               <p>SSH targets and runtime settings for remote workload execution.</p>
@@ -3679,6 +3708,18 @@ function htmlPage(basePath: string): string {
       return \`worker-node-\${index}\`;
     }
 
+    function nextAvailableSpecificNodeId(baseId) {
+      const normalized = slugifyIdentifier(baseId) || nextWorkerNodeId();
+      if (!state.config.workerNodes.some((node) => node.id === normalized)) {
+        return normalized;
+      }
+      let index = 2;
+      while (state.config.workerNodes.some((node) => node.id === \`\${normalized}-\${index}\`)) {
+        index += 1;
+      }
+      return \`\${normalized}-\${index}\`;
+    }
+
     function ensureRemoteWorkloadNodeId(workload) {
       if (typeof workload.nodeId === 'string' && workload.nodeId.trim().length > 0) {
         return workload.nodeId;
@@ -3797,6 +3838,79 @@ function htmlPage(basePath: string): string {
           }
         }
       };
+    }
+
+    function createWorkerNodePreset(kind) {
+      if (kind === 'gpu') {
+        return {
+          id: nextAvailableSpecificNodeId('gpu-node'),
+          enabled: true,
+          description: 'GPU compute worker',
+          host: '',
+          sshUser: 'deploy',
+          sshPort: 22,
+          buildRoot: '/data/docker/builds/gateway-workloads',
+          stackRoot: '/data/docker/stacks/gateway-workloads',
+          volumeRoot: '/data/docker/volumes/gateway-workloads',
+          workerPollIntervalSeconds: 15,
+          nodeCommand: '/usr/bin/node',
+          systemdUnitDirectory: '/etc/systemd/system',
+          systemdReloadCommand: 'sudo systemctl daemon-reload',
+          systemdEnableTimerCommand: 'sudo systemctl enable --now',
+          dockerCommand: 'docker',
+          dockerComposeCommand: 'docker compose'
+        };
+      }
+
+      if (kind === 'pi') {
+        return {
+          id: nextAvailableSpecificNodeId('pi-node'),
+          enabled: true,
+          description: 'Raspberry Pi edge worker',
+          host: '',
+          sshUser: 'deploy',
+          sshPort: 22,
+          buildRoot: '/opt/gateway-control-plane',
+          stackRoot: '/opt/gateway-control-plane/stacks',
+          volumeRoot: '/opt/gateway-control-plane/volumes',
+          workerPollIntervalSeconds: 30,
+          nodeCommand: '/usr/bin/node',
+          systemdUnitDirectory: '/etc/systemd/system',
+          systemdReloadCommand: 'sudo systemctl daemon-reload',
+          systemdEnableTimerCommand: 'sudo systemctl enable --now',
+          dockerCommand: 'docker',
+          dockerComposeCommand: 'docker compose'
+        };
+      }
+
+      return {
+        id: nextWorkerNodeId(),
+        enabled: true,
+        description: 'Remote worker node',
+        host: '',
+        sshUser: 'deploy',
+        sshPort: 22,
+        buildRoot: '/srv/gateway-workloads/builds',
+        stackRoot: '/srv/gateway-workloads/stacks',
+        volumeRoot: '/srv/gateway-workloads/volumes',
+        workerPollIntervalSeconds: 15,
+        nodeCommand: '/usr/bin/node',
+        systemdUnitDirectory: '/etc/systemd/system',
+        systemdReloadCommand: 'sudo systemctl daemon-reload',
+        systemdEnableTimerCommand: 'sudo systemctl enable --now',
+        dockerCommand: 'docker',
+        dockerComposeCommand: 'docker compose'
+      };
+    }
+
+    function appendWorkerNode(node) {
+      state.config.workerNodes.push(node);
+      normalizeRemoteWorkloadNodeIds();
+      renderWorkerNodes();
+      renderRemoteWorkloads();
+      renderBedrockServers();
+      renderPiProxyProfile();
+      syncRawJson();
     }
 
     function createSttTranscriptWorkload() {
@@ -5997,27 +6111,16 @@ function htmlPage(basePath: string): string {
       render();
     });
     document.getElementById('addWorkerNodeButton').addEventListener('click', () => {
-      state.config.workerNodes.push({
-        id: nextWorkerNodeId(),
-        enabled: true,
-        description: 'Remote worker node',
-        host: '',
-        sshUser: 'deploy',
-        sshPort: 22,
-        buildRoot: '/mnt/fast/builds/gateway-workloads',
-        stackRoot: '/mnt/storage/docker/stacks/gateway-workloads',
-        volumeRoot: '/mnt/storage/docker/volumes/gateway-workloads',
-        workerPollIntervalSeconds: 15,
-        nodeCommand: 'node',
-        dockerCommand: 'docker',
-        dockerComposeCommand: 'docker compose'
-      });
-      normalizeRemoteWorkloadNodeIds();
-      renderWorkerNodes();
-      renderRemoteWorkloads();
-      renderBedrockServers();
-      renderPiProxyProfile();
-      syncRawJson();
+      appendWorkerNode(createWorkerNodePreset('general'));
+    });
+    document.getElementById('addGeneralNodePresetButton').addEventListener('click', () => {
+      appendWorkerNode(createWorkerNodePreset('general'));
+    });
+    document.getElementById('addGpuNodePresetButton').addEventListener('click', () => {
+      appendWorkerNode(createWorkerNodePreset('gpu'));
+    });
+    document.getElementById('addPiNodePresetButton').addEventListener('click', () => {
+      appendWorkerNode(createWorkerNodePreset('pi'));
     });
     document.getElementById('addRemoteWorkloadButton').addEventListener('click', () => {
       state.config.remoteWorkloads.push(createDefaultRemoteJobWorkload());
