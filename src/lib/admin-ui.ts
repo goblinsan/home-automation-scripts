@@ -1297,12 +1297,13 @@ function htmlPage(basePath: string): string {
       max-width: 640px;
       width: 90vw;
       max-height: 85vh;
-      box-shadow: 0 8px 32px rgba(0,0,0,.25);
-      background: var(--surface);
-      color: var(--text);
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
+      background: var(--surface, #1e1e2e);
+      color: var(--text, #e0e0e0);
+      opacity: 1;
     }
     .wizard-dialog::backdrop {
-      background: rgba(0,0,0,.5);
+      background: rgba(0,0,0,.75);
     }
     .wizard-content {
       display: flex;
@@ -1358,10 +1359,10 @@ function htmlPage(basePath: string): string {
     .wizard-field input,
     .wizard-field select {
       padding: .4rem .5rem;
-      border: 1px solid var(--border);
+      border: 1px solid var(--border, #444);
       border-radius: 6px;
-      background: var(--surface);
-      color: var(--text);
+      background: var(--surface, #1e1e2e);
+      color: var(--text, #e0e0e0);
       font-size: .9rem;
     }
     .wizard-actions {
@@ -1389,14 +1390,14 @@ function htmlPage(basePath: string): string {
       cursor: not-allowed;
     }
     .wizard-btn-secondary {
-      background: var(--surface);
-      color: var(--text);
+      background: var(--surface, #2a2a3e);
+      color: var(--text, #e0e0e0);
     }
     .wizard-log {
       font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
       font-size: .82rem;
-      background: var(--surface-raised, #1a1a2e);
-      border: 1px solid var(--border);
+      background: #141422;
+      border: 1px solid var(--border, #444);
       border-radius: 8px;
       padding: .75rem 1rem;
       min-height: 200px;
