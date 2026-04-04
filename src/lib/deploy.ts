@@ -85,10 +85,10 @@ async function runShell(command: string, cwd: string, context: CommandContext): 
   });
 }
 
-async function runShellCapture(command: string, cwd: string): Promise<{ code: number; stdout: string; stderr: string }> {
+async function runShellCapture(command: string, cwd: string, extraEnv?: Record<string, string>): Promise<{ code: number; stdout: string; stderr: string }> {
   const { spawn } = await import('node:child_process');
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, { cwd, shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, { cwd, shell: true, stdio: ['ignore', 'pipe', 'pipe'], env: extraEnv ? { ...process.env, ...extraEnv } : undefined });
     let stdout = '';
     let stderr = '';
     child.stdout?.on('data', (chunk: Buffer | string) => {
@@ -1729,6 +1729,7 @@ export interface NodeSetupRequest {
   host: string;
   sshPort: number;
   adminUser: string;
+  adminPassword?: string;
   nodeType: 'general' | 'gpu' | 'pi' | 'custom';
   description: string;
   buildRoot: string;
@@ -1748,7 +1749,7 @@ export async function bootstrapWorkerNode(
   request: NodeSetupRequest,
   onProgress: (result: NodeSetupStepResult) => void
 ): Promise<void> {
-  const { nodeId, host, sshPort, adminUser, buildRoot, stackRoot, volumeRoot } = request;
+  const { nodeId, host, sshPort, adminUser, adminPassword, buildRoot, stackRoot, volumeRoot } = request;
 
   const adminSshOptions = [
     `-p ${sshPort}`,
@@ -1758,11 +1759,33 @@ export async function bootstrapWorkerNode(
   ].join(' ');
 
   const adminTarget = `${adminUser}@${host}`;
+  const usePassword = typeof adminPassword === 'string' && adminPassword.length > 0;
+
+  // If a password was provided, check for sshpass
+  if (usePassword) {
+    const sshpassCheck = await runShellCapture('command -v sshpass', process.cwd());
+    if (sshpassCheck.code !== 0) {
+      onProgress({ step: 'connect', status: 'running', message: 'Installing sshpass...' });
+      const installResult = await runShellCapture(
+        'sudo apt-get install -y sshpass 2>/dev/null || sudo yum install -y sshpass 2>/dev/null || sudo pacman -S --noconfirm sshpass 2>/dev/null',
+        process.cwd()
+      );
+      const verify = await runShellCapture('command -v sshpass', process.cwd());
+      if (verify.code !== 0) {
+        onProgress({ step: 'connect', status: 'error', message: 'sshpass is required for password-based SSH but could not be installed. Install it manually on the control-plane host: sudo apt-get install sshpass' });
+        return;
+      }
+    }
+  }
 
   async function sshAdmin(command: string): Promise<{ code: number; stdout: string; stderr: string }> {
+    const sshCmd = usePassword
+      ? `sshpass -e ssh -o PubkeyAuthentication=no ${adminSshOptions} ${adminTarget} ${shellQuote(command)}`
+      : `ssh ${adminSshOptions} ${adminTarget} ${shellQuote(command)}`;
     return await runShellCapture(
-      `ssh ${adminSshOptions} ${adminTarget} ${shellQuote(command)}`,
-      process.cwd()
+      sshCmd,
+      process.cwd(),
+      usePassword ? { SSHPASS: adminPassword } : undefined
     );
   }
 

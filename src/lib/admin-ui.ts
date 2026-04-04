@@ -2400,6 +2400,10 @@ function htmlPage(basePath: string): string {
             <input id="wizAdminUser" placeholder="e.g. jim" />
           </label>
           <label class="wizard-field">
+            <span>Password <small>(for initial SSH — not stored)</small></span>
+            <input id="wizAdminPassword" type="password" placeholder="leave blank if key auth works" />
+          </label>
+          <label class="wizard-field">
             <span>Description</span>
             <input id="wizDescription" placeholder="e.g. Main Docker worker" />
           </label>
@@ -6468,6 +6472,7 @@ function htmlPage(basePath: string): string {
         host: document.getElementById('wizHost'),
         sshPort: document.getElementById('wizSshPort'),
         adminUser: document.getElementById('wizAdminUser'),
+        adminPassword: document.getElementById('wizAdminPassword'),
         description: document.getElementById('wizDescription'),
         buildRoot: document.getElementById('wizBuildRoot'),
         stackRoot: document.getElementById('wizStackRoot'),
@@ -6593,6 +6598,7 @@ function htmlPage(basePath: string): string {
           host: host,
           sshPort: Number(fields.sshPort.value) || 22,
           adminUser: adminUser,
+          adminPassword: fields.adminPassword.value || '',
           nodeType: selectedPreset || 'general',
           description: fields.description.value.trim(),
           buildRoot: fields.buildRoot.value.trim(),
