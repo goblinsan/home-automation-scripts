@@ -1292,18 +1292,17 @@ function htmlPage(basePath: string): string {
 
     .wizard-dialog {
       border: none;
-      border-radius: 12px;
+      border-radius: 10px;
       padding: 0;
       max-width: 640px;
       width: 90vw;
       max-height: 85vh;
-      box-shadow: 0 8px 32px rgba(0,0,0,.4);
-      background: var(--surface, #1e1e2e);
-      color: var(--text, #e0e0e0);
-      opacity: 1;
+      box-shadow: 0 8px 32px var(--shadow);
+      background: #fff;
+      color: var(--text);
     }
     .wizard-dialog::backdrop {
-      background: rgba(0,0,0,.75);
+      background: rgba(16, 50, 53, .45);
     }
     .wizard-content {
       display: flex;
@@ -1315,28 +1314,34 @@ function htmlPage(basePath: string): string {
       align-items: center;
       justify-content: space-between;
       padding: 1rem 1.25rem;
-      border-bottom: 1px solid var(--border);
+      border-bottom: 1px solid var(--line);
+      background: #fff;
     }
     .wizard-header h2 {
       margin: 0;
       font-size: 1.15rem;
+      color: var(--text);
     }
     .wizard-close {
       background: none;
       border: none;
       font-size: 1.5rem;
       cursor: pointer;
-      color: var(--text-dim);
+      color: var(--muted);
       padding: 0 .25rem;
       line-height: 1;
+    }
+    .wizard-close:hover {
+      color: var(--text);
     }
     .wizard-step {
       padding: 1.25rem;
       overflow-y: auto;
+      background: #fff;
     }
     .wizard-desc {
       margin: 0 0 1rem;
-      color: var(--text-dim);
+      color: var(--muted);
     }
     .wizard-form-grid {
       display: grid;
@@ -1351,19 +1356,25 @@ function htmlPage(basePath: string): string {
     .wizard-field span {
       font-size: .85rem;
       font-weight: 600;
+      color: var(--text);
     }
     .wizard-field small {
       font-weight: 400;
-      color: var(--text-dim);
+      color: var(--muted);
     }
     .wizard-field input,
     .wizard-field select {
       padding: .4rem .5rem;
-      border: 1px solid var(--border, #444);
-      border-radius: 6px;
-      background: var(--surface, #1e1e2e);
-      color: var(--text, #e0e0e0);
+      border: 1px solid var(--line);
+      border-radius: 0;
+      background: white;
+      color: var(--text);
       font-size: .9rem;
+    }
+    .wizard-field input:focus,
+    .wizard-field select:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
     }
     .wizard-actions {
       display: flex;
@@ -1374,8 +1385,8 @@ function htmlPage(basePath: string): string {
     .wizard-btn-primary,
     .wizard-btn-secondary {
       padding: .5rem 1.25rem;
-      border-radius: 6px;
-      border: 1px solid var(--border);
+      border-radius: 0;
+      border: 1px solid var(--line);
       cursor: pointer;
       font-size: .9rem;
     }
@@ -1390,37 +1401,73 @@ function htmlPage(basePath: string): string {
       cursor: not-allowed;
     }
     .wizard-btn-secondary {
-      background: var(--surface, #2a2a3e);
-      color: var(--text, #e0e0e0);
+      background: #fff;
+      color: var(--text);
+    }
+    .wizard-btn-secondary:hover {
+      background: var(--bg);
+    }
+    .wizard-preset-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .75rem;
+      margin-bottom: 1rem;
+    }
+    .wizard-preset-card {
+      border: 2px solid var(--line);
+      border-radius: 0;
+      padding: 1rem;
+      cursor: pointer;
+      background: #fff;
+      text-align: left;
+      transition: border-color .15s;
+    }
+    .wizard-preset-card:hover {
+      border-color: var(--accent);
+    }
+    .wizard-preset-card.selected {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .wizard-preset-card strong {
+      display: block;
+      color: var(--text);
+      margin-bottom: .25rem;
+    }
+    .wizard-preset-card small {
+      color: var(--muted);
+      font-size: .8rem;
     }
     .wizard-log {
-      font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: .82rem;
-      background: #141422;
-      border: 1px solid var(--border, #444);
-      border-radius: 8px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 0;
       padding: .75rem 1rem;
       min-height: 200px;
       max-height: 50vh;
       overflow-y: auto;
       line-height: 1.6;
+      color: var(--text);
     }
     .wizard-log-entry {
       display: flex;
       align-items: flex-start;
       gap: .5rem;
       padding: .15rem 0;
+      color: var(--text);
     }
     .wizard-log-icon {
       flex-shrink: 0;
       width: 1.2em;
       text-align: center;
     }
-    .wiz-running .wizard-log-icon { color: var(--accent, #60a5fa); }
-    .wiz-ok .wizard-log-icon { color: #22c55e; }
-    .wiz-warn .wizard-log-icon { color: #eab308; }
-    .wiz-error .wizard-log-icon { color: #ef4444; }
-    .wiz-complete .wizard-log-icon { color: #22c55e; }
+    .wiz-running .wizard-log-icon { color: var(--highlight); }
+    .wiz-ok .wizard-log-icon { color: var(--ok); }
+    .wiz-warn .wizard-log-icon { color: #b8860b; }
+    .wiz-error .wizard-log-icon { color: var(--danger); }
+    .wiz-complete .wizard-log-icon { color: var(--ok); }
     button.primary-action {
       background: var(--accent);
       color: #fff;
@@ -1578,14 +1625,6 @@ function htmlPage(basePath: string): string {
             </div>
             <div class="toolbar">
               <button id="openNodeSetupWizardButton" class="primary-action">Setup New Node</button>
-              <button id="addGeneralNodePresetButton">Add General Linux Node</button>
-              <button id="addGpuNodePresetButton">Add GPU Compute Node</button>
-              <button id="addPiNodePresetButton">Add Raspberry Pi Edge Node</button>
-            </div>
-            <div class="meta-list">
-              <div><strong>General Linux preset:</strong> standard Docker worker with <code>/srv/gateway-workloads/...</code> roots.</div>
-              <div><strong>GPU Compute preset:</strong> Docker + NVIDIA worker with <code>/data/docker/...</code> roots, suited for LLM/STT/CV APIs.</div>
-              <div><strong>Raspberry Pi preset:</strong> lighter edge node with <code>/opt/gateway-control-plane/...</code> roots, suited for proxy-style services.</div>
             </div>
           </div>
         </details>
@@ -2315,9 +2354,34 @@ function htmlPage(basePath: string): string {
         <button id="closeNodeSetupWizardButton" class="wizard-close">&times;</button>
       </div>
 
-      <div id="wizardStepForm" class="wizard-step">
-        <p class="wizard-desc">Configure a new remote machine so the control-plane can manage it via the <code>deploy</code> user.</p>
+      <div id="wizardStepPreset" class="wizard-step">
+        <p class="wizard-desc">What kind of node are you setting up?</p>
+        <div class="wizard-preset-grid">
+          <button class="wizard-preset-card" data-preset="general">
+            <strong>General Linux Node</strong>
+            <small>Standard Docker worker with <code>/srv/gateway-workloads/</code> roots.</small>
+          </button>
+          <button class="wizard-preset-card" data-preset="gpu">
+            <strong>GPU Compute Node</strong>
+            <small>Docker + NVIDIA runtime for LLM, STT, and CV APIs.</small>
+          </button>
+          <button class="wizard-preset-card" data-preset="pi">
+            <strong>Raspberry Pi Edge</strong>
+            <small>Lighter edge node for proxy-style services.</small>
+          </button>
+          <button class="wizard-preset-card" data-preset="custom">
+            <strong>Custom</strong>
+            <small>Set all paths and options manually.</small>
+          </button>
+        </div>
+        <div class="wizard-actions">
+          <button id="wizPresetCancelButton" class="wizard-btn-secondary">Cancel</button>
+          <button id="wizPresetNextButton" class="wizard-btn-primary" disabled>Next</button>
+        </div>
+      </div>
 
+      <div id="wizardStepForm" class="wizard-step" hidden>
+        <p class="wizard-desc">Enter the connection details and verify the directory paths for this node.</p>
         <div class="wizard-form-grid">
           <label class="wizard-field">
             <span>Node ID <small>(short name)</small></span>
@@ -2336,17 +2400,12 @@ function htmlPage(basePath: string): string {
             <input id="wizAdminUser" placeholder="e.g. jim" />
           </label>
           <label class="wizard-field">
-            <span>Node Type</span>
-            <select id="wizNodeType">
-              <option value="general">General Linux Node</option>
-              <option value="gpu">GPU Compute Node</option>
-              <option value="pi">Raspberry Pi Edge Node</option>
-              <option value="custom">Custom</option>
-            </select>
-          </label>
-          <label class="wizard-field">
             <span>Description</span>
             <input id="wizDescription" placeholder="e.g. Main Docker worker" />
+          </label>
+          <label class="wizard-field">
+            <span>Poll Interval <small>(seconds)</small></span>
+            <input id="wizPollInterval" type="number" value="15" />
           </label>
           <label class="wizard-field">
             <span>Build Root</span>
@@ -2360,13 +2419,9 @@ function htmlPage(basePath: string): string {
             <span>Volume Root</span>
             <input id="wizVolumeRoot" value="/srv/gateway-workloads/volumes" />
           </label>
-          <label class="wizard-field">
-            <span>Poll Interval <small>(seconds)</small></span>
-            <input id="wizPollInterval" type="number" value="15" />
-          </label>
         </div>
         <div class="wizard-actions">
-          <button id="wizCancelButton" class="wizard-btn-secondary">Cancel</button>
+          <button id="wizFormBackButton" class="wizard-btn-secondary">Back</button>
           <button id="wizStartSetupButton" class="wizard-btn-primary">Start Setup</button>
         </div>
       </div>
@@ -6396,19 +6451,11 @@ function htmlPage(basePath: string): string {
     document.getElementById('addWorkerNodeButton').addEventListener('click', () => {
       appendWorkerNode(createWorkerNodePreset('general'));
     });
-    document.getElementById('addGeneralNodePresetButton').addEventListener('click', () => {
-      appendWorkerNode(createWorkerNodePreset('general'));
-    });
-    document.getElementById('addGpuNodePresetButton').addEventListener('click', () => {
-      appendWorkerNode(createWorkerNodePreset('gpu'));
-    });
-    document.getElementById('addPiNodePresetButton').addEventListener('click', () => {
-      appendWorkerNode(createWorkerNodePreset('pi'));
-    });
 
     // ─── Node Setup Wizard ────────────────────────────────────────────
     (function initNodeSetupWizard() {
       const dialog = document.getElementById('nodeSetupWizard');
+      const presetStep = document.getElementById('wizardStepPreset');
       const formStep = document.getElementById('wizardStepForm');
       const progressStep = document.getElementById('wizardStepProgress');
       const progressLog = document.getElementById('wizProgressLog');
@@ -6421,13 +6468,15 @@ function htmlPage(basePath: string): string {
         host: document.getElementById('wizHost'),
         sshPort: document.getElementById('wizSshPort'),
         adminUser: document.getElementById('wizAdminUser'),
-        nodeType: document.getElementById('wizNodeType'),
         description: document.getElementById('wizDescription'),
         buildRoot: document.getElementById('wizBuildRoot'),
         stackRoot: document.getElementById('wizStackRoot'),
         volumeRoot: document.getElementById('wizVolumeRoot'),
         pollInterval: document.getElementById('wizPollInterval')
       };
+
+      const presetCards = document.querySelectorAll('.wizard-preset-card');
+      const presetNextBtn = document.getElementById('wizPresetNextButton');
 
       const presets = {
         general: {
@@ -6460,25 +6509,43 @@ function htmlPage(basePath: string): string {
         }
       };
 
+      let selectedPreset = null;
       let pendingNodeConfig = null;
 
-      fields.nodeType.addEventListener('change', () => {
-        const preset = presets[fields.nodeType.value] || presets.custom;
+      presetCards.forEach(card => {
+        card.addEventListener('click', () => {
+          presetCards.forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+          selectedPreset = card.dataset.preset;
+          presetNextBtn.disabled = false;
+        });
+      });
+
+      function applyPreset(presetName) {
+        const preset = presets[presetName] || presets.custom;
         fields.buildRoot.value = preset.buildRoot;
         fields.stackRoot.value = preset.stackRoot;
         fields.volumeRoot.value = preset.volumeRoot;
         fields.description.value = preset.description;
         fields.pollInterval.value = preset.pollInterval;
-      });
+      }
 
-      function openWizard() {
-        formStep.hidden = false;
-        progressStep.hidden = true;
+      function showStep(step) {
+        presetStep.hidden = step !== 'preset';
+        formStep.hidden = step !== 'form';
+        progressStep.hidden = step !== 'progress';
         actionsRow.hidden = true;
         addToConfigBtn.hidden = true;
         closeFinishedBtn.hidden = true;
+      }
+
+      function openWizard() {
+        selectedPreset = null;
+        presetCards.forEach(c => c.classList.remove('selected'));
+        presetNextBtn.disabled = true;
         progressLog.innerHTML = '';
         pendingNodeConfig = null;
+        showStep('preset');
         dialog.showModal();
       }
 
@@ -6518,18 +6585,15 @@ function htmlPage(basePath: string): string {
         }
 
         formStep.hidden = true;
-        progressStep.hidden = false;
+        showStep('progress');
         progressLog.innerHTML = '';
-        actionsRow.hidden = true;
-        addToConfigBtn.hidden = true;
-        closeFinishedBtn.hidden = true;
 
         const payload = {
           nodeId: nodeId,
           host: host,
           sshPort: Number(fields.sshPort.value) || 22,
           adminUser: adminUser,
-          nodeType: fields.nodeType.value,
+          nodeType: selectedPreset || 'general',
           description: fields.description.value.trim(),
           buildRoot: fields.buildRoot.value.trim(),
           stackRoot: fields.stackRoot.value.trim(),
@@ -6592,7 +6656,15 @@ function htmlPage(basePath: string): string {
 
       document.getElementById('openNodeSetupWizardButton').addEventListener('click', openWizard);
       document.getElementById('closeNodeSetupWizardButton').addEventListener('click', closeWizard);
-      document.getElementById('wizCancelButton').addEventListener('click', closeWizard);
+      document.getElementById('wizPresetCancelButton').addEventListener('click', closeWizard);
+      document.getElementById('wizPresetNextButton').addEventListener('click', () => {
+        if (!selectedPreset) return;
+        applyPreset(selectedPreset);
+        showStep('form');
+      });
+      document.getElementById('wizFormBackButton').addEventListener('click', () => {
+        showStep('preset');
+      });
       document.getElementById('wizStartSetupButton').addEventListener('click', startSetup);
       document.getElementById('wizCloseFinishedButton').addEventListener('click', closeWizard);
       document.getElementById('wizAddToConfigButton').addEventListener('click', () => {
