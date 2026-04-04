@@ -1721,3 +1721,240 @@ export async function getPiProxyServiceStatus(config: GatewayConfig): Promise<Pi
     execStart: execStart || undefined
   };
 }
+
+// ─── Node bootstrap ────────────────────────────────────────────────────────
+
+export interface NodeSetupRequest {
+  nodeId: string;
+  host: string;
+  sshPort: number;
+  adminUser: string;
+  nodeType: 'general' | 'gpu' | 'pi' | 'custom';
+  description: string;
+  buildRoot: string;
+  stackRoot: string;
+  volumeRoot: string;
+  workerPollIntervalSeconds: number;
+}
+
+export interface NodeSetupStepResult {
+  step: string;
+  status: 'running' | 'ok' | 'warn' | 'error' | 'complete';
+  message: string;
+  nodeConfig?: WorkerNodeConfig;
+}
+
+export async function bootstrapWorkerNode(
+  request: NodeSetupRequest,
+  onProgress: (result: NodeSetupStepResult) => void
+): Promise<void> {
+  const { nodeId, host, sshPort, adminUser, buildRoot, stackRoot, volumeRoot } = request;
+
+  const adminSshOptions = [
+    `-p ${sshPort}`,
+    '-o ConnectTimeout=10',
+    '-o StrictHostKeyChecking=accept-new',
+    `-o UserKnownHostsFile=${shellQuote(`/tmp/gateway-control-plane-known-hosts-${nodeId}`)}`
+  ].join(' ');
+
+  const adminTarget = `${adminUser}@${host}`;
+
+  async function sshAdmin(command: string): Promise<{ code: number; stdout: string; stderr: string }> {
+    return await runShellCapture(
+      `ssh ${adminSshOptions} ${adminTarget} ${shellQuote(command)}`,
+      process.cwd()
+    );
+  }
+
+  // Step 1: Test connectivity
+  onProgress({ step: 'connect', status: 'running', message: `Connecting to ${host} as ${adminUser}...` });
+  const connectResult = await sshAdmin('echo ok');
+  if (connectResult.code !== 0) {
+    onProgress({
+      step: 'connect',
+      status: 'error',
+      message: `Cannot connect to ${adminUser}@${host}:${sshPort} — ${connectResult.stderr.trim() || 'connection failed'}`
+    });
+    return;
+  }
+  const osResult = await sshAdmin('cat /etc/os-release 2>/dev/null | grep -w ID | head -1 | cut -d= -f2 | tr -d \'"\'');
+  const osFamily = osResult.code === 0 ? osResult.stdout.trim() : 'unknown';
+  onProgress({ step: 'connect', status: 'ok', message: `Connected to ${host} (OS: ${osFamily})` });
+
+  // Step 2: Create deploy user
+  onProgress({ step: 'user', status: 'running', message: 'Creating deploy user...' });
+  const userScript = `
+    set -e
+    if id deploy >/dev/null 2>&1; then
+      echo "EXISTS"
+    else
+      sudo useradd -m -s /bin/bash deploy
+      echo "CREATED"
+    fi
+    if getent group docker >/dev/null 2>&1; then
+      sudo usermod -aG docker deploy 2>/dev/null || true
+    fi
+    SUDOERS_FILE="/etc/sudoers.d/deploy-gateway"
+    if [ ! -f "$SUDOERS_FILE" ]; then
+      printf '%s\\n' \
+        'deploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload' \
+        'deploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable *' \
+        'deploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl disable *' \
+        'deploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl start *' \
+        'deploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop *' \
+        'deploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart *' \
+        'deploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *' | sudo tee "$SUDOERS_FILE" >/dev/null
+      sudo chmod 0440 "$SUDOERS_FILE"
+      echo "SUDOERS_CREATED"
+    else
+      echo "SUDOERS_EXISTS"
+    fi
+  `;
+  const userResult = await sshAdmin(userScript);
+  if (userResult.code !== 0) {
+    onProgress({ step: 'user', status: 'error', message: `Failed to create deploy user: ${userResult.stderr.trim()}` });
+    return;
+  }
+  const userCreated = userResult.stdout.includes('CREATED');
+  onProgress({ step: 'user', status: 'ok', message: userCreated ? 'Created deploy user with sudoers' : 'deploy user already exists' });
+
+  // Step 3: Install SSH key for deploy
+  onProgress({ step: 'sshkey', status: 'running', message: 'Authorizing control-plane SSH key for deploy user...' });
+  const localKeyPaths = [
+    join(process.env.HOME || '/root', '.ssh', 'id_ed25519.pub'),
+    join(process.env.HOME || '/root', '.ssh', 'id_rsa.pub')
+  ];
+  let localPubKey = '';
+  for (const keyPath of localKeyPaths) {
+    try {
+      localPubKey = (await readFile(keyPath, 'utf8')).trim();
+      break;
+    } catch {
+      // try next
+    }
+  }
+  if (localPubKey.length === 0) {
+    onProgress({ step: 'sshkey', status: 'error', message: 'No SSH public key found at ~/.ssh/id_ed25519.pub or ~/.ssh/id_rsa.pub on the control-plane host' });
+    return;
+  }
+
+  const keyScript = `
+    set -e
+    DEPLOY_SSH_DIR="/home/deploy/.ssh"
+    AUTHORIZED_KEYS="$DEPLOY_SSH_DIR/authorized_keys"
+    sudo mkdir -p "$DEPLOY_SSH_DIR"
+    PUBKEY='${localPubKey.replaceAll("'", "'\\''")}'
+    if sudo test -f "$AUTHORIZED_KEYS" && sudo grep -qF "$PUBKEY" "$AUTHORIZED_KEYS"; then
+      echo "KEY_EXISTS"
+    else
+      echo "$PUBKEY" | sudo tee -a "$AUTHORIZED_KEYS" >/dev/null
+      echo "KEY_ADDED"
+    fi
+    sudo chmod 700 "$DEPLOY_SSH_DIR"
+    sudo chmod 600 "$AUTHORIZED_KEYS"
+    sudo chown -R deploy:deploy "$DEPLOY_SSH_DIR"
+  `;
+  const keyResult = await sshAdmin(keyScript);
+  if (keyResult.code !== 0) {
+    onProgress({ step: 'sshkey', status: 'error', message: `Failed to install SSH key: ${keyResult.stderr.trim()}` });
+    return;
+  }
+  onProgress({ step: 'sshkey', status: 'ok', message: keyResult.stdout.includes('KEY_ADDED') ? 'SSH key authorized for deploy' : 'SSH key already authorized' });
+
+  // Step 4: Install Docker
+  onProgress({ step: 'docker', status: 'running', message: 'Checking Docker installation...' });
+  const dockerCheck = await sshAdmin('command -v docker && docker --version');
+  if (dockerCheck.code === 0) {
+    onProgress({ step: 'docker', status: 'ok', message: `Docker already installed: ${dockerCheck.stdout.trim().split('\n').pop() || 'yes'}` });
+  } else {
+    onProgress({ step: 'docker', status: 'running', message: 'Installing Docker Engine (this may take a minute)...' });
+    const dockerInstall = await sshAdmin('curl -fsSL https://get.docker.com | sudo sh && sudo systemctl enable --now docker && sudo usermod -aG docker deploy');
+    if (dockerInstall.code !== 0) {
+      onProgress({ step: 'docker', status: 'error', message: `Docker installation failed: ${dockerInstall.stderr.trim().slice(0, 300)}` });
+      return;
+    }
+    onProgress({ step: 'docker', status: 'ok', message: 'Docker installed and started' });
+  }
+
+  // Check compose plugin
+  const composeCheck = await sshAdmin('docker compose version');
+  if (composeCheck.code === 0) {
+    onProgress({ step: 'docker', status: 'ok', message: `Docker Compose available: ${composeCheck.stdout.trim()}` });
+  } else {
+    onProgress({ step: 'docker', status: 'warn', message: 'Docker Compose plugin not detected — you may need to install it manually' });
+  }
+
+  // Ensure deploy is in docker group after potential install
+  await sshAdmin('sudo usermod -aG docker deploy');
+
+  // Step 5: Create directory structure
+  onProgress({ step: 'dirs', status: 'running', message: 'Creating directory structure...' });
+  const dirsScript = `
+    set -e
+    for dir in ${shellQuote(buildRoot)} ${shellQuote(stackRoot)} ${shellQuote(volumeRoot)}; do
+      sudo mkdir -p "$dir"
+      sudo chown deploy:deploy "$dir"
+    done
+    echo "DIRS_OK"
+  `;
+  const dirsResult = await sshAdmin(dirsScript);
+  if (dirsResult.code !== 0 || !dirsResult.stdout.includes('DIRS_OK')) {
+    onProgress({ step: 'dirs', status: 'error', message: `Failed to create directories: ${dirsResult.stderr.trim()}` });
+    return;
+  }
+  onProgress({ step: 'dirs', status: 'ok', message: `Created ${buildRoot}, ${stackRoot}, ${volumeRoot}` });
+
+  // Step 6: Verify deploy user connectivity
+  onProgress({ step: 'verify', status: 'running', message: 'Verifying control-plane can connect as deploy...' });
+  const deploySshOpts = [
+    `-p ${sshPort}`,
+    '-o BatchMode=yes',
+    '-o ConnectTimeout=10',
+    '-o StrictHostKeyChecking=accept-new',
+    `-o UserKnownHostsFile=${shellQuote(`/tmp/gateway-control-plane-known-hosts-${nodeId}`)}`
+  ].join(' ');
+  const verifyResult = await runShellCapture(
+    `ssh ${deploySshOpts} deploy@${host} ${shellQuote('echo ok')}`,
+    process.cwd()
+  );
+  if (verifyResult.code !== 0) {
+    onProgress({ step: 'verify', status: 'warn', message: 'deploy user SSH connection failed with BatchMode=yes — the key may need a moment to propagate, or group membership may need a re-login' });
+  } else {
+    onProgress({ step: 'verify', status: 'ok', message: `deploy@${host}:${sshPort} — key-based SSH working` });
+  }
+
+  // Check Docker access as deploy
+  const dockerDeployCheck = await runShellCapture(
+    `ssh ${deploySshOpts} deploy@${host} ${shellQuote('docker info >/dev/null 2>&1 && echo ok')}`,
+    process.cwd()
+  );
+  if (dockerDeployCheck.code === 0 && dockerDeployCheck.stdout.includes('ok')) {
+    onProgress({ step: 'verify', status: 'ok', message: 'deploy user has Docker access' });
+  } else {
+    onProgress({ step: 'verify', status: 'warn', message: 'deploy user cannot run Docker yet (group membership may require a re-login on the node)' });
+  }
+
+  // GPU hint
+  if (request.nodeType === 'gpu') {
+    onProgress({ step: 'verify', status: 'warn', message: 'GPU node: install the NVIDIA Container Toolkit separately, then restart Docker' });
+  }
+
+  // Emit final config block
+  const nodeConfig: WorkerNodeConfig = {
+    id: nodeId,
+    enabled: true,
+    description: request.description,
+    host,
+    sshUser: 'deploy',
+    sshPort,
+    buildRoot,
+    stackRoot,
+    volumeRoot,
+    workerPollIntervalSeconds: request.workerPollIntervalSeconds,
+    nodeCommand: 'node',
+    dockerCommand: 'docker',
+    dockerComposeCommand: 'docker compose'
+  };
+
+  onProgress({ step: 'complete', status: 'complete', message: 'Node setup finished', nodeConfig });
+}

@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { buildArtifacts } from './build.ts';
 import { getAllScheduledJobs, getWorkerNode, loadGatewayConfig, parseGatewayConfig, saveGatewayConfig, type GatewayConfig } from './config.ts';
 import {
+  bootstrapWorkerNode,
   controlContainerServiceWorkload,
   controlMinecraftWorkload,
   getContainerServiceWorkloadStatus,
@@ -16,7 +17,8 @@ import {
   runServiceProfileAgent,
   syncServiceProfileRuntime,
   type AgentRunPayload,
-  type AgentRunResult
+  type AgentRunResult,
+  type NodeSetupRequest
 } from './deploy.ts';
 import { DEFAULT_WORKFLOW_SEED_PATH, importWorkflowSeed } from './workflows.ts';
 
@@ -1287,6 +1289,143 @@ function htmlPage(basePath: string): string {
         grid-template-columns: 1fr;
       }
     }
+
+    .wizard-dialog {
+      border: none;
+      border-radius: 12px;
+      padding: 0;
+      max-width: 640px;
+      width: 90vw;
+      max-height: 85vh;
+      box-shadow: 0 8px 32px rgba(0,0,0,.25);
+      background: var(--surface);
+      color: var(--text);
+    }
+    .wizard-dialog::backdrop {
+      background: rgba(0,0,0,.5);
+    }
+    .wizard-content {
+      display: flex;
+      flex-direction: column;
+      max-height: 85vh;
+    }
+    .wizard-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .wizard-header h2 {
+      margin: 0;
+      font-size: 1.15rem;
+    }
+    .wizard-close {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: var(--text-dim);
+      padding: 0 .25rem;
+      line-height: 1;
+    }
+    .wizard-step {
+      padding: 1.25rem;
+      overflow-y: auto;
+    }
+    .wizard-desc {
+      margin: 0 0 1rem;
+      color: var(--text-dim);
+    }
+    .wizard-form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .75rem;
+    }
+    .wizard-field {
+      display: flex;
+      flex-direction: column;
+      gap: .25rem;
+    }
+    .wizard-field span {
+      font-size: .85rem;
+      font-weight: 600;
+    }
+    .wizard-field small {
+      font-weight: 400;
+      color: var(--text-dim);
+    }
+    .wizard-field input,
+    .wizard-field select {
+      padding: .4rem .5rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      font-size: .9rem;
+    }
+    .wizard-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: .5rem;
+      padding-top: 1rem;
+    }
+    .wizard-btn-primary,
+    .wizard-btn-secondary {
+      padding: .5rem 1.25rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      font-size: .9rem;
+    }
+    .wizard-btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    .wizard-btn-primary:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+    .wizard-btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+    }
+    .wizard-log {
+      font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+      font-size: .82rem;
+      background: var(--surface-raised, #1a1a2e);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .75rem 1rem;
+      min-height: 200px;
+      max-height: 50vh;
+      overflow-y: auto;
+      line-height: 1.6;
+    }
+    .wizard-log-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: .5rem;
+      padding: .15rem 0;
+    }
+    .wizard-log-icon {
+      flex-shrink: 0;
+      width: 1.2em;
+      text-align: center;
+    }
+    .wiz-running .wizard-log-icon { color: var(--accent, #60a5fa); }
+    .wiz-ok .wizard-log-icon { color: #22c55e; }
+    .wiz-warn .wizard-log-icon { color: #eab308; }
+    .wiz-error .wizard-log-icon { color: #ef4444; }
+    .wiz-complete .wizard-log-icon { color: #22c55e; }
+    button.primary-action {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -1437,6 +1576,7 @@ function htmlPage(basePath: string): string {
               <p><strong>6.</strong> Keep machine-specific inventory notes in <code>docs/local/</code>, not in tracked repo files.</p>
             </div>
             <div class="toolbar">
+              <button id="openNodeSetupWizardButton" class="primary-action">Setup New Node</button>
               <button id="addGeneralNodePresetButton">Add General Linux Node</button>
               <button id="addGpuNodePresetButton">Add GPU Compute Node</button>
               <button id="addPiNodePresetButton">Add Raspberry Pi Edge Node</button>
@@ -2166,6 +2306,80 @@ function htmlPage(basePath: string): string {
       </details>
     </aside>
   </main>
+
+  <dialog id="nodeSetupWizard" class="wizard-dialog">
+    <div class="wizard-content">
+      <div class="wizard-header">
+        <h2>Setup New Node</h2>
+        <button id="closeNodeSetupWizardButton" class="wizard-close">&times;</button>
+      </div>
+
+      <div id="wizardStepForm" class="wizard-step">
+        <p class="wizard-desc">Configure a new remote machine so the control-plane can manage it via the <code>deploy</code> user.</p>
+
+        <div class="wizard-form-grid">
+          <label class="wizard-field">
+            <span>Node ID <small>(short name)</small></span>
+            <input id="wizNodeId" placeholder="e.g. gpu-01, edge-pi" />
+          </label>
+          <label class="wizard-field">
+            <span>Host <small>(IP or hostname)</small></span>
+            <input id="wizHost" placeholder="e.g. 192.168.1.50" />
+          </label>
+          <label class="wizard-field">
+            <span>SSH Port</span>
+            <input id="wizSshPort" type="number" value="22" />
+          </label>
+          <label class="wizard-field">
+            <span>Your SSH username on target</span>
+            <input id="wizAdminUser" placeholder="e.g. jim" />
+          </label>
+          <label class="wizard-field">
+            <span>Node Type</span>
+            <select id="wizNodeType">
+              <option value="general">General Linux Node</option>
+              <option value="gpu">GPU Compute Node</option>
+              <option value="pi">Raspberry Pi Edge Node</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label class="wizard-field">
+            <span>Description</span>
+            <input id="wizDescription" placeholder="e.g. Main Docker worker" />
+          </label>
+          <label class="wizard-field">
+            <span>Build Root</span>
+            <input id="wizBuildRoot" value="/srv/gateway-workloads/builds" />
+          </label>
+          <label class="wizard-field">
+            <span>Stack Root</span>
+            <input id="wizStackRoot" value="/srv/gateway-workloads/stacks" />
+          </label>
+          <label class="wizard-field">
+            <span>Volume Root</span>
+            <input id="wizVolumeRoot" value="/srv/gateway-workloads/volumes" />
+          </label>
+          <label class="wizard-field">
+            <span>Poll Interval <small>(seconds)</small></span>
+            <input id="wizPollInterval" type="number" value="15" />
+          </label>
+        </div>
+        <div class="wizard-actions">
+          <button id="wizCancelButton" class="wizard-btn-secondary">Cancel</button>
+          <button id="wizStartSetupButton" class="wizard-btn-primary">Start Setup</button>
+        </div>
+      </div>
+
+      <div id="wizardStepProgress" class="wizard-step" hidden>
+        <div id="wizProgressLog" class="wizard-log"></div>
+        <div id="wizardStepActions" class="wizard-actions" hidden>
+          <button id="wizAddToConfigButton" class="wizard-btn-primary" hidden>Add Node to Config</button>
+          <button id="wizCloseFinishedButton" class="wizard-btn-secondary" hidden>Close</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
   <div class="action-dock">
     <div class="action-dock-header">
       <button id="toggleActionFeedButton" class="action-dock-toggle">Hide History</button>
@@ -6190,6 +6404,221 @@ function htmlPage(basePath: string): string {
     document.getElementById('addPiNodePresetButton').addEventListener('click', () => {
       appendWorkerNode(createWorkerNodePreset('pi'));
     });
+
+    // ─── Node Setup Wizard ────────────────────────────────────────────
+    (function initNodeSetupWizard() {
+      const dialog = document.getElementById('nodeSetupWizard');
+      const formStep = document.getElementById('wizardStepForm');
+      const progressStep = document.getElementById('wizardStepProgress');
+      const progressLog = document.getElementById('wizProgressLog');
+      const actionsRow = document.getElementById('wizardStepActions');
+      const addToConfigBtn = document.getElementById('wizAddToConfigButton');
+      const closeFinishedBtn = document.getElementById('wizCloseFinishedButton');
+
+      const fields = {
+        nodeId: document.getElementById('wizNodeId'),
+        host: document.getElementById('wizHost'),
+        sshPort: document.getElementById('wizSshPort'),
+        adminUser: document.getElementById('wizAdminUser'),
+        nodeType: document.getElementById('wizNodeType'),
+        description: document.getElementById('wizDescription'),
+        buildRoot: document.getElementById('wizBuildRoot'),
+        stackRoot: document.getElementById('wizStackRoot'),
+        volumeRoot: document.getElementById('wizVolumeRoot'),
+        pollInterval: document.getElementById('wizPollInterval')
+      };
+
+      const presets = {
+        general: {
+          buildRoot: '/srv/gateway-workloads/builds',
+          stackRoot: '/srv/gateway-workloads/stacks',
+          volumeRoot: '/srv/gateway-workloads/volumes',
+          description: 'Standard Docker worker node',
+          pollInterval: 15
+        },
+        gpu: {
+          buildRoot: '/data/docker/builds/gateway-workloads',
+          stackRoot: '/data/docker/stacks/gateway-workloads',
+          volumeRoot: '/data/docker/volumes/gateway-workloads',
+          description: 'Docker + NVIDIA GPU worker for LLM/STT/CV APIs',
+          pollInterval: 15
+        },
+        pi: {
+          buildRoot: '/opt/gateway-control-plane',
+          stackRoot: '/opt/gateway-control-plane/stacks',
+          volumeRoot: '/opt/gateway-control-plane/volumes',
+          description: 'Raspberry Pi edge node',
+          pollInterval: 30
+        },
+        custom: {
+          buildRoot: '',
+          stackRoot: '',
+          volumeRoot: '',
+          description: '',
+          pollInterval: 15
+        }
+      };
+
+      let pendingNodeConfig = null;
+
+      fields.nodeType.addEventListener('change', () => {
+        const preset = presets[fields.nodeType.value] || presets.custom;
+        fields.buildRoot.value = preset.buildRoot;
+        fields.stackRoot.value = preset.stackRoot;
+        fields.volumeRoot.value = preset.volumeRoot;
+        fields.description.value = preset.description;
+        fields.pollInterval.value = preset.pollInterval;
+      });
+
+      function openWizard() {
+        formStep.hidden = false;
+        progressStep.hidden = true;
+        actionsRow.hidden = true;
+        addToConfigBtn.hidden = true;
+        closeFinishedBtn.hidden = true;
+        progressLog.innerHTML = '';
+        pendingNodeConfig = null;
+        dialog.showModal();
+      }
+
+      function closeWizard() {
+        dialog.close();
+      }
+
+      const statusIcons = {
+        running: '&#9679;',
+        ok: '&#10003;',
+        warn: '&#9888;',
+        error: '&#10007;',
+        complete: '&#10003;'
+      };
+
+      function appendLogEntry(data) {
+        const entry = document.createElement('div');
+        entry.className = 'wizard-log-entry wiz-' + (data.status || 'running');
+        const icon = document.createElement('span');
+        icon.className = 'wizard-log-icon';
+        icon.innerHTML = statusIcons[data.status] || statusIcons.running;
+        const msg = document.createElement('span');
+        msg.textContent = data.message || '';
+        entry.appendChild(icon);
+        entry.appendChild(msg);
+        progressLog.appendChild(entry);
+        progressLog.scrollTop = progressLog.scrollHeight;
+      }
+
+      async function startSetup() {
+        const nodeId = fields.nodeId.value.trim();
+        const host = fields.host.value.trim();
+        const adminUser = fields.adminUser.value.trim();
+        if (!nodeId || !host || !adminUser) {
+          setStatus('Node ID, Host, and Admin User are required', 'error');
+          return;
+        }
+
+        formStep.hidden = true;
+        progressStep.hidden = false;
+        progressLog.innerHTML = '';
+        actionsRow.hidden = true;
+        addToConfigBtn.hidden = true;
+        closeFinishedBtn.hidden = true;
+
+        const payload = {
+          nodeId: nodeId,
+          host: host,
+          sshPort: Number(fields.sshPort.value) || 22,
+          adminUser: adminUser,
+          nodeType: fields.nodeType.value,
+          description: fields.description.value.trim(),
+          buildRoot: fields.buildRoot.value.trim(),
+          stackRoot: fields.stackRoot.value.trim(),
+          volumeRoot: fields.volumeRoot.value.trim(),
+          workerPollIntervalSeconds: Number(fields.pollInterval.value) || 15
+        };
+
+        setStatus('Setting up node ' + nodeId + '...', 'progress');
+        pushActionFeed('Node setup started for ' + nodeId, 'progress');
+
+        try {
+          const response = await fetch(joinBase('/api/nodes/setup'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+                  appendLogEntry(data);
+                  if (data.status === 'complete' && data.nodeConfig) {
+                    pendingNodeConfig = data.nodeConfig;
+                  }
+                  if (data.status === 'error') {
+                    pushActionFeed('Node setup failed: ' + data.message, 'error');
+                  }
+                } catch (e) {
+                  // skip malformed events
+                }
+              }
+            }
+          }
+        } catch (err) {
+          appendLogEntry({ status: 'error', message: 'Connection error: ' + err.message });
+          pushActionFeed('Node setup connection error', 'error');
+        }
+
+        actionsRow.hidden = false;
+        closeFinishedBtn.hidden = false;
+        if (pendingNodeConfig) {
+          addToConfigBtn.hidden = false;
+          setStatus('Node ' + nodeId + ' setup complete', 'ok');
+          pushActionFeed('Node ' + nodeId + ' setup complete');
+        } else {
+          setStatus('Node setup had issues — check the log', 'error');
+        }
+      }
+
+      document.getElementById('openNodeSetupWizardButton').addEventListener('click', openWizard);
+      document.getElementById('closeNodeSetupWizardButton').addEventListener('click', closeWizard);
+      document.getElementById('wizCancelButton').addEventListener('click', closeWizard);
+      document.getElementById('wizStartSetupButton').addEventListener('click', startSetup);
+      document.getElementById('wizCloseFinishedButton').addEventListener('click', closeWizard);
+      document.getElementById('wizAddToConfigButton').addEventListener('click', () => {
+        if (!pendingNodeConfig) return;
+        const existing = state.config.workerNodes.findIndex(n => n.id === pendingNodeConfig.id);
+        if (existing >= 0) {
+          state.config.workerNodes[existing] = pendingNodeConfig;
+        } else {
+          state.config.workerNodes.push(pendingNodeConfig);
+        }
+        normalizeRemoteWorkloadNodeIds();
+        renderWorkerNodes();
+        renderRemoteWorkloads();
+        renderBedrockServers();
+        renderPiProxyProfile();
+        syncRawJson();
+        setStatus('Added node ' + pendingNodeConfig.id + ' to config (save to apply)');
+        pushActionFeed('Node ' + pendingNodeConfig.id + ' added to config');
+        closeWizard();
+      });
+
+      dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) closeWizard();
+      });
+    })();
+    // ─── End Node Setup Wizard ────────────────────────────────────────
+
     document.getElementById('addRemoteWorkloadButton').addEventListener('click', () => {
       state.config.remoteWorkloads.push(createDefaultRemoteJobWorkload());
       renderRemoteWorkloads();
@@ -7149,6 +7578,35 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           return;
         }
         sendJson(response, 200, { message: 'Cancelled pending Bedrock update', manualUpdate: record });
+        return;
+      }
+
+      if (request.method === 'POST' && path === '/api/nodes/setup') {
+        const body = JSON.parse(await readBody(request)) as NodeSetupRequest;
+        if (!body.nodeId || !body.host || !body.adminUser) {
+          sendJson(response, 400, { error: 'nodeId, host, and adminUser are required' });
+          return;
+        }
+        response.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        });
+        const sendEvent = (data: unknown): void => {
+          response.write(`data: ${JSON.stringify(data)}\n\n`);
+        };
+        try {
+          await bootstrapWorkerNode(body, (progress) => {
+            sendEvent(progress);
+          });
+        } catch (error) {
+          sendEvent({
+            step: 'error',
+            status: 'error',
+            message: error instanceof Error ? error.message : String(error)
+          });
+        }
+        response.end();
         return;
       }
 
