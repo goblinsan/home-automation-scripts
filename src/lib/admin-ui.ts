@@ -1752,13 +1752,30 @@ function htmlPage(basePath: string): string {
       <!-- ═══ SERVICES TAB ═══ -->
       <div class="tab-panel" data-tab-panel="services" hidden>
       <nav class="sub-tab-nav" data-sub-group="services">
-        <button class="sub-tab-button active" data-sub-tab="svc-profiles">Service Profiles</button>
+        <button class="sub-tab-button active" data-sub-tab="svc-remote">Remote Services</button>
+        <button class="sub-tab-button" data-sub-tab="svc-profiles">Service Profiles</button>
         <button class="sub-tab-button" data-sub-tab="svc-deploy">Apps &amp; Deploys</button>
         <button class="sub-tab-button" data-sub-tab="svc-jobs">Host Jobs</button>
         <button class="sub-tab-button" data-sub-tab="svc-features">Feature Flags</button>
       </nav>
 
-      <div class="sub-tab-panel active" data-sub-tab-panel="svc-profiles">
+      <div class="sub-tab-panel active" data-sub-tab-panel="svc-remote">
+        <div class="card card-quiet">
+          <div class="split-actions">
+            <div>
+              <span class="pill">Deploy</span>
+              <h3>Remote Container Services</h3>
+              <p>Deploy and manage containerised services on your worker nodes. The wizard walks you through picking a service, configuring it, and deploying — all in one step.</p>
+            </div>
+            <div class="toolbar">
+              <button id="openServiceDeployWizardButtonSvc" class="primary-action">Deploy a Service</button>
+            </div>
+          </div>
+        </div>
+        <div id="remoteServicesOverview" class="section-list"></div>
+      </div>
+
+      <div class="sub-tab-panel" data-sub-tab-panel="svc-profiles">
       <details class="card section-card" open>
         <summary>
           <div class="section-summary-copy">
@@ -4549,6 +4566,7 @@ function htmlPage(basePath: string): string {
     }
 
     function renderRemoteWorkloads() {
+      renderRemoteServicesOverview();
       const container = document.getElementById('remoteWorkloadsContainer');
       container.innerHTML = '';
       if (state.config.remoteWorkloads.length === 0) {
@@ -5005,6 +5023,33 @@ function htmlPage(basePath: string): string {
         }
 
         container.appendChild(element);
+      });
+    }
+
+    function renderRemoteServicesOverview() {
+      const container = document.getElementById('remoteServicesOverview');
+      if (!container) return;
+      const services = state.config.remoteWorkloads.filter(w => w.kind === 'container-service');
+      if (services.length === 0) {
+        container.innerHTML = '<p class="wizard-hint" style="padding:.75rem">No container services deployed yet. Click <strong>Deploy a Service</strong> above to get started.</p>';
+        return;
+      }
+      container.innerHTML = '';
+      services.forEach(svc => {
+        const status = state.remoteServiceStatuses[svc.id];
+        const statusLabel = status ? (status.running ? 'Running' : 'Stopped') : 'Unknown';
+        const statusCls = status ? (status.running ? 'success' : 'error') : '';
+        const node = state.config.workerNodes.find(n => n.id === svc.nodeId);
+        const nodeLabel = node ? svc.nodeId + ' (' + node.host + ')' : svc.nodeId || 'unassigned';
+        const ports = (svc.service && svc.service.ports || []).map(p => p.published + ':' + p.target).join(', ') || 'none';
+        const card = document.createElement('div');
+        card.className = 'card card-quiet';
+        card.innerHTML = '<div class="split-actions"><div>' +
+          '<strong>' + svc.id + '</strong>' +
+          (svc.description ? ' &mdash; ' + svc.description : '') +
+          '<br><small>Node: ' + nodeLabel + ' &bull; Ports: ' + ports + ' &bull; Status: <span class="' + statusCls + '">' + statusLabel + '</span></small>' +
+          '</div></div>';
+        container.appendChild(card);
       });
     }
 
@@ -6789,9 +6834,14 @@ function htmlPage(basePath: string): string {
         renderBedrockServers();
         renderPiProxyProfile();
         syncRawJson();
-        setStatus('Added node ' + pendingNodeConfig.id + ' to config (save to apply)');
-        pushActionFeed('Node ' + pendingNodeConfig.id + ' added to config');
         closeWizard();
+        setStatus('Saving node ' + pendingNodeConfig.id + '…');
+        persistConfigState().then(() => {
+          setStatus('Node ' + pendingNodeConfig.id + ' saved', 'ok');
+          pushActionFeed('Node ' + pendingNodeConfig.id + ' added and saved');
+        }).catch(() => {
+          setStatus('Node added to config but save failed — click Save to retry', 'error');
+        });
       });
 
       dialog.addEventListener('click', (e) => {
@@ -7141,6 +7191,7 @@ function htmlPage(basePath: string): string {
 
       // ── Wire events ──
       document.getElementById('openServiceDeployWizardButton').addEventListener('click', openSvcWizard);
+      document.getElementById('openServiceDeployWizardButtonSvc').addEventListener('click', openSvcWizard);
       document.getElementById('closeSvcWizardButton').addEventListener('click', closeSvcWizard);
       document.getElementById('svcCatalogCancelBtn').addEventListener('click', closeSvcWizard);
       document.getElementById('svcCatalogNextBtn').addEventListener('click', () => {
