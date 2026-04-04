@@ -1014,7 +1014,7 @@ function htmlPage(basePath: string): string {
     }
     .top-tab-nav {
       display: grid;
-      grid-template-columns: repeat(10, minmax(132px, 1fr));
+      grid-template-columns: repeat(5, minmax(132px, 1fr));
       gap: 8px;
       padding-bottom: 2px;
       width: min(1380px, 100%);
@@ -1037,6 +1037,34 @@ function htmlPage(basePath: string): string {
       color: var(--accent-strong);
       border-color: #ffffff;
     }
+    .sub-tab-nav {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 18px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 0;
+    }
+    .sub-tab-nav .sub-tab-button {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-bottom: -2px;
+      white-space: nowrap;
+    }
+    .sub-tab-nav .sub-tab-button:hover {
+      color: var(--fg);
+    }
+    .sub-tab-nav .sub-tab-button.active {
+      color: var(--accent-strong);
+      border-bottom-color: var(--accent-strong);
+    }
+    .sub-tab-panel { display: none; }
+    .sub-tab-panel.active { display: block; }
     .nav-card {
       background: linear-gradient(180deg, var(--sidebar) 0%, #214c44 100%);
       color: #f3f7f5;
@@ -1275,16 +1303,11 @@ function htmlPage(basePath: string): string {
         </div>
       </div>
       <nav class="top-tab-nav" aria-label="Sections">
-        <button class="tab-button active" data-tab="overview">Overview</button>
-        <button class="tab-button" data-tab="gateway">Gateway</button>
-        <button class="tab-button" data-tab="services">Runtime</button>
-        <button class="tab-button" data-tab="secrets">Secrets</button>
-        <button class="tab-button" data-tab="agents">AI Agents</button>
-        <button class="tab-button" data-tab="workflows">Automations</button>
-        <button class="tab-button" data-tab="remote">Nodes</button>
-        <button class="tab-button" data-tab="bedrock">Minecraft</button>
-        <button class="tab-button" data-tab="apps">Deployments</button>
-        <button class="tab-button" data-tab="raw">Advanced JSON</button>
+        <button class="tab-button active" data-tab="overview">Dashboard</button>
+        <button class="tab-button" data-tab="services">Services</button>
+        <button class="tab-button" data-tab="agents">Agents &amp; Automations</button>
+        <button class="tab-button" data-tab="infra">Infrastructure</button>
+        <button class="tab-button" data-tab="settings">Settings</button>
       </nav>
     </div>
   </header>
@@ -1297,7 +1320,15 @@ function htmlPage(basePath: string): string {
         </div>
       </div>
 
-      <div class="tab-panel" data-tab-panel="gateway">
+      <!-- ═══ INFRASTRUCTURE TAB ═══ -->
+      <div class="tab-panel" data-tab-panel="infra" hidden>
+      <nav class="sub-tab-nav" data-sub-group="infra">
+        <button class="sub-tab-button active" data-sub-tab="infra-gateway">Gateway</button>
+        <button class="sub-tab-button" data-sub-tab="infra-nodes">Nodes</button>
+        <button class="sub-tab-button" data-sub-tab="infra-minecraft">Minecraft</button>
+      </nav>
+
+      <div class="sub-tab-panel active" data-sub-tab-panel="infra-gateway">
       <details class="card section-card" open>
         <summary>
           <div class="section-summary-copy">
@@ -1377,10 +1408,18 @@ function htmlPage(basePath: string): string {
           </div>
         </div>
       </details>
-
       </div>
 
+      <!-- ═══ SERVICES TAB ═══ -->
       <div class="tab-panel" data-tab-panel="services" hidden>
+      <nav class="sub-tab-nav" data-sub-group="services">
+        <button class="sub-tab-button active" data-sub-tab="svc-profiles">Service Profiles</button>
+        <button class="sub-tab-button" data-sub-tab="svc-deploy">Apps &amp; Deploys</button>
+        <button class="sub-tab-button" data-sub-tab="svc-jobs">Host Jobs</button>
+        <button class="sub-tab-button" data-sub-tab="svc-features">Feature Flags</button>
+      </nav>
+
+      <div class="sub-tab-panel active" data-sub-tab-panel="svc-profiles">
       <details class="card section-card" open>
         <summary>
           <div class="section-summary-copy">
@@ -1684,7 +1723,73 @@ function htmlPage(basePath: string): string {
 
       </div>
 
-      <div class="tab-panel" data-tab-panel="secrets" hidden>
+      <div class="sub-tab-panel" data-sub-tab-panel="svc-deploy">
+        <details class="card section-card" open>
+          <summary>
+            <div class="section-summary-copy">
+              <span class="pill">Apps</span>
+              <h3>Managed Apps</h3>
+              <p>Git-based services deployed by the control-plane.</p>
+            </div>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div></div>
+              <button id="addAppButton">Add App</button>
+            </div>
+            <div id="appsContainer" class="section-list"></div>
+          </div>
+        </details>
+      </div>
+
+      <div class="sub-tab-panel" data-sub-tab-panel="svc-jobs">
+        <details class="card section-card" open>
+          <summary>
+            <div class="section-summary-copy">
+              <span class="pill">Jobs</span>
+              <h3>Host Scheduled Jobs</h3>
+              <p>Host-level scheduled commands tied to an app deployment.</p>
+            </div>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div></div>
+              <button id="addJobButton">Add Job</button>
+            </div>
+            <div id="jobsContainer" class="section-list"></div>
+          </div>
+        </details>
+      </div>
+
+      <div class="sub-tab-panel" data-sub-tab-panel="svc-features">
+        <details class="card section-card" open>
+          <summary>
+            <div class="section-summary-copy">
+              <span class="pill">Features</span>
+              <h3>Feature Flags</h3>
+              <p>Optional deployment toggles and feature switches.</p>
+            </div>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div></div>
+              <button id="addFeatureButton">Add Feature</button>
+            </div>
+            <div id="featuresContainer" class="section-list"></div>
+          </div>
+        </details>
+      </div>
+
+      </div>
+
+      <!-- ═══ SETTINGS TAB ═══ -->
+      <div class="tab-panel" data-tab-panel="settings" hidden>
+      <nav class="sub-tab-nav" data-sub-group="settings">
+        <button class="sub-tab-button active" data-sub-tab="settings-creds">Credentials</button>
+        <button class="sub-tab-button" data-sub-tab="settings-json">Advanced JSON</button>
+      </nav>
+
+      <div class="sub-tab-panel active" data-sub-tab-panel="settings-creds">
       <div class="section-list">
         <div class="card card-quiet">
           <div class="split-actions">
@@ -1770,7 +1875,27 @@ function htmlPage(basePath: string): string {
       </div>
       </div>
 
+      <div class="sub-tab-panel" data-sub-tab-panel="settings-json">
+        <div class="split-actions">
+          <div>
+            <h3>Advanced JSON</h3>
+            <p>Exact config file representation. Use this only when the guided tabs are not enough.</p>
+          </div>
+          <button id="applyRawButton">Apply Raw JSON</button>
+        </div>
+        <textarea id="rawJson" spellcheck="false" style="width: 100%; min-height: 600px; font-family: monospace; font-size: 13px;"></textarea>
+      </div>
+
+      </div>
+
+      <!-- ═══ AGENTS & AUTOMATIONS TAB ═══ -->
       <div class="tab-panel" data-tab-panel="agents" hidden>
+      <nav class="sub-tab-nav" data-sub-group="agents">
+        <button class="sub-tab-button active" data-sub-tab="agents-list">Agents</button>
+        <button class="sub-tab-button" data-sub-tab="agents-workflows">Workflows</button>
+      </nav>
+
+      <div class="sub-tab-panel active" data-sub-tab-panel="agents-list">
       <details class="card section-card" open>
         <summary>
           <div class="section-summary-copy">
@@ -1792,7 +1917,7 @@ function htmlPage(basePath: string): string {
       </details>
       </div>
 
-      <div class="tab-panel" data-tab-panel="workflows" hidden>
+      <div class="sub-tab-panel" data-sub-tab-panel="agents-workflows">
       <details class="card section-card">
         <summary>
           <div class="section-summary-copy">
@@ -1830,7 +1955,9 @@ function htmlPage(basePath: string): string {
       </details>
       </div>
 
-      <div class="tab-panel" data-tab-panel="remote" hidden>
+      </div>
+
+      <div class="sub-tab-panel" data-sub-tab-panel="infra-nodes">
       <div class="section-list">
         <div class="card card-quiet">
           <div>
@@ -1909,7 +2036,7 @@ function htmlPage(basePath: string): string {
       </div>
       </div>
 
-      <div class="tab-panel" data-tab-panel="bedrock" hidden>
+      <div class="sub-tab-panel" data-sub-tab-panel="infra-minecraft">
       <details class="card section-card" open>
         <summary>
           <div class="section-summary-copy">
@@ -1932,6 +2059,9 @@ function htmlPage(basePath: string): string {
       </details>
       </div>
 
+      </div>
+
+      <!-- ═══ DASHBOARD TAB ═══ -->
       <div class="tab-panel" data-tab-panel="overview">
       <div class="card card-quiet">
         <div class="split-actions">
@@ -1943,34 +2073,24 @@ function htmlPage(basePath: string): string {
         </div>
         <div class="overview-grid">
           <div class="card overview-card">
-            <strong>Minecraft</strong>
-            <p>Bedrock servers, world settings, deploy/start/stop/restart, broadcast, kick, ban, update.</p>
-            <button data-open-tab="bedrock">Open Minecraft</button>
+            <strong>Services</strong>
+            <p>Service profiles, env files, delivery channels, TTS wiring, app deployments, and feature flags.</p>
+            <button data-open-tab="services">Open Services</button>
           </div>
           <div class="card overview-card">
-            <strong>Automations</strong>
-            <p>Scheduled workflows stored in <code>gateway-api</code>. Use this for agentic jobs and workflow records.</p>
-            <button data-open-tab="workflows">Open Automations</button>
+            <strong>Agents &amp; Automations</strong>
+            <p>Chat agents, scheduled workflows, and agentic job records.</p>
+            <button data-open-tab="agents">Open Agents</button>
           </div>
           <div class="card overview-card">
-            <strong>Deployments</strong>
-            <p><code>Apps</code> are git-based services deployed by the control-plane. <code>Jobs</code> are host scheduled commands attached to an app.</p>
-            <button data-open-tab="apps">Open Deployments</button>
+            <strong>Infrastructure</strong>
+            <p>Gateway settings, worker nodes, remote workloads, and Minecraft server admin.</p>
+            <button data-open-tab="infra">Open Infrastructure</button>
           </div>
           <div class="card overview-card">
-            <strong>Runtime</strong>
-            <p>Service profiles, env files, delivery channels, TTS wiring, and runtime integration settings.</p>
-            <button data-open-tab="services">Open Runtime</button>
-          </div>
-          <div class="card overview-card">
-            <strong>Secrets</strong>
-            <p>API keys, bot tokens, passwords, KULRS credentials, and secret env vars.</p>
-            <button data-open-tab="secrets">Open Secrets</button>
-          </div>
-          <div class="card overview-card">
-            <strong>Nodes</strong>
-            <p>Connection info for worker nodes plus generic remote container jobs.</p>
-            <button data-open-tab="remote">Open Nodes</button>
+            <strong>Settings</strong>
+            <p>Credentials, API keys, bot tokens, secrets, and the raw config JSON editor.</p>
+            <button data-open-tab="settings">Open Settings</button>
           </div>
         </div>
       </div>
@@ -2017,60 +2137,6 @@ function htmlPage(basePath: string): string {
       </details>
       </div>
 
-      <div class="tab-panel" data-tab-panel="apps" hidden>
-      <div class="section-list">
-        <details class="card section-card" open>
-          <summary>
-            <div class="section-summary-copy">
-              <span class="pill">Apps</span>
-              <h3>Managed Apps</h3>
-              <p>Git-based services deployed by the control-plane.</p>
-            </div>
-          </summary>
-          <div class="section-body">
-            <div class="split-actions">
-              <div></div>
-              <button id="addAppButton">Add App</button>
-            </div>
-            <div id="appsContainer" class="section-list"></div>
-          </div>
-        </details>
-
-        <details class="card section-card">
-          <summary>
-            <div class="section-summary-copy">
-              <span class="pill">Jobs</span>
-              <h3>Host Scheduled Jobs</h3>
-              <p>Host-level scheduled commands tied to an app deployment.</p>
-            </div>
-          </summary>
-          <div class="section-body">
-            <div class="split-actions">
-              <div></div>
-              <button id="addJobButton">Add Job</button>
-            </div>
-            <div id="jobsContainer" class="section-list"></div>
-          </div>
-        </details>
-
-        <details class="card section-card">
-          <summary>
-            <div class="section-summary-copy">
-              <span class="pill">Features</span>
-              <h3>Feature Flags</h3>
-              <p>Optional deployment toggles and feature switches.</p>
-            </div>
-          </summary>
-          <div class="section-body">
-            <div class="split-actions">
-              <div></div>
-              <button id="addFeatureButton">Add Feature</button>
-            </div>
-            <div id="featuresContainer" class="section-list"></div>
-          </div>
-        </details>
-      </div>
-      </div>
     </section>
 
     <aside class="aside-stack">
@@ -2084,16 +2150,6 @@ function htmlPage(basePath: string): string {
         </div>
         <div id="runtimeSummary" class="metric-grid"></div>
         <div id="runtimeMeta" class="meta-list"></div>
-      </section>
-      <section class="panel tab-panel" data-tab-panel="raw" hidden>
-        <div class="split-actions">
-          <div>
-            <h2>Advanced JSON</h2>
-            <p>Exact config file representation. Use this only when the guided tabs are not enough.</p>
-          </div>
-          <button id="applyRawButton">Apply Raw JSON</button>
-        </div>
-        <textarea id="rawJson" spellcheck="false"></textarea>
       </section>
       <details class="panel" open>
         <summary><strong>Definitions</strong></summary>
@@ -2288,8 +2344,20 @@ function htmlPage(basePath: string): string {
       document.querySelectorAll('[data-tab-panel]').forEach((panel) => {
         panel.hidden = panel.dataset.tabPanel !== state.activeTab;
       });
-      document.querySelectorAll('.tab-button').forEach((button) => {
+      document.querySelectorAll('.top-tab-nav .tab-button').forEach((button) => {
         button.classList.toggle('active', button.dataset.tab === state.activeTab);
+      });
+    }
+
+    function switchSubTab(groupName, subTabId) {
+      const group = document.querySelector('[data-sub-group="' + groupName + '"]');
+      if (!group) return;
+      const parent = group.parentElement;
+      parent.querySelectorAll('.sub-tab-panel').forEach((panel) => {
+        panel.classList.toggle('active', panel.dataset.subTabPanel === subTabId);
+      });
+      group.querySelectorAll('.sub-tab-button').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.subTab === subTabId);
       });
     }
 
@@ -5232,10 +5300,12 @@ function htmlPage(basePath: string): string {
     async function loadTabData(tab, options = {}) {
       const settled = await Promise.allSettled((() => {
         switch (tab) {
-          case 'remote':
+          case 'infra':
             return [
               fetchRuntime(),
-              refreshAllRemoteServiceStatuses({ silent: true })
+              refreshAllRemoteServiceStatuses({ silent: true }),
+              refreshAllMinecraftStatuses({ silent: true, skipRegistry: true }),
+              fetchPiProxyStatus({ silent: true })
             ];
           case 'services':
             return [
@@ -5247,18 +5317,9 @@ function htmlPage(basePath: string): string {
           case 'agents':
             return [
               fetchTtsVoices(),
-              fetchChatProviders()
-            ];
-          case 'workflows':
-            return [
+              fetchChatProviders(),
               fetchWorkflows(),
               fetchJobsCatalog(),
-              fetchRuntime()
-            ];
-          case 'bedrock':
-            return [
-              refreshAllMinecraftStatuses({ silent: true, skipRegistry: true }),
-              fetchPiProxyStatus({ silent: true }),
               fetchRuntime()
             ];
           default:
@@ -5733,11 +5794,18 @@ function htmlPage(basePath: string): string {
       setStatus('Chat agents synced to gateway-chat-platform');
     }
 
-    document.querySelectorAll('.tab-button').forEach((button) => {
+    document.querySelectorAll('.top-tab-nav .tab-button').forEach((button) => {
       button.addEventListener('click', async () => {
         state.activeTab = button.dataset.tab || 'overview';
         render();
         await loadTabData(state.activeTab);
+      });
+    });
+
+    document.querySelectorAll('.sub-tab-nav .sub-tab-button').forEach((button) => {
+      button.addEventListener('click', () => {
+        const group = button.closest('.sub-tab-nav').dataset.subGroup;
+        switchSubTab(group, button.dataset.subTab);
       });
     });
 
@@ -6148,8 +6216,9 @@ function htmlPage(basePath: string): string {
     });
     const addBedrockServerWorkload = () => {
       if (!firstWorkerNodeId()) {
-        state.activeTab = 'nodes';
+        state.activeTab = 'infra';
         render();
+        switchSubTab('infra', 'infra-nodes');
         setStatus('Add a worker node first. Set a Node Id and host in Nodes, then come back to Minecraft.', 'error');
         return;
       }
@@ -6408,12 +6477,12 @@ function htmlPage(basePath: string): string {
       fetchRuntime().catch(() => undefined);
     }, 15000);
     setInterval(() => {
-      if (state.activeTab === 'remote') {
+      if (state.activeTab === 'infra') {
         refreshAllRemoteServiceStatuses({ silent: true }).catch(() => undefined);
       }
     }, 30000);
     setInterval(() => {
-      if (state.activeTab === 'bedrock') {
+      if (state.activeTab === 'infra') {
         refreshAllMinecraftStatuses({ silent: true, skipRegistry: true }).catch(() => undefined);
       }
     }, 60000);
