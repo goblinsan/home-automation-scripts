@@ -2351,7 +2351,7 @@ function htmlPage(basePath: string): string {
         <div class="wizard-preset-grid">
           <button class="wizard-preset-card" data-preset="general">
             <strong>General Linux Node</strong>
-            <small>Standard Docker worker with <code>/srv/gateway-workloads/</code> roots.</small>
+            <small>Standard Docker worker with <code>/srv/builds</code>, <code>/srv/stacks</code>, <code>/srv/volumes</code> roots.</small>
           </button>
           <button class="wizard-preset-card" data-preset="gpu">
             <strong>GPU Compute Node</strong>
@@ -2405,15 +2405,15 @@ function htmlPage(basePath: string): string {
           </label>
           <label class="wizard-field">
             <span>Build Root</span>
-            <input id="wizBuildRoot" value="/srv/gateway-workloads/builds" />
+            <input id="wizBuildRoot" value="/srv/builds" />
           </label>
           <label class="wizard-field">
             <span>Stack Root</span>
-            <input id="wizStackRoot" value="/srv/gateway-workloads/stacks" />
+            <input id="wizStackRoot" value="/srv/stacks" />
           </label>
           <label class="wizard-field">
             <span>Volume Root</span>
-            <input id="wizVolumeRoot" value="/srv/gateway-workloads/volumes" />
+            <input id="wizVolumeRoot" value="/srv/volumes" />
           </label>
         </div>
         <div class="wizard-actions">
@@ -4183,9 +4183,9 @@ function htmlPage(basePath: string): string {
           host: '',
           sshUser: 'deploy',
           sshPort: 22,
-          buildRoot: '/data/docker/builds/gateway-workloads',
-          stackRoot: '/data/docker/stacks/gateway-workloads',
-          volumeRoot: '/data/docker/volumes/gateway-workloads',
+          buildRoot: '/data/docker/builds',
+          stackRoot: '/data/docker/stacks',
+          volumeRoot: '/data/docker/volumes',
           workerPollIntervalSeconds: 15,
           nodeCommand: '/usr/bin/node',
           systemdUnitDirectory: '/etc/systemd/system',
@@ -4204,9 +4204,9 @@ function htmlPage(basePath: string): string {
           host: '',
           sshUser: 'deploy',
           sshPort: 22,
-          buildRoot: '/opt/gateway-control-plane',
-          stackRoot: '/opt/gateway-control-plane/stacks',
-          volumeRoot: '/opt/gateway-control-plane/volumes',
+          buildRoot: '/opt/builds',
+          stackRoot: '/opt/stacks',
+          volumeRoot: '/opt/volumes',
           workerPollIntervalSeconds: 30,
           nodeCommand: '/usr/bin/node',
           systemdUnitDirectory: '/etc/systemd/system',
@@ -4224,9 +4224,9 @@ function htmlPage(basePath: string): string {
         host: '',
         sshUser: 'deploy',
         sshPort: 22,
-        buildRoot: '/srv/gateway-workloads/builds',
-        stackRoot: '/srv/gateway-workloads/stacks',
-        volumeRoot: '/srv/gateway-workloads/volumes',
+        buildRoot: '/srv/builds',
+        stackRoot: '/srv/stacks',
+        volumeRoot: '/srv/volumes',
         workerPollIntervalSeconds: 15,
         nodeCommand: '/usr/bin/node',
         systemdUnitDirectory: '/etc/systemd/system',
@@ -6477,23 +6477,23 @@ function htmlPage(basePath: string): string {
 
       const presets = {
         general: {
-          buildRoot: '/srv/gateway-workloads/builds',
-          stackRoot: '/srv/gateway-workloads/stacks',
-          volumeRoot: '/srv/gateway-workloads/volumes',
+          buildRoot: '/srv/builds',
+          stackRoot: '/srv/stacks',
+          volumeRoot: '/srv/volumes',
           description: 'Standard Docker worker node',
           pollInterval: 15
         },
         gpu: {
-          buildRoot: '/data/docker/builds/gateway-workloads',
-          stackRoot: '/data/docker/stacks/gateway-workloads',
-          volumeRoot: '/data/docker/volumes/gateway-workloads',
+          buildRoot: '/data/docker/builds',
+          stackRoot: '/data/docker/stacks',
+          volumeRoot: '/data/docker/volumes',
           description: 'Docker + NVIDIA GPU worker for LLM/STT/CV APIs',
           pollInterval: 15
         },
         pi: {
-          buildRoot: '/opt/gateway-control-plane',
-          stackRoot: '/opt/gateway-control-plane/stacks',
-          volumeRoot: '/opt/gateway-control-plane/volumes',
+          buildRoot: '/opt/builds',
+          stackRoot: '/opt/stacks',
+          volumeRoot: '/opt/volumes',
           description: 'Raspberry Pi edge node',
           pollInterval: 30
         },

@@ -1779,8 +1779,13 @@ export async function bootstrapWorkerNode(
   }
 
   async function sshAdmin(command: string): Promise<{ code: number; stdout: string; stderr: string }> {
+    // When using password auth, the same password is likely the sudo password.
+    // Wrap with a SUDO_ASKPASS helper so sudo -A works non-interactively.
+    const wrappedCommand = usePassword
+      ? `export SUDO_ASKPASS_SCRIPT=$(mktemp); printf '#!/bin/sh\\necho %q\\n' '${adminPassword!.replaceAll("'", "'\\''")}' > "$SUDO_ASKPASS_SCRIPT"; chmod 700 "$SUDO_ASKPASS_SCRIPT"; export SUDO_ASKPASS="$SUDO_ASKPASS_SCRIPT"; cleanup() { rm -f "$SUDO_ASKPASS_SCRIPT"; }; trap cleanup EXIT; ${command.replaceAll('sudo ', 'sudo -A ')}`
+      : command;
     const sshCmd = usePassword
-      ? `sshpass -e ssh -o PubkeyAuthentication=no ${adminSshOptions} ${adminTarget} ${shellQuote(command)}`
+      ? `sshpass -e ssh -o PubkeyAuthentication=no ${adminSshOptions} ${adminTarget} ${shellQuote(wrappedCommand)}`
       : `ssh ${adminSshOptions} ${adminTarget} ${shellQuote(command)}`;
     return await runShellCapture(
       sshCmd,
