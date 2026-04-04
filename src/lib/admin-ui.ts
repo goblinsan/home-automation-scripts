@@ -1611,18 +1611,10 @@ function htmlPage(basePath: string): string {
             <div class="section-summary-copy">
               <span class="pill">Node Setup</span>
               <h3>Add New Node</h3>
-              <p>Use a preset to create the node record, then edit the live fields below with the real host and paths for that machine.</p>
+              <p>Walk through the guided wizard to provision a new remote machine and register it with the control plane.</p>
             </div>
           </summary>
           <div class="section-body">
-            <div class="card card-quiet">
-              <p><strong>1.</strong> Ensure SSH access works from the control-plane host to the new node.</p>
-              <p><strong>2.</strong> Install Docker and the Compose plugin. For GPU nodes, also install the NVIDIA container runtime.</p>
-              <p><strong>3.</strong> Pick durable directories for build checkouts, compose stacks, and persistent workload volumes.</p>
-              <p><strong>4.</strong> Add the node with a preset below, then replace the placeholder host, node id, and paths in the Worker Nodes editor.</p>
-              <p><strong>5.</strong> Save the config, add workloads, and deploy them to the selected node from this same tab.</p>
-              <p><strong>6.</strong> Keep machine-specific inventory notes in <code>docs/local/</code>, not in tracked repo files.</p>
-            </div>
             <div class="toolbar">
               <button id="openNodeSetupWizardButton" class="primary-action">Setup New Node</button>
             </div>
