@@ -78,14 +78,12 @@ export function getPool(): pg.Pool {
   return pool;
 }
 
-export function getRedis(): Redis {
-  if (!redis) throw new Error('Metrics Redis client not initialized');
+export function getRedis(): Redis | null {
   return redis;
 }
 
 export async function initMetrics(config: MonitoringConfig): Promise<void> {
   const { default: pgMod } = await import('pg');
-  const { default: RedisMod } = await import('ioredis');
 
   pool = new pgMod.Pool({
     host: config.postgres.host,
@@ -97,13 +95,23 @@ export async function initMetrics(config: MonitoringConfig): Promise<void> {
     idleTimeoutMillis: 30_000,
   });
 
-  redis = new RedisMod({
-    host: config.redis.host,
-    port: config.redis.port,
-    maxRetriesPerRequest: 3,
-    lazyConnect: true,
-  });
-  await redis.connect();
+  // Redis is optional — used only as a cache
+  try {
+    const { default: RedisMod } = await import('ioredis');
+    const client = new RedisMod({
+      host: config.redis.host,
+      port: config.redis.port,
+      maxRetriesPerRequest: 3,
+      lazyConnect: true,
+      retryStrategy(times) { return times > 3 ? null : Math.min(times * 200, 2000); },
+    });
+    await client.connect();
+    redis = client;
+    console.log('[monitoring] Redis connected');
+  } catch (err) {
+    console.warn('[monitoring] Redis unavailable, running without cache:', err instanceof Error ? err.message : err);
+    redis = null;
+  }
 
   await runMigrations();
 }
@@ -250,7 +258,8 @@ export async function buildHealthSnapshot(
   const snapshot: HealthSnapshot = { targets: healthTargets, collectedAt: new Date().toISOString() };
 
   try {
-    getRedis().set(REDIS_HEALTH_KEY, JSON.stringify(snapshot), 'EX', 120);
+    const r = getRedis();
+    if (r) r.set(REDIS_HEALTH_KEY, JSON.stringify(snapshot), 'EX', 120);
   } catch { /* redis is optional cache */ }
 
   return snapshot;
@@ -259,7 +268,9 @@ export async function buildHealthSnapshot(
 /** Get cached snapshot from Redis, or null */
 export async function getCachedHealthSnapshot(): Promise<HealthSnapshot | null> {
   try {
-    const raw = await getRedis().get(REDIS_HEALTH_KEY);
+    const r = getRedis();
+    if (!r) return null;
+    const raw = await r.get(REDIS_HEALTH_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
