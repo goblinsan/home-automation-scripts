@@ -1574,16 +1574,15 @@ function htmlPage(basePath: string): string {
         </div>
         <div class="header-actions">
           <button id="refreshButton">Refresh</button>
+          <button id="restartButton" title="Restart control-plane container">⟳ Restart</button>
+          <button id="rawJsonButton" title="Edit raw config JSON">⚙</button>
           <button id="saveButton" class="primary">Save</button>
         </div>
       </div>
       <nav class="top-tab-nav" aria-label="Sections">
-        <button class="tab-button active" data-tab="overview">Dashboard</button>
-        <button class="tab-button" data-tab="services">Services</button>
-        <button class="tab-button" data-tab="agents">Agents &amp; Automations</button>
+        <button class="tab-button active" data-tab="services">Services</button>
         <button class="tab-button" data-tab="infra">Infrastructure</button>
         <button class="tab-button" data-tab="monitoring">Monitoring</button>
-        <button class="tab-button" data-tab="settings">Settings</button>
       </nav>
     </div>
   </header>
@@ -1592,7 +1591,6 @@ function htmlPage(basePath: string): string {
       <div class="split-actions">
         <div>
           <h2>Config Workspace</h2>
-          <p>Use the tabs above to focus one config area at a time. Changes stay in memory until you save.</p>
         </div>
       </div>
 
@@ -1777,14 +1775,131 @@ function htmlPage(basePath: string): string {
       <!-- ═══ SERVICES TAB ═══ -->
       <div class="tab-panel" data-tab-panel="services" hidden>
       <nav class="sub-tab-nav" data-sub-group="services">
-        <button class="sub-tab-button active" data-sub-tab="svc-remote">Remote Services</button>
-        <button class="sub-tab-button" data-sub-tab="svc-profiles">Service Profiles</button>
-        <button class="sub-tab-button" data-sub-tab="svc-deploy">Apps &amp; Deploys</button>
-        <button class="sub-tab-button" data-sub-tab="svc-jobs">Host Jobs</button>
-        <button class="sub-tab-button" data-sub-tab="svc-features">Feature Flags</button>
+        <button class="sub-tab-button active" data-sub-tab="svc-agents">Agents</button>
+        <button class="sub-tab-button" data-sub-tab="svc-workflows">Workflows</button>
+        <button class="sub-tab-button" data-sub-tab="svc-deploys">Deploys</button>
+        <button class="sub-tab-button" data-sub-tab="svc-profiles">Profiles</button>
+        <button class="sub-tab-button" data-sub-tab="svc-features">Features</button>
       </nav>
 
-      <div class="sub-tab-panel active" data-sub-tab-panel="svc-remote">
+      <div class="sub-tab-panel active" data-sub-tab-panel="svc-agents">
+      <details class="card section-card" open>
+        <summary>
+          <div class="section-summary-copy">
+            <span class="pill">Agents</span>
+            <h3>Configured Chat Agents</h3>
+            <p>Only these agents are synced into <code>gateway-chat-platform</code>.</p>
+          </div>
+        </summary>
+        <div class="section-body">
+          <div class="split-actions">
+            <div></div>
+            <div class="toolbar">
+              <button id="addGatewayChatAgentButton">Add Agent</button>
+              <button id="syncGatewayChatAgentsButtonSecondary">Sync Agents</button>
+            </div>
+          </div>
+          <div id="gatewayChatAgentsContainer" class="section-list"></div>
+        </div>
+      </details>
+      <details class="card section-card">
+        <summary>
+          <div class="section-summary-copy">
+            <span class="pill">Tools</span>
+            <h3>Agent Test Runner</h3>
+            <p>Quick agent test runs and workflow seed imports.</p>
+          </div>
+        </summary>
+        <div class="section-body">
+        <div class="split-actions">
+          <div></div>
+          <div class="toolbar">
+            <button id="syncGatewayChatAgentsButton">Sync Agents</button>
+            <button id="importWorkflowSeedButton">Import Workflow Seed</button>
+          </div>
+        </div>
+        <div class="row">
+          <label>Workflow Seed File
+            <input id="workflowSeedPath" />
+          </label>
+          <label>Agent
+            <select id="agentRunAgentId"></select>
+          </label>
+        </div>
+        <label>Prompt
+          <textarea id="agentRunPrompt">Give me a short readiness check in character, then confirm the local model route is working.</textarea>
+        </label>
+        <div class="row">
+          <label>Context JSON
+            <textarea id="agentRunContext">{}</textarea>
+          </label>
+          <label>Delivery JSON
+            <textarea id="agentRunDelivery">{}</textarea>
+          </label>
+        </div>
+        <div class="toolbar">
+          <button id="runAgentButton" class="primary">Run Agent</button>
+        </div>
+        <div id="agentRunResult" class="meta-list"></div>
+        </div>
+      </details>
+      </div>
+
+      <div class="sub-tab-panel" data-sub-tab-panel="svc-workflows">
+      <details class="card section-card">
+        <summary>
+          <div class="section-summary-copy">
+            <span class="pill">Catalog</span>
+            <h3>Automation Job Catalog</h3>
+            <p>Available refs for <code>target.type = gateway-jobs.run</code>.</p>
+          </div>
+        </summary>
+        <div class="section-body">
+          <div class="split-actions">
+            <div></div>
+            <button id="reloadJobsButton">Reload Jobs</button>
+          </div>
+          <div id="jobsCatalogContainer" class="section-list"></div>
+        </div>
+      </details>
+      <details class="card section-card" open>
+        <summary>
+          <div class="section-summary-copy">
+            <span class="pill">Automations</span>
+            <h3>Scheduled Workflows</h3>
+            <p>API-level automations stored and executed by <code>gateway-api</code>.</p>
+          </div>
+        </summary>
+        <div class="section-body">
+          <div class="split-actions">
+            <div></div>
+            <div class="toolbar">
+              <button id="reloadWorkflowsButton">Reload Workflows</button>
+              <button id="addWorkflowButton">Add Workflow</button>
+            </div>
+          </div>
+          <div id="workflowsContainer" class="section-list"></div>
+        </div>
+      </details>
+      <details class="card section-card" open>
+        <summary>
+          <div class="section-summary-copy">
+            <span class="pill">Jobs</span>
+            <h3>Host Scheduled Jobs</h3>
+            <p>Host-level scheduled commands tied to an app deployment.</p>
+          </div>
+        </summary>
+        <div class="section-body">
+          <div class="split-actions">
+            <div></div>
+            <button id="addJobButton">Add Job</button>
+          </div>
+          <div id="jobsContainer" class="section-list"></div>
+        </div>
+      </details>
+      </div>
+
+      <div class="sub-tab-panel" data-sub-tab-panel="svc-deploys">
         <div class="card card-quiet">
           <div class="split-actions">
             <div>
@@ -1798,6 +1913,22 @@ function htmlPage(basePath: string): string {
           </div>
         </div>
         <div id="remoteServicesOverview" class="section-list"></div>
+        <details class="card section-card" open>
+          <summary>
+            <div class="section-summary-copy">
+              <span class="pill">Apps</span>
+              <h3>Managed Apps</h3>
+              <p>Git-based services deployed by the control-plane.</p>
+            </div>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div></div>
+              <button id="addAppButton">Add App</button>
+            </div>
+            <div id="appsContainer" class="section-list"></div>
+          </div>
+        </details>
       </div>
 
       <div class="sub-tab-panel" data-sub-tab-panel="svc-profiles">
@@ -2102,44 +2233,53 @@ function htmlPage(basePath: string): string {
         </div>
       </details>
 
-      </div>
-
-      <div class="sub-tab-panel" data-sub-tab-panel="svc-deploy">
-        <details class="card section-card" open>
-          <summary>
-            <div class="section-summary-copy">
-              <span class="pill">Apps</span>
-              <h3>Managed Apps</h3>
-              <p>Git-based services deployed by the control-plane.</p>
-            </div>
-          </summary>
-          <div class="section-body">
-            <div class="split-actions">
-              <div></div>
-              <button id="addAppButton">Add App</button>
-            </div>
-            <div id="appsContainer" class="section-list"></div>
+      <details class="card section-card">
+        <summary>
+          <div class="section-summary-copy">
+            <span class="pill">Secrets</span>
+            <h3>Credentials &amp; Secret Env Vars</h3>
+            <p>API keys, bot tokens, passwords, and other sensitive values for all services.</p>
           </div>
-        </details>
-      </div>
-
-      <div class="sub-tab-panel" data-sub-tab-panel="svc-jobs">
-        <details class="card section-card" open>
-          <summary>
-            <div class="section-summary-copy">
-              <span class="pill">Jobs</span>
-              <h3>Host Scheduled Jobs</h3>
-              <p>Host-level scheduled commands tied to an app deployment.</p>
-            </div>
-          </summary>
-          <div class="section-body">
-            <div class="split-actions">
-              <div></div>
-              <button id="addJobButton">Add Job</button>
-            </div>
-            <div id="jobsContainer" class="section-list"></div>
+        </summary>
+        <div class="section-body">
+          <h4>gateway-api Secrets</h4>
+          <div class="split-actions">
+            <div></div>
+            <button id="addGatewayApiSecretButton">Add Secret Env Var</button>
           </div>
-        </details>
+          <div id="gatewayApiSecretsContainer" class="section-list"></div>
+
+          <h4 style="margin-top:1rem">Delivery Channel Credentials</h4>
+          <div class="split-actions">
+            <div></div>
+            <button id="addGatewayApiSecretChannelButton">Add Channel</button>
+          </div>
+          <div id="gatewayApiSecretChannelsContainer" class="section-list"></div>
+
+          <h4 style="margin-top:1rem">KULRS Credentials</h4>
+          <div class="split-actions">
+            <div></div>
+            <button id="addKulrsSecretBotButton">Add KULRS Bot</button>
+          </div>
+          <div class="row">
+            <label>Firebase API Key
+              <input id="kulrsFirebaseApiKeySecrets" type="password" />
+            </label>
+            <label>Unsplash Access Key
+              <input id="kulrsUnsplashAccessKeySecrets" type="password" />
+            </label>
+          </div>
+          <div id="kulrsSecretBotsContainer" class="section-list"></div>
+
+          <h4 style="margin-top:1rem">gateway-chat-platform Secrets</h4>
+          <div class="split-actions">
+            <div></div>
+            <button id="addGatewayChatSecretButton">Add Secret Env Var</button>
+          </div>
+          <div id="gatewayChatSecretsContainer" class="section-list"></div>
+        </div>
+      </details>
+
       </div>
 
       <div class="sub-tab-panel" data-sub-tab-panel="svc-features">
@@ -2266,257 +2406,6 @@ function htmlPage(basePath: string): string {
 
       </div><!-- /monitoring tab -->
 
-      <!-- ═══ SETTINGS TAB ═══ -->
-      <div class="tab-panel" data-tab-panel="settings" hidden>
-      <nav class="sub-tab-nav" data-sub-group="settings">
-        <button class="sub-tab-button active" data-sub-tab="settings-creds">Credentials</button>
-        <button class="sub-tab-button" data-sub-tab="settings-json">Advanced JSON</button>
-      </nav>
-
-      <div class="sub-tab-panel active" data-sub-tab-panel="settings-creds">
-      <div class="section-list">
-        <div class="card card-quiet">
-          <div class="split-actions">
-            <div>
-              <span class="pill">Secrets</span>
-              <h3>Credentials, Keys, and Secret Env Vars</h3>
-              <p>Use this tab when you need to manage API keys, bot tokens, passwords, webhooks, or other sensitive values. This is the credential-focused view of the same config.</p>
-            </div>
-          </div>
-        </div>
-        <details class="card section-card" open>
-          <summary>
-            <div class="section-summary-copy">
-              <span class="pill">gateway-api</span>
-              <h3>Secret Env Vars</h3>
-              <p>Passwords, tokens, and private env vars for <code>gateway-api</code>.</p>
-            </div>
-          </summary>
-          <div class="section-body">
-            <div class="split-actions">
-              <div></div>
-              <button id="addGatewayApiSecretButton">Add Secret Env Var</button>
-            </div>
-            <div id="gatewayApiSecretsContainer" class="section-list"></div>
-          </div>
-        </details>
-        <details class="card section-card">
-          <summary>
-            <div class="section-summary-copy">
-              <span class="pill">Delivery</span>
-              <h3>Job Delivery Channels</h3>
-              <p>Credentials used when jobs send to Telegram or webhooks.</p>
-            </div>
-          </summary>
-          <div class="section-body">
-            <div class="split-actions">
-              <div></div>
-              <button id="addGatewayApiSecretChannelButton">Add Channel</button>
-            </div>
-            <div id="gatewayApiSecretChannelsContainer" class="section-list"></div>
-          </div>
-        </details>
-        <details class="card section-card">
-          <summary>
-            <div class="section-summary-copy">
-              <span class="pill">KULRS</span>
-              <h3>KULRS Credentials</h3>
-              <p>Firebase, Unsplash, and per-bot credentials for palette generation.</p>
-            </div>
-          </summary>
-          <div class="section-body">
-            <div class="split-actions">
-              <div></div>
-              <button id="addKulrsSecretBotButton">Add KULRS Bot</button>
-            </div>
-            <div class="row">
-              <label>Firebase API Key
-                <input id="kulrsFirebaseApiKeySecrets" type="password" />
-              </label>
-              <label>Unsplash Access Key
-                <input id="kulrsUnsplashAccessKeySecrets" type="password" />
-              </label>
-            </div>
-            <div id="kulrsSecretBotsContainer" class="section-list"></div>
-          </div>
-        </details>
-        <details class="card section-card">
-          <summary>
-            <div class="section-summary-copy">
-              <span class="pill">gateway-chat-platform</span>
-              <h3>Secret Env Vars</h3>
-              <p>Model-provider and runtime secret env vars for chat services.</p>
-            </div>
-          </summary>
-          <div class="section-body">
-            <div class="split-actions">
-              <div></div>
-              <button id="addGatewayChatSecretButton">Add Secret Env Var</button>
-            </div>
-            <div id="gatewayChatSecretsContainer" class="section-list"></div>
-          </div>
-        </details>
-      </div>
-      </div>
-
-      <div class="sub-tab-panel" data-sub-tab-panel="settings-json">
-        <div class="split-actions">
-          <div>
-            <h3>Advanced JSON</h3>
-            <p>Exact config file representation. Use this only when the guided tabs are not enough.</p>
-          </div>
-          <button id="applyRawButton">Apply Raw JSON</button>
-        </div>
-        <textarea id="rawJson" spellcheck="false" style="width: 100%; min-height: 600px; font-family: monospace; font-size: 13px;"></textarea>
-      </div>
-
-      </div>
-
-      <!-- ═══ AGENTS & AUTOMATIONS TAB ═══ -->
-      <div class="tab-panel" data-tab-panel="agents" hidden>
-      <nav class="sub-tab-nav" data-sub-group="agents">
-        <button class="sub-tab-button active" data-sub-tab="agents-list">Agents</button>
-        <button class="sub-tab-button" data-sub-tab="agents-workflows">Workflows</button>
-      </nav>
-
-      <div class="sub-tab-panel active" data-sub-tab-panel="agents-list">
-      <details class="card section-card" open>
-        <summary>
-          <div class="section-summary-copy">
-            <span class="pill">Agents</span>
-            <h3>Configured Chat Agents</h3>
-            <p>Only these agents are synced into <code>gateway-chat-platform</code>.</p>
-          </div>
-        </summary>
-        <div class="section-body">
-          <div class="split-actions">
-            <div></div>
-            <div class="toolbar">
-              <button id="addGatewayChatAgentButton">Add Agent</button>
-              <button id="syncGatewayChatAgentsButtonSecondary">Sync Agents</button>
-            </div>
-          </div>
-          <div id="gatewayChatAgentsContainer" class="section-list"></div>
-        </div>
-      </details>
-      </div>
-
-      <div class="sub-tab-panel" data-sub-tab-panel="agents-workflows">
-      <details class="card section-card">
-        <summary>
-          <div class="section-summary-copy">
-            <span class="pill">Catalog</span>
-            <h3>Automation Job Catalog</h3>
-            <p>Available refs for <code>target.type = gateway-jobs.run</code>.</p>
-          </div>
-        </summary>
-        <div class="section-body">
-          <div class="split-actions">
-            <div></div>
-            <button id="reloadJobsButton">Reload Jobs</button>
-          </div>
-          <div id="jobsCatalogContainer" class="section-list"></div>
-        </div>
-      </details>
-      <details class="card section-card" open>
-        <summary>
-          <div class="section-summary-copy">
-            <span class="pill">Automations</span>
-            <h3>Scheduled Workflows</h3>
-            <p>API-level automations stored and executed by <code>gateway-api</code>.</p>
-          </div>
-        </summary>
-        <div class="section-body">
-          <div class="split-actions">
-            <div></div>
-            <div class="toolbar">
-              <button id="reloadWorkflowsButton">Reload Workflows</button>
-              <button id="addWorkflowButton">Add Workflow</button>
-            </div>
-          </div>
-          <div id="workflowsContainer" class="section-list"></div>
-        </div>
-      </details>
-      </div>
-
-      </div>
-
-      <!-- ═══ DASHBOARD TAB ═══ -->
-      <div class="tab-panel" data-tab-panel="overview">
-      <div class="card card-quiet">
-        <div class="split-actions">
-          <div>
-            <span class="pill">Start Here</span>
-            <h3>What Goes Where</h3>
-            <p>This UI manages several different systems. Use the sections below as the map.</p>
-          </div>
-        </div>
-        <div class="overview-grid">
-          <div class="card overview-card">
-            <strong>Services</strong>
-            <p>Service profiles, env files, delivery channels, TTS wiring, app deployments, and feature flags.</p>
-            <button data-open-tab="services">Open Services</button>
-          </div>
-          <div class="card overview-card">
-            <strong>Agents &amp; Automations</strong>
-            <p>Chat agents, scheduled workflows, and agentic job records.</p>
-            <button data-open-tab="agents">Open Agents</button>
-          </div>
-          <div class="card overview-card">
-            <strong>Infrastructure</strong>
-            <p>Gateway settings, worker nodes, remote workloads, and Minecraft server admin.</p>
-            <button data-open-tab="infra">Open Infrastructure</button>
-          </div>
-          <div class="card overview-card">
-            <strong>Settings</strong>
-            <p>Credentials, API keys, bot tokens, secrets, and the raw config JSON editor.</p>
-            <button data-open-tab="settings">Open Settings</button>
-          </div>
-        </div>
-      </div>
-      <details class="card section-card">
-        <summary>
-          <div class="section-summary-copy">
-            <span class="pill">Tools</span>
-            <h3>Agent and Workflow Utilities</h3>
-            <p>Secondary utilities for imports, sync, and agent test runs.</p>
-          </div>
-        </summary>
-        <div class="section-body">
-        <div class="split-actions">
-          <div></div>
-          <div class="toolbar">
-            <button id="syncGatewayChatAgentsButton">Sync Agents</button>
-            <button id="importWorkflowSeedButton">Import Workflow Seed</button>
-          </div>
-        </div>
-        <div class="row">
-          <label>Workflow Seed File
-            <input id="workflowSeedPath" />
-          </label>
-          <label>Agent
-            <select id="agentRunAgentId"></select>
-          </label>
-        </div>
-        <label>Prompt
-          <textarea id="agentRunPrompt">Give me a short readiness check in character, then confirm the local model route is working.</textarea>
-        </label>
-        <div class="row">
-          <label>Context JSON
-            <textarea id="agentRunContext">{}</textarea>
-          </label>
-          <label>Delivery JSON
-            <textarea id="agentRunDelivery">{}</textarea>
-          </label>
-        </div>
-        <div class="toolbar">
-          <button id="runAgentButton" class="primary">Run Agent</button>
-        </div>
-        <div id="agentRunResult" class="meta-list"></div>
-        </div>
-      </details>
-      </div>
-
     </section>
 
     <aside class="aside-stack">
@@ -2534,18 +2423,30 @@ function htmlPage(basePath: string): string {
       <details class="panel" open>
         <summary><strong>Definitions</strong></summary>
         <div class="hint-list" style="margin-top: 14px;">
-          <p><strong>Apps</strong> are git-based services deployed by the control-plane.</p>
-          <p><strong>Jobs</strong> are host scheduled commands attached to an app deployment.</p>
-          <p><strong>Automations</strong> are workflow records stored and run by <code>gateway-api</code>.</p>
-          <p><strong>Runtime</strong> is where service profiles and generated env/runtime files are configured.</p>
-          <p><strong>Secrets</strong> is the credential-focused view for keys, passwords, tokens, and secret env vars.</p>
-          <p><strong>Nodes</strong> defines remote worker nodes plus generic remote jobs, services, and Bedrock workloads.</p>
-          <p><strong>Minecraft</strong> is the dedicated Bedrock administration surface.</p>
-          <p><strong>Pi Proxy</strong> manages the Raspberry Pi Bedrock LAN proxy service and its live registry wiring for Xbox-visible worlds.</p>
+          <p><strong>Agents</strong> configure AI personalities synced to <code>gateway-chat-platform</code>.</p>
+          <p><strong>Workflows</strong> are scheduled automations executed by <code>gateway-api</code>.</p>
+          <p><strong>Deploys</strong> covers remote container services and managed app deployments.</p>
+          <p><strong>Profiles</strong> contains env files, job channels, TTS, and credentials for each service.</p>
+          <p><strong>Nodes</strong> are remote worker machines and their workloads.</p>
+          <p><strong>Minecraft</strong> is the dedicated Bedrock server admin surface.</p>
         </div>
       </details>
     </aside>
   </main>
+
+  <dialog id="rawJsonDialog" class="wizard-dialog">
+    <div class="wizard-content">
+      <div class="wizard-header">
+        <h2>Raw Config JSON</h2>
+        <button id="closeRawJsonDialogButton" class="wizard-close">&times;</button>
+      </div>
+      <p>Exact config file representation. Use this only when the guided tabs are not enough.</p>
+      <textarea id="rawJson" spellcheck="false" style="width: 100%; min-height: 500px; font-family: monospace; font-size: 13px;"></textarea>
+      <div class="toolbar" style="margin-top:.75rem">
+        <button id="applyRawButton" class="primary">Apply Raw JSON</button>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="nodeSetupWizard" class="wizard-dialog">
     <div class="wizard-content">
@@ -2722,13 +2623,11 @@ function htmlPage(basePath: string): string {
         workflowSeedPath: '${DEFAULT_WORKFLOW_SEED_PATH}',
         result: null
       },
-      activeTab: 'overview',
+      activeTab: 'services',
       activeSubTabs: {
         infra: 'infra-gateway',
-        services: 'svc-remote',
-        agents: 'agents-list',
+        services: 'svc-agents',
         monitoring: 'mon-health',
-        settings: 'settings-creds'
       },
       dataLoaded: {},
       subTabLoading: {}
@@ -6244,7 +6143,7 @@ function htmlPage(basePath: string): string {
       const fetches = [];
       switch (subTab) {
         case 'infra-nodes':
-        case 'svc-remote':
+        case 'svc-deploys':
           if (isStale('remoteServiceStatuses')) {
             fetches.push(refreshAllRemoteServiceStatuses({ silent: true }).then(() => markLoaded('remoteServiceStatuses')));
           }
@@ -6270,15 +6169,21 @@ function htmlPage(basePath: string): string {
             fetches.push(fetchChatProviders().then(() => markLoaded('chatProviders')));
           }
           break;
-        case 'agents-list':
+        case 'svc-agents':
           if (isStale('ttsVoices')) {
             fetches.push(fetchTtsVoices().then(() => markLoaded('ttsVoices')));
           }
           if (isStale('chatProviders')) {
             fetches.push(fetchChatProviders().then(() => markLoaded('chatProviders')));
           }
-          // fall through
-        case 'agents-workflows':
+          if (isStale('workflows')) {
+            fetches.push(fetchWorkflows().then(() => markLoaded('workflows')));
+          }
+          if (isStale('jobsCatalog')) {
+            fetches.push(fetchJobsCatalog().then(() => markLoaded('jobsCatalog')));
+          }
+          break;
+        case 'svc-workflows':
           if (isStale('workflows')) {
             fetches.push(fetchWorkflows().then(() => markLoaded('workflows')));
           }
@@ -6781,7 +6686,7 @@ function htmlPage(basePath: string): string {
 
     document.querySelectorAll('.top-tab-nav .tab-button').forEach((button) => {
       button.addEventListener('click', async () => {
-        state.activeTab = button.dataset.tab || 'overview';
+        state.activeTab = button.dataset.tab || 'services';
         render();
         await loadTabData(state.activeTab);
       });
@@ -6814,7 +6719,7 @@ function htmlPage(basePath: string): string {
 
     document.querySelectorAll('[data-open-tab]').forEach((button) => {
       button.addEventListener('click', async () => {
-        state.activeTab = button.dataset.openTab || 'overview';
+        state.activeTab = button.dataset.openTab || 'services';
         render();
         await loadTabData(state.activeTab);
       });
@@ -7081,6 +6986,26 @@ function htmlPage(basePath: string): string {
           setStatus(error.message, 'error');
         }
       });
+    });
+    document.getElementById('restartButton').addEventListener('click', async () => {
+      if (!confirm('Restart the control-plane container? The UI will be unavailable for a few seconds.')) return;
+      const button = document.getElementById('restartButton');
+      await withBusyButton(button, 'Restarting…', async () => {
+        try {
+          await requestJson('POST', '/api/restart');
+          setStatus('Restart signal sent — reloading in 5s…');
+          setTimeout(() => location.reload(), 5000);
+        } catch (error) {
+          setStatus(error.message, 'error');
+        }
+      });
+    });
+    document.getElementById('rawJsonButton').addEventListener('click', () => {
+      syncRawJson();
+      document.getElementById('rawJsonDialog').showModal();
+    });
+    document.getElementById('closeRawJsonDialogButton').addEventListener('click', () => {
+      document.getElementById('rawJsonDialog').close();
     });
     document.getElementById('refreshRuntimeButtonSecondary').addEventListener('click', async () => {
       const button = document.getElementById('refreshRuntimeButtonSecondary');
@@ -8160,7 +8085,7 @@ function htmlPage(basePath: string): string {
     }, 15000);
     setInterval(() => {
       const sub = state.activeSubTabs[state.activeTab];
-      if (sub === 'infra-nodes' || sub === 'svc-remote') {
+      if (sub === 'infra-nodes' || sub === 'svc-deploys') {
         refreshAllRemoteServiceStatuses({ silent: true }).then(() => markLoaded('remoteServiceStatuses')).catch(() => undefined);
       }
     }, 30000);
@@ -8917,6 +8842,12 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       if (request.method === 'POST' && path === '/api/validate') {
         const config = await loadRequestConfig(request);
         sendJson(response, 200, { message: 'Config is valid', config });
+        return;
+      }
+
+      if (request.method === 'POST' && path === '/api/restart') {
+        sendJson(response, 200, { message: 'Restarting…' });
+        setTimeout(() => process.exit(0), 500);
         return;
       }
 
