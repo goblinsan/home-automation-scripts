@@ -180,6 +180,7 @@ function baseSshOptions(node: WorkerNodeConfig): string {
   return [
     '-o BatchMode=yes',
     '-o StrictHostKeyChecking=accept-new',
+    '-o ConnectTimeout=10',
     `-o UserKnownHostsFile=${shellQuote(`/tmp/gateway-control-plane-known-hosts-${node.id}`)}`
   ].join(' ');
 }

@@ -5455,7 +5455,7 @@ function htmlPage(basePath: string): string {
           const workloadId = targetWorkload.id;
           await persistConfigState();
           const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
-          await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {});
+          await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {}, 300000);
           await refreshMinecraftStatus(workloadId);
           return workloadId;
         };
@@ -5794,13 +5794,22 @@ function htmlPage(basePath: string): string {
     }
 
     async function fetchConfig() {
-      const response = await fetch(joinBase('/api/config'));
-      if (!response.ok) {
-        throw new Error(await response.text());
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await fetch(joinBase('/api/config'), { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        state.config = await response.json();
+        render();
+        setStatus('Current', 'ok', { log: false });
+      } catch (err) {
+        if (err.name === 'AbortError') { throw new Error('Config load timed out'); }
+        throw err;
+      } finally {
+        clearTimeout(timer);
       }
-      state.config = await response.json();
-      render();
-      setStatus('Current', 'ok', { log: false });
     }
 
     async function loadTabData(tab, options = {}) {
@@ -5976,19 +5985,29 @@ function htmlPage(basePath: string): string {
       renderGatewayChatPlatformProfile();
     }
 
-    async function requestJson(method, url, body) {
-      const response = await fetch(joinBase(url), {
-        method,
-        headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-        body: body === undefined ? undefined : JSON.stringify(body)
-      });
-      const data = response.status === 204 ? null : await response.json();
-      if (!response.ok) {
-        const err = new Error(data?.error || 'Request failed');
-        if (data) { Object.assign(err, data); }
+    async function requestJson(method, url, body, timeoutMs) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs || 15000);
+      try {
+        const response = await fetch(joinBase(url), {
+          method,
+          headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+          body: body === undefined ? undefined : JSON.stringify(body),
+          signal: controller.signal
+        });
+        const data = response.status === 204 ? null : await response.json();
+        if (!response.ok) {
+          const err = new Error(data?.error || 'Request failed');
+          if (data) { Object.assign(err, data); }
+          throw err;
+        }
+        return data;
+      } catch (err) {
+        if (err.name === 'AbortError') { throw new Error('Request timed out: ' + url); }
         throw err;
+      } finally {
+        clearTimeout(timer);
       }
-      return data;
     }
 
     function describeContainerStatus(container) {
@@ -6208,7 +6227,7 @@ function htmlPage(basePath: string): string {
     }
 
     async function refreshContainerServiceStatus(workloadId, options = {}) {
-      const status = await requestJson('GET', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/service-status');
+      const status = await requestJson('GET', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/service-status', undefined, 20000);
       state.remoteServiceStatuses[workloadId] = status;
       if (!options.silent) {
         renderRemoteWorkloads();
@@ -7323,7 +7342,7 @@ function htmlPage(basePath: string): string {
           appendLog('Configuration saved ✓', 'success');
 
           appendLog('Starting deploy of ' + workloadId + '…');
-          const result = await requestJson('POST', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/deploy', {});
+          const result = await requestJson('POST', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/deploy', {}, 300000);
           appendLog(result.message || 'Deploy completed ✓', 'success');
           appendLog('');
           appendLog('Service deployed successfully!', 'success');
@@ -7944,11 +7963,28 @@ async function deleteTtsVoice(config: GatewayConfig, voiceId: string): Promise<{
 
 export async function startAdminServer(options: AdminServerOptions): Promise<void> {
   const startedAtMs = Date.now();
+  const htmlCache = new Map<string, string>();
   const minecraftUpdateScheduler = await loadMinecraftManualUpdateScheduler(options.configPath, options.buildOutDir);
   const server = createServer(async (request, response) => {
     try {
       const path = getRequestPath(request);
       const basePath = getForwardedBasePath(request);
+
+      if (request.method === 'GET' && path === '/') {
+        let cached = htmlCache.get(basePath);
+        if (!cached) {
+          cached = htmlPage(basePath);
+          htmlCache.set(basePath, cached);
+        }
+        sendHtml(response, cached);
+        return;
+      }
+
+      if (request.method === 'GET' && path === '/healthz') {
+        sendText(response, 200, 'ok\n');
+        return;
+      }
+
       const workflowIdMatch = path.match(/^\/api\/workflows\/([^/]+)$/);
       const workflowActionMatch = path.match(/^\/api\/workflows\/([^/]+)\/(enable|disable|sleep|resume|run)$/);
       const agentRunMatch = path.match(/^\/api\/chat-platform\/agents\/([^/]+)\/run$/);
@@ -7960,15 +7996,6 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       const remoteMinecraftActionMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/(start|stop|restart|broadcast|kick|ban|update-if-empty|force-update)$/);
       const remoteMinecraftUpdateRequestMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/update-request$/);
 
-      if (request.method === 'GET' && path === '/') {
-        sendHtml(response, htmlPage(basePath));
-        return;
-      }
-
-      if (request.method === 'GET' && path === '/healthz') {
-        sendText(response, 200, 'ok\n');
-        return;
-      }
 
       if (request.method === 'GET' && path === '/api/config') {
         const config = await loadGatewayConfig(options.configPath);
