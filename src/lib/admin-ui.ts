@@ -26,6 +26,7 @@ import {
   shutdownMetrics,
   startHealthCollector,
   stopHealthCollector,
+  getPool,
   getCachedHealthSnapshot,
   buildHealthSnapshot,
   recordHealthCheck,
@@ -8887,6 +8888,21 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
 
       if (request.method === 'POST' && path === '/api/monitoring/health/check') {
         const config = await loadGatewayConfig(options.configPath);
+        if (!config.monitoring?.enabled) {
+          sendJson(response, 400, { error: 'Monitoring is not enabled. Enable it in Monitoring Settings, Save, then Restart.' });
+          return;
+        }
+        // Ensure metrics are initialized (handles first-run or restart race)
+        try {
+          getPool();
+        } catch {
+          try {
+            await initMetrics(config.monitoring);
+          } catch (initErr) {
+            sendJson(response, 500, { error: `Failed to connect to monitoring backend: ${initErr instanceof Error ? initErr.message : initErr}` });
+            return;
+          }
+        }
         const targets = buildMonitoringTargets(config);
         const probe = createHealthProbe(config);
         const results = await probe();
