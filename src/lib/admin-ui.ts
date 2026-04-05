@@ -2599,8 +2599,25 @@ function htmlPage(basePath: string): string {
         workflowSeedPath: '${DEFAULT_WORKFLOW_SEED_PATH}',
         result: null
       },
-      activeTab: 'overview'
+      activeTab: 'overview',
+      activeSubTabs: {
+        infra: 'infra-gateway',
+        services: 'svc-remote',
+        agents: 'agents-list',
+        settings: 'settings-creds'
+      },
+      dataLoaded: {},
+      subTabLoading: {}
     };
+
+    const STALE_MS = 30000;
+    function isStale(key) {
+      return !state.dataLoaded[key] || (Date.now() - state.dataLoaded[key] > STALE_MS);
+    }
+    function markLoaded(key) {
+      state.dataLoaded[key] = Date.now();
+    }
+
     function normalizeClientBasePath(pathValue) {
       if (!pathValue || pathValue === '/') {
         return '/';
@@ -2759,6 +2776,8 @@ function htmlPage(basePath: string): string {
       group.querySelectorAll('.sub-tab-button').forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.subTab === subTabId);
       });
+      state.activeSubTabs[groupName] = subTabId;
+      loadSubTabData(subTabId, { silent: true });
     }
 
     function updateGatewayField(key, value) {
@@ -5785,44 +5804,84 @@ function htmlPage(basePath: string): string {
     }
 
     async function loadTabData(tab, options = {}) {
-      const settled = await Promise.allSettled((() => {
-        switch (tab) {
-          case 'infra':
-            return [
-              fetchRuntime(),
-              refreshAllRemoteServiceStatuses({ silent: true }),
-              refreshAllMinecraftStatuses({ silent: true, skipRegistry: true }),
-              fetchPiProxyStatus({ silent: true })
-            ];
-          case 'services':
-            return [
-              fetchRuntime(),
-              fetchKulrsActivityStatus(),
-              fetchTtsVoices(),
-              fetchChatProviders()
-            ];
-          case 'agents':
-            return [
-              fetchTtsVoices(),
-              fetchChatProviders(),
-              fetchWorkflows(),
-              fetchJobsCatalog(),
-              fetchRuntime()
-            ];
-          default:
-            return [fetchRuntime()];
-        }
-      })());
+      const settled = await Promise.allSettled([fetchRuntime()]);
 
-      if (options.silent) {
-        return settled;
+      const subTab = state.activeSubTabs[tab];
+      if (subTab) {
+        loadSubTabData(subTab, { silent: options.silent !== false });
       }
 
-      const failures = settled
-        .filter((result) => result.status === 'rejected')
-        .map((result) => result.reason instanceof Error ? result.reason.message : String(result.reason));
-      if (failures.length > 0) {
-        setStatus(failures[0], 'error');
+      if (!options.silent) {
+        const failures = settled
+          .filter((result) => result.status === 'rejected')
+          .map((result) => result.reason instanceof Error ? result.reason.message : String(result.reason));
+        if (failures.length > 0) {
+          setStatus(failures[0], 'error');
+        }
+      }
+      return settled;
+    }
+
+    async function loadSubTabData(subTab, options = {}) {
+      const fetches = [];
+      switch (subTab) {
+        case 'infra-nodes':
+        case 'svc-remote':
+          if (isStale('remoteServiceStatuses')) {
+            fetches.push(refreshAllRemoteServiceStatuses({ silent: true }).then(() => markLoaded('remoteServiceStatuses')));
+          }
+          break;
+        case 'infra-minecraft':
+          if (isStale('minecraftStatuses')) {
+            fetches.push(refreshAllMinecraftStatuses({ silent: true, skipRegistry: true }).then(() => markLoaded('minecraftStatuses')));
+          }
+          break;
+        case 'infra-gateway':
+          if (isStale('piProxyStatus')) {
+            fetches.push(fetchPiProxyStatus({ silent: true }).then(() => markLoaded('piProxyStatus')));
+          }
+          break;
+        case 'svc-profiles':
+          if (isStale('kulrsActivityStatus')) {
+            fetches.push(fetchKulrsActivityStatus().then(() => markLoaded('kulrsActivityStatus')));
+          }
+          if (isStale('ttsVoices')) {
+            fetches.push(fetchTtsVoices().then(() => markLoaded('ttsVoices')));
+          }
+          if (isStale('chatProviders')) {
+            fetches.push(fetchChatProviders().then(() => markLoaded('chatProviders')));
+          }
+          break;
+        case 'agents-list':
+          if (isStale('ttsVoices')) {
+            fetches.push(fetchTtsVoices().then(() => markLoaded('ttsVoices')));
+          }
+          if (isStale('chatProviders')) {
+            fetches.push(fetchChatProviders().then(() => markLoaded('chatProviders')));
+          }
+          // fall through
+        case 'agents-workflows':
+          if (isStale('workflows')) {
+            fetches.push(fetchWorkflows().then(() => markLoaded('workflows')));
+          }
+          if (isStale('jobsCatalog')) {
+            fetches.push(fetchJobsCatalog().then(() => markLoaded('jobsCatalog')));
+          }
+          break;
+      }
+      if (fetches.length === 0) return;
+
+      state.subTabLoading[subTab] = true;
+      const settled = await Promise.allSettled(fetches);
+      state.subTabLoading[subTab] = false;
+
+      if (!options.silent) {
+        const failures = settled
+          .filter((result) => result.status === 'rejected')
+          .map((result) => result.reason instanceof Error ? result.reason.message : String(result.reason));
+        if (failures.length > 0) {
+          setStatus(failures[0], 'error');
+        }
       }
       return settled;
     }
@@ -6274,7 +6333,6 @@ function htmlPage(basePath: string): string {
       const result = await requestJson('POST', '/api/config', state.config);
       state.config = result.config;
       render();
-      await loadTabData(state.activeTab, { silent: true });
       return result;
     }
 
@@ -6566,7 +6624,6 @@ function htmlPage(basePath: string): string {
           const result = await requestJson('POST', '/api/build', state.config);
           state.config = result.config;
           render();
-          await loadTabData(state.activeTab, { silent: true });
           setStatus(result.message || 'Saved');
         } catch (error) {
           setStatus(error.message, 'error');
@@ -6579,6 +6636,7 @@ function htmlPage(basePath: string): string {
       await withBusyButton(button, 'Refreshing…', async () => {
         try {
           await fetchConfig();
+          state.dataLoaded = {};
           await loadTabData(state.activeTab, { silent: true });
           setStatus('Current', 'ok', { log: false });
         } catch (error) {
@@ -7562,20 +7620,21 @@ function htmlPage(basePath: string): string {
     }, true);
 
     fetchConfig()
-      .then(() => loadTabData(state.activeTab, { silent: true }))
+      .then(() => fetchRuntime())
       .catch((error) => setStatus(error.message, 'error'));
     applyActionFeedVisibility();
     setInterval(() => {
       fetchRuntime().catch(() => undefined);
     }, 15000);
     setInterval(() => {
-      if (state.activeTab === 'infra') {
-        refreshAllRemoteServiceStatuses({ silent: true }).catch(() => undefined);
+      const sub = state.activeSubTabs[state.activeTab];
+      if (sub === 'infra-nodes' || sub === 'svc-remote') {
+        refreshAllRemoteServiceStatuses({ silent: true }).then(() => markLoaded('remoteServiceStatuses')).catch(() => undefined);
       }
     }, 30000);
     setInterval(() => {
-      if (state.activeTab === 'infra') {
-        refreshAllMinecraftStatuses({ silent: true, skipRegistry: true }).catch(() => undefined);
+      if (state.activeSubTabs[state.activeTab] === 'infra-minecraft') {
+        refreshAllMinecraftStatuses({ silent: true, skipRegistry: true }).then(() => markLoaded('minecraftStatuses')).catch(() => undefined);
       }
     }, 60000);
   </script>
