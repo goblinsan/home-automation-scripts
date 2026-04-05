@@ -2743,6 +2743,67 @@ function htmlPage(basePath: string): string {
       container.innerHTML = '<strong>Action Output</strong><div>' + escapeHtml(message) + '</div><div>' + escapeHtml(new Date().toLocaleString()) + '</div>';
     }
 
+    function formatTelemetryLine(entry) {
+      const secs = (entry.ts / 1000).toFixed(1) + 's';
+      const msg = entry.msg || '';
+      const isCommand = msg.startsWith('$ ');
+      const isFail = msg.startsWith('FAILED');
+      if (isCommand) return '<span style="color:var(--color-accent)">[' + secs + ']</span> <span style="color:#8bb9fe">' + escapeHtml(msg) + '</span>';
+      if (isFail) return '<span style="color:var(--color-accent)">[' + secs + ']</span> <span style="color:var(--color-error)">' + escapeHtml(msg) + '</span>';
+      return '<span style="color:var(--color-accent)">[' + secs + ']</span> ' + escapeHtml(msg);
+    }
+
+    function renderDeployTelemetry(deployLog, durationMs, container) {
+      if (!deployLog || !container) return;
+      const totalSecs = durationMs ? (durationMs / 1000).toFixed(1) + 's' : '?';
+      const details = document.createElement('details');
+      details.className = 'deploy-telemetry';
+      details.open = true;
+      details.innerHTML = '<summary style="cursor:pointer;font-weight:600;margin:.5rem 0">Deploy Telemetry (' + totalSecs + ' total, ' + deployLog.length + ' steps)</summary>' +
+        '<pre class="wizard-log" style="max-height:30rem;overflow-y:auto;font-size:.78rem;line-height:1.5;white-space:pre-wrap;word-break:break-all;margin:0;padding:.5rem;background:var(--color-card);border-radius:6px">' +
+        deployLog.map(formatTelemetryLine).join('\\n') +
+        '</pre>';
+      container.appendChild(details);
+      details.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function showDeployTelemetryModal(workloadId, deployLog, durationMs, success) {
+      let modal = document.getElementById('deployTelemetryModal');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'deployTelemetryModal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
+        document.body.appendChild(modal);
+      }
+      const totalSecs = durationMs ? (durationMs / 1000).toFixed(1) + 's' : '?';
+      const statusLabel = success ? '<span class="success">✔ Deployed</span>' : '<span class="error">✘ Failed</span>';
+      modal.innerHTML =
+        '<div style="background:var(--color-bg);border:1px solid var(--color-border);border-radius:8px;max-width:56rem;width:90vw;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.4)">' +
+          '<div style="padding:.75rem 1rem;border-bottom:1px solid var(--color-border);display:flex;justify-content:space-between;align-items:center">' +
+            '<strong>Deploy Telemetry: ' + escapeHtml(workloadId) + ' ' + statusLabel + ' &mdash; ' + totalSecs + '</strong>' +
+            '<div style="display:flex;gap:.5rem">' +
+              '<button id="copyTelemetryBtn" style="font-size:.8rem">Copy</button>' +
+              '<button id="closeTelemetryBtn" style="font-size:.8rem">Close</button>' +
+            '</div>' +
+          '</div>' +
+          '<pre id="telemetryContent" style="flex:1;overflow-y:auto;margin:0;padding:.75rem 1rem;font-size:.78rem;line-height:1.5;white-space:pre-wrap;word-break:break-all">' +
+          deployLog.map(formatTelemetryLine).join('\\n') +
+          '</pre>' +
+        '</div>';
+      modal.hidden = false;
+      modal.querySelector('#closeTelemetryBtn').addEventListener('click', () => { modal.hidden = true; });
+      modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+      modal.querySelector('#copyTelemetryBtn').addEventListener('click', () => {
+        const plain = deployLog.map(function(entry) {
+          return '[' + (entry.ts / 1000).toFixed(1) + 's] ' + (entry.msg || '');
+        }).join('\\n');
+        navigator.clipboard.writeText(plain).then(() => {
+          modal.querySelector('#copyTelemetryBtn').textContent = 'Copied!';
+          setTimeout(() => { modal.querySelector('#copyTelemetryBtn').textContent = 'Copy'; }, 2000);
+        });
+      });
+    }
+
     function joinBase(path) {
       const normalizedPath = path.startsWith('/api/') ? '/__admin' + path : path;
       if (basePath === '/') {
@@ -4866,20 +4927,29 @@ function htmlPage(basePath: string): string {
         });
 
         element.querySelector('[data-action="deploy"]').addEventListener('click', async () => {
-          try {
-            ensureRemoteWorkloadNodeId(workload);
-            const workloadId = workload.id;
-            await persistConfigState();
-            const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
-            await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {});
-            if (workload.kind === 'container-service') {
-              await refreshContainerServiceStatus(workloadId, { silent: true });
-              renderRemoteWorkloads();
+          const deployButton = element.querySelector('[data-action="deploy"]');
+          await withBusyButton(deployButton, 'Deploying…', async () => {
+            try {
+              ensureRemoteWorkloadNodeId(workload);
+              const workloadId = workload.id;
+              await persistConfigState();
+              const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
+              const result = await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {}, 300000);
+              if (workload.kind === 'container-service') {
+                await refreshContainerServiceStatus(workloadId, { silent: true });
+                renderRemoteWorkloads();
+              }
+              setStatus(\`Deployed remote workload \${workloadId}\`);
+              if (result.deployLog) {
+                showDeployTelemetryModal(workloadId, result.deployLog, result.durationMs, true);
+              }
+            } catch (error) {
+              setStatus(error.message, 'error');
+              if (error.deployLog) {
+                showDeployTelemetryModal(workload.id, error.deployLog, error.durationMs, false);
+              }
             }
-            setStatus(\`Deployed remote workload \${workloadId}\`);
-          } catch (error) {
-            setStatus(error.message, 'error');
-          }
+          });
         });
 
         element.querySelectorAll('input[data-field], select[data-field]').forEach((input) => {
@@ -7344,6 +7414,9 @@ function htmlPage(basePath: string): string {
           appendLog('Starting deploy of ' + workloadId + '…');
           const result = await requestJson('POST', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/deploy', {}, 300000);
           appendLog(result.message || 'Deploy completed ✓', 'success');
+          if (result.deployLog) {
+            renderDeployTelemetry(result.deployLog, result.durationMs, log);
+          }
           appendLog('');
           appendLog('Service deployed successfully!', 'success');
           pushActionFeed('Deployed service ' + workloadId);
@@ -7351,8 +7424,8 @@ function htmlPage(basePath: string): string {
           const detail = err.failedStep ? ' [step: ' + err.failedStep + ']' : '';
           const errorType = err.errorType ? ' (' + err.errorType + ')' : '';
           appendLog('Deploy failed: ' + (err.message || err) + detail + errorType, 'error');
-          if (err.deployLog && err.deployLog.length > 0) {
-            appendLog('Deploy log: ' + err.deployLog.join(' → '), 'info');
+          if (err.deployLog) {
+            renderDeployTelemetry(err.deployLog, err.durationMs, log);
           }
           appendLog('');
           appendLog('The workload config has been saved. You can retry the deploy from the workload card.', 'info');
@@ -8204,35 +8277,44 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
 
       if (remoteWorkloadDeployMatch && request.method === 'POST') {
         const workloadId = decodeURIComponent(remoteWorkloadDeployMatch[1]);
-        const deployLog: string[] = [];
+        const deployLog: { ts: number; msg: string }[] = [];
+        const t0 = Date.now();
+        const logStep = (msg: string) => { deployLog.push({ ts: Date.now() - t0, msg }); };
         try {
-          deployLog.push('loading config');
+          logStep('loading config');
           const config = await loadGatewayConfig(options.configPath);
-          deployLog.push('parsing body');
+          logStep('parsing body');
           const body = JSON.parse(await readBody(request) || '{}') as { revision?: string };
-          deployLog.push('building artifacts');
+          logStep('building artifacts');
           await buildArtifacts(config, options.buildOutDir);
-          deployLog.push('deploying workload');
+          logStep('deploying workload');
           await deployRemoteWorkload(
             config,
             workloadId,
             options.buildOutDir,
             typeof body.revision === 'string' && body.revision.trim().length > 0 ? body.revision.trim() : undefined,
-            { dryRun: false, log: (msg: string) => deployLog.push(msg) }
+            { dryRun: false, log: logStep }
           );
-          sendJson(response, 200, { message: `Deployed remote workload ${workloadId}` });
+          logStep('done');
+          sendJson(response, 200, {
+            message: `Deployed remote workload ${workloadId}`,
+            durationMs: Date.now() - t0,
+            deployLog
+          });
         } catch (deployError) {
           const msg = deployError instanceof Error ? deployError.message : String(deployError);
           const name = deployError instanceof Error ? deployError.constructor.name : 'unknown';
-          console.error(`[deploy ${workloadId}] Failed at step: ${deployLog[deployLog.length - 1] || '?'}`);
+          logStep('FAILED: ' + msg);
+          console.error(`[deploy ${workloadId}] Failed at step: ${deployLog[deployLog.length - 2]?.msg || '?'}`);
           console.error(`[deploy ${workloadId}] ${name}: ${msg}`);
           if (deployError instanceof Error && deployError.stack) {
             console.error(deployError.stack);
           }
           sendJson(response, 400, {
             error: msg,
-            failedStep: deployLog[deployLog.length - 1] || 'unknown',
+            failedStep: deployLog.length > 1 ? deployLog[deployLog.length - 2].msg : 'unknown',
             errorType: name,
+            durationMs: Date.now() - t0,
             deployLog
           });
         }

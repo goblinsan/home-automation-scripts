@@ -66,14 +66,22 @@ export interface AgentRunResult {
 }
 
 async function runShell(command: string, cwd: string, context: CommandContext): Promise<void> {
-  context.log(`${context.dryRun ? '[dry-run] ' : ''}${command}`);
+  context.log(`$ ${context.dryRun ? '[dry-run] ' : ''}${command}`);
   if (context.dryRun) {
     return;
   }
 
   const { spawn } = await import('node:child_process');
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, { cwd, shell: true, stdio: 'inherit' });
+    const child = spawn(command, { cwd, shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      const text = String(chunk).trim();
+      if (text) { context.log(text); }
+    });
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      const text = String(chunk).trim();
+      if (text) { context.log(text); }
+    });
     child.on('exit', (code) => {
       if (code === 0) {
         resolve();
