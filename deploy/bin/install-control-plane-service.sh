@@ -2,4 +2,4 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-node "${REPO_ROOT}/src/cli.ts" install-control-plane-service "$@"
+node --experimental-strip-types "${REPO_ROOT}/src/cli.ts" install-control-plane-service "$@"
