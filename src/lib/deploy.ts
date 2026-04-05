@@ -901,6 +901,11 @@ async function prepareScheduledContainerJobSource(
   );
   await runRemoteShell(node, `git -C ${shellQuote(sourceDir)} fetch --all --tags --prune`, context);
   await runRemoteShell(node, `git -C ${shellQuote(sourceDir)} checkout --force ${shellQuote(revision)}`, context);
+  await runRemoteShell(
+    node,
+    `git -C ${shellQuote(sourceDir)} reset --hard origin/${shellQuote(revision)} 2>/dev/null || true`,
+    context
+  );
 }
 
 async function inspectRemoteContainer(node: WorkerNodeConfig, containerName: string): Promise<RemoteContainerStatus> {
