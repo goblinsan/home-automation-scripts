@@ -14,6 +14,7 @@ import {
   deployRemoteWorkload,
   getMinecraftWorkloadStatus,
   getPiProxyServiceStatus,
+  readCurrentSlot,
   restartPiProxyService,
   runServiceProfileAgent,
   syncServiceProfileRuntime,
@@ -2616,6 +2617,7 @@ function htmlPage(basePath: string): string {
       kulrsActivityStatus: null,
       healthSnapshot: null,
       benchmarkRuns: [],
+      appSlots: {},
       actionFeedCollapsed: false,
       agentRun: {
         agentId: '',
@@ -4076,12 +4078,15 @@ function htmlPage(basePath: string): string {
       const container = document.getElementById('appsContainer');
       container.innerHTML = '';
       state.config.apps.forEach((app, index) => {
+        const activeSlot = state.appSlots?.[app.id] || '…';
+        const slotColor = activeSlot === 'blue' ? '#4a9eff' : activeSlot === 'green' ? '#2ecc71' : '#888';
         const element = document.createElement('div');
         element.className = 'card';
         element.innerHTML = \`
           <div class="split-actions">
             <div>
               <strong>\${app.id || 'new-app'}</strong>
+              <span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:4px;font-size:0.8em;background:\${slotColor};color:#fff;">\${activeSlot}</span>
             </div>
             <button class="danger">Remove</button>
           </div>
@@ -6148,6 +6153,9 @@ function htmlPage(basePath: string): string {
         case 'svc-deploys':
           if (isStale('remoteServiceStatuses')) {
             fetches.push(refreshAllRemoteServiceStatuses({ silent: true }).then(() => markLoaded('remoteServiceStatuses')));
+          }
+          if (subTab === 'svc-deploys' && isStale('appSlots')) {
+            fetches.push(requestJson('GET', '/api/app-slots').then(data => { state.appSlots = data; markLoaded('appSlots'); }).catch(() => {}));
           }
           break;
         case 'infra-minecraft':
@@ -8449,6 +8457,20 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         return;
       }
 
+      if (request.method === 'GET' && path === '/api/app-slots') {
+        const config = await loadGatewayConfig(options.configPath);
+        const slots: Record<string, string> = {};
+        for (const app of config.apps) {
+          try {
+            slots[app.id] = await readCurrentSlot(app);
+          } catch {
+            slots[app.id] = 'unknown';
+          }
+        }
+        sendJson(response, 200, slots);
+        return;
+      }
+
       if (request.method === 'GET' && path === '/api/service-profiles/pi-proxy/status') {
         const config = await loadGatewayConfig(options.configPath);
         sendJson(response, 200, await getPiProxyServiceStatus(config));
@@ -9023,10 +9045,12 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         }
       }
 
-      // Probe apps via health endpoint
+      // Probe apps via health endpoint (use active slot)
       for (const app of config.apps) {
         if (!app.enabled) continue;
-        const slot = app.slots.blue;
+        let activeSlot: 'blue' | 'green' = 'blue';
+        try { activeSlot = await readCurrentSlot(app); } catch { /* default blue */ }
+        const slot = app.slots[activeSlot];
         const url = `http://127.0.0.1:${slot.port}${app.healthPath}`;
         const t0 = Date.now();
         try {
