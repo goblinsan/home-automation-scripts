@@ -6155,7 +6155,7 @@ function htmlPage(basePath: string): string {
             fetches.push(refreshAllRemoteServiceStatuses({ silent: true }).then(() => markLoaded('remoteServiceStatuses')));
           }
           if (subTab === 'svc-deploys' && isStale('appSlots')) {
-            fetches.push(requestJson('GET', '/api/app-slots').then(data => { state.appSlots = data; markLoaded('appSlots'); }).catch(() => {}));
+            fetches.push(requestJson('GET', '/api/app-slots').then(data => { state.appSlots = data; markLoaded('appSlots'); renderApps(); }).catch(() => {}));
           }
           break;
         case 'infra-minecraft':
@@ -9091,6 +9091,24 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
             status: allHealthy ? 'healthy' : 'degraded',
             responseTimeMs: Date.now() - t0,
             details: { services: status.services }
+          });
+        } catch {
+          results.push({ kind: 'workload', id: w.id, label: `${w.id} (${w.kind})`, status: 'down', responseTimeMs: Date.now() - t0, details: null });
+        }
+      }
+
+      // Probe minecraft-bedrock-server workloads via their status
+      for (const w of config.remoteWorkloads) {
+        if (!w.enabled || w.kind !== 'minecraft-bedrock-server') continue;
+        const t0 = Date.now();
+        try {
+          const status = await getMinecraftWorkloadStatus(config, w.id);
+          const isHealthy = status.containers && status.containers.some((c: { status: string }) => /up/i.test(c.status));
+          results.push({
+            kind: 'workload', id: w.id, label: `${w.id} (${w.kind})`,
+            status: isHealthy ? 'healthy' : 'down',
+            responseTimeMs: Date.now() - t0,
+            details: { containers: status.containers }
           });
         } catch {
           results.push({ kind: 'workload', id: w.id, label: `${w.id} (${w.kind})`, status: 'down', responseTimeMs: Date.now() - t0, details: null });
