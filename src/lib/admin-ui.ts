@@ -7076,7 +7076,12 @@ function htmlPage(basePath: string): string {
             kind: 'container-service',
             service: {
               image: '',
-              build: repo,
+              build: {
+                strategy: 'repo-dockerfile',
+                repoUrl: repo,
+                defaultRevision: 'main',
+                contextPath: '.',
+              },
               networkMode: 'bridge',
               restartPolicy: 'unless-stopped',
               autoStart: true,
@@ -7120,7 +7125,6 @@ function htmlPage(basePath: string): string {
             kind: 'container-service',
             service: {
               image: image,
-              build: '',
               networkMode: 'bridge',
               restartPolicy: 'unless-stopped',
               autoStart: true,
@@ -7147,10 +7151,18 @@ function htmlPage(basePath: string): string {
             description: desc,
             kind: 'scheduled-container-job',
             job: {
-              image: image || 'alpine:latest',
-              build: '',
-              command: command,
               schedule: cron,
+              timezone: 'America/New_York',
+              build: {
+                strategy: 'generated-node',
+                repoUrl: '',
+                defaultRevision: 'main',
+                contextPath: '.',
+                packageRoot: '.',
+                nodeVersion: '24',
+                installCommand: 'npm ci --omit=dev'
+              },
+              runCommand: command,
               environment: [],
               volumeMounts: [],
               jsonFiles: []
