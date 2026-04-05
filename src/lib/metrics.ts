@@ -5,8 +5,8 @@
  * Redis caches the latest state snapshot for fast UI reads.
  */
 
-import pg from 'pg';
-import Redis from 'ioredis';
+import type pg from 'pg';
+import type Redis from 'ioredis';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
@@ -84,7 +84,10 @@ export function getRedis(): Redis {
 }
 
 export async function initMetrics(config: MonitoringConfig): Promise<void> {
-  pool = new pg.Pool({
+  const { default: pgMod } = await import('pg');
+  const { default: RedisMod } = await import('ioredis');
+
+  pool = new pgMod.Pool({
     host: config.postgres.host,
     port: config.postgres.port,
     database: config.postgres.database,
@@ -94,7 +97,7 @@ export async function initMetrics(config: MonitoringConfig): Promise<void> {
     idleTimeoutMillis: 30_000,
   });
 
-  redis = new Redis({
+  redis = new RedisMod({
     host: config.redis.host,
     port: config.redis.port,
     maxRetriesPerRequest: 3,
