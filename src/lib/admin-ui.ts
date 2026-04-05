@@ -7041,9 +7041,10 @@ function htmlPage(basePath: string): string {
       const btn = document.getElementById('runHealthCheckButton');
       await withBusyButton(btn, 'Checking…', async () => {
         try {
-          await requestJson('POST', '/api/monitoring/health/check', {}, 30000);
-          state.dataLoaded.healthSnapshot = 0;
-          await fetchHealthSnapshot();
+          const snapshot = await requestJson('POST', '/api/monitoring/health/check', {}, 30000);
+          state.healthSnapshot = snapshot;
+          state.dataLoaded.healthSnapshot = Date.now();
+          renderHealthTargets();
           setStatus('Health check completed');
         } catch (err) { setStatus(err.message, 'error'); }
       });
@@ -8902,10 +8903,22 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           return;
         }
         // No cached snapshot — try to build one live
-        const config = await loadGatewayConfig(options.configPath);
-        const targets = buildMonitoringTargets(config);
-        const snapshot = await buildHealthSnapshot(targets);
-        sendJson(response, 200, snapshot);
+        try {
+          const config = await loadGatewayConfig(options.configPath);
+          if (!config.monitoring?.enabled) {
+            sendJson(response, 200, { targets: [], collectedAt: new Date().toISOString() });
+            return;
+          }
+          // Ensure pool is ready
+          try { getPool(); } catch {
+            await initMetrics(config.monitoring);
+          }
+          const targets = buildMonitoringTargets(config);
+          const snapshot = await buildHealthSnapshot(targets);
+          sendJson(response, 200, snapshot);
+        } catch {
+          sendJson(response, 200, { targets: [], collectedAt: new Date().toISOString() });
+        }
         return;
       }
 
