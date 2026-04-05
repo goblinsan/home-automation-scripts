@@ -7,6 +7,8 @@
 
 import pg from 'pg';
 import Redis from 'ioredis';
+import { readdir, readFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -100,7 +102,7 @@ export async function initMetrics(config: MonitoringConfig): Promise<void> {
   });
   await redis.connect();
 
-  await ensureSchema();
+  await runMigrations();
 }
 
 export async function shutdownMetrics(): Promise<void> {
@@ -109,47 +111,57 @@ export async function shutdownMetrics(): Promise<void> {
   if (pool) { await pool.end(); pool = null; }
 }
 
-// ── Schema bootstrap ───────────────────────────────────────────────────────
+// ── Migration runner ───────────────────────────────────────────────────────
 
-async function ensureSchema(): Promise<void> {
+const MIGRATIONS_DIR = resolve(import.meta.dirname ?? '.', '../../migration/metrics');
+
+export async function runMigrations(): Promise<void> {
   const db = getPool();
+
+  // Bootstrap the migrations tracking table (the one exception to file-based migrations)
   await db.query(`
-    CREATE TABLE IF NOT EXISTS health_checks (
-      id            BIGSERIAL PRIMARY KEY,
-      target_kind   TEXT NOT NULL,
-      target_id     TEXT NOT NULL,
-      status        TEXT NOT NULL,
-      response_time_ms INTEGER,
-      details       JSONB,
-      checked_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id         SERIAL PRIMARY KEY,
+      filename   TEXT NOT NULL UNIQUE,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
-
-    CREATE INDEX IF NOT EXISTS idx_health_target_time
-      ON health_checks (target_kind, target_id, checked_at DESC);
-
-    CREATE TABLE IF NOT EXISTS benchmark_runs (
-      id            SERIAL PRIMARY KEY,
-      suite_id      TEXT NOT NULL,
-      name          TEXT NOT NULL,
-      engine        TEXT NOT NULL,
-      config        JSONB NOT NULL DEFAULT '{}',
-      hardware      TEXT NOT NULL DEFAULT '',
-      started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-      finished_at   TIMESTAMPTZ,
-      notes         TEXT NOT NULL DEFAULT ''
-    );
-
-    CREATE TABLE IF NOT EXISTS benchmark_results (
-      id            SERIAL PRIMARY KEY,
-      run_id        INTEGER NOT NULL REFERENCES benchmark_runs(id) ON DELETE CASCADE,
-      test_name     TEXT NOT NULL,
-      metric        TEXT NOT NULL,
-      value         DOUBLE PRECISION NOT NULL,
-      unit          TEXT NOT NULL DEFAULT ''
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_bench_suite ON benchmark_runs (suite_id, started_at DESC);
   `);
+
+  // Read migration files sorted by name
+  let files: string[];
+  try {
+    files = (await readdir(MIGRATIONS_DIR)).filter((f) => f.endsWith('.sql')).sort();
+  } catch {
+    console.warn('[migrations] No migration directory found at', MIGRATIONS_DIR);
+    return;
+  }
+
+  if (files.length === 0) return;
+
+  // Get already-applied migrations
+  const { rows: applied } = await db.query('SELECT filename FROM schema_migrations');
+  const appliedSet = new Set(applied.map((r: { filename: string }) => r.filename));
+
+  for (const file of files) {
+    if (appliedSet.has(file)) continue;
+
+    const sql = await readFile(join(MIGRATIONS_DIR, file), 'utf8');
+    console.log(`[migrations] Applying ${file}…`);
+
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(sql);
+      await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [file]);
+      await client.query('COMMIT');
+      console.log(`[migrations] Applied ${file}`);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw new Error(`Migration ${file} failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      client.release();
+    }
+  }
 }
 
 // ── Health checks ──────────────────────────────────────────────────────────
