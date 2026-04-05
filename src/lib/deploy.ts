@@ -635,6 +635,7 @@ export interface ContainerServiceWorkloadStatus {
     detail: string;
   };
   service: RemoteContainerStatus;
+  containers?: { name: string; service: string; state: string; status: string }[];
 }
 
 type MinecraftControlAction = 'start' | 'stop' | 'restart' | 'broadcast' | 'kick' | 'ban' | 'update-if-empty' | 'force-update';
@@ -1495,36 +1496,52 @@ export async function getContainerServiceWorkloadStatus(config: GatewayConfig, w
     // For repo-compose, check status via docker compose ps
     const composeCommand = getServiceComposeCommand(node, workload);
     const psResult = await runRemoteShellCapture(node, `${composeCommand} ps --format json 2>/dev/null || true`);
-    let running = false;
-    let exists = false;
+    let allRunning = true;
+    let anyExists = false;
+    const containers: { name: string; service: string; state: string; status: string }[] = [];
+    let firstRunningContainer: string | undefined;
     if (psResult.code === 0 && psResult.stdout.trim()) {
       try {
         const lines = psResult.stdout.trim().split('\n').filter(Boolean);
         for (const line of lines) {
-          const container = JSON.parse(line);
-          exists = true;
-          if (container.State === 'running') {
-            running = true;
+          const entry = JSON.parse(line);
+          anyExists = true;
+          const name = entry.Name || entry.Names || '';
+          const svc = entry.Service || '';
+          const state = entry.State || '';
+          const statusLine = entry.Status || state;
+          containers.push({ name, service: svc, state, status: statusLine });
+          if (state === 'running') {
+            if (!firstRunningContainer) firstRunningContainer = name;
+          } else {
+            allRunning = false;
           }
         }
       } catch {
         // ps output not parseable, fall through
       }
     }
+    if (containers.length === 0) allRunning = false;
+    const runningCount = containers.filter(c => c.state === 'running').length;
     const service: RemoteContainerStatus = {
       containerName: `${getRemoteWorkloadProjectName(workload)}`,
-      exists,
-      status: running ? 'running' : exists ? 'exited' : 'missing',
-      running
+      exists: anyExists,
+      status: allRunning ? 'running' : anyExists ? `${runningCount}/${containers.length} running` : 'missing',
+      running: allRunning
     };
+    // Find a container to use for health check probe — prefer one named *nginx*, fall back to first running
+    const healthProbeContainer = containers.find(c => c.state === 'running' && c.name.includes('nginx'))?.name
+      || firstRunningContainer
+      || `${getRemoteWorkloadProjectName(workload)}-nginx-1`;
     const healthCheck = workload.service.healthCheck
-      ? await probeContainerServiceHealth(node, `${getRemoteWorkloadProjectName(workload)}-nginx-1`, workload.service.healthCheck)
+      ? await probeContainerServiceHealth(node, healthProbeContainer, workload.service.healthCheck)
       : undefined;
 
     return {
       workloadId: workload.id,
       nodeId: node.id,
       service,
+      containers,
       ...(healthCheck ? { healthCheck } : {})
     };
   }

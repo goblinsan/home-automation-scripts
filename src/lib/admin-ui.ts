@@ -1499,6 +1499,12 @@ function htmlPage(basePath: string): string {
       font-size: .75rem;
       color: var(--muted);
     }
+    .mini-table { width: 100%; border-collapse: collapse; font-size: .82rem; margin-top: .25rem; }
+    .mini-table th, .mini-table td { text-align: left; padding: .2rem .5rem; border-bottom: 1px solid var(--line); }
+    .mini-table th { font-weight: 600; color: var(--muted); }
+    .mini-table td code { font-size: .78rem; }
+    .mini-table td.ok { color: #1a7a4c; }
+    .mini-table td.error { color: #c0392b; }
     .wizard-log-line.success { color: #1a7a4c; }
     .wizard-log-line.error { color: #c0392b; }
     .wizard-log-line.info { color: var(--muted); }
@@ -4618,7 +4624,11 @@ function htmlPage(basePath: string): string {
         const serviceSummary = describeContainerStatus(serviceStatus?.service);
         const serviceHealthSummary = describeServiceHealthCheck(serviceStatus?.healthCheck);
         const servicePortSummary = serviceStatus
-          ? formatPortMappings(serviceStatus.service?.ports, serviceStatus.service?.networkMode)
+          ? (formatPortMappings(serviceStatus.service?.ports, serviceStatus.service?.networkMode) !== 'none'
+            ? formatPortMappings(serviceStatus.service?.ports, serviceStatus.service?.networkMode)
+            : service.ports && service.ports.length > 0
+              ? service.ports.map(p => p.published + ':' + p.target + '/' + p.protocol).join(', ') + ' (from config)'
+              : 'none')
           : 'not checked yet';
         const serviceConfiguredImage = serviceStatus?.service?.configuredImage || service.image || 'build-only workload';
         const serviceImageId = serviceStatus?.service?.imageId || 'not checked yet';
@@ -4630,6 +4640,14 @@ function htmlPage(basePath: string): string {
           : '';
         const serviceErrorLine = serviceStatus?.service?.error
           ? '<p><strong>Service Error:</strong> ' + escapeHtml(serviceStatus.service.error) + '</p>'
+          : '';
+        const containerLines = serviceStatus?.containers && serviceStatus.containers.length > 0
+          ? '<div style="margin-top:.5rem"><strong>Containers:</strong><table class="mini-table"><thead><tr><th>Service</th><th>Name</th><th>State</th><th>Status</th></tr></thead><tbody>'
+            + serviceStatus.containers.map(c => {
+              const cls = c.state === 'running' ? 'ok' : c.state === 'exited' ? 'error' : '';
+              return '<tr><td>' + escapeHtml(c.service) + '</td><td><code>' + escapeHtml(c.name) + '</code></td><td class="' + cls + '">' + escapeHtml(c.state) + '</td><td>' + escapeHtml(c.status) + '</td></tr>';
+            }).join('')
+            + '</tbody></table></div>'
           : '';
         const element = document.createElement('div');
         element.className = 'card';
@@ -4699,6 +4717,7 @@ function htmlPage(basePath: string): string {
                   \${serviceCreatedLine}
                   \${serviceStartedLine}
                   \${serviceErrorLine}
+                  \${containerLines}
                 </div>
                 <div class="toolbar">
                   <button data-action="service-refresh-status">Refresh Status</button>
@@ -5037,8 +5056,13 @@ function htmlPage(basePath: string): string {
       container.innerHTML = '';
       services.forEach(svc => {
         const status = state.remoteServiceStatuses[svc.id];
-        const statusLabel = status ? (status.running ? 'Running' : 'Stopped') : 'Unknown';
-        const statusCls = status ? (status.running ? 'success' : 'error') : '';
+        const statusLabel = status
+          ? (status.service?.running
+            ? (status.containers && status.containers.length > 0 ? status.containers.filter(c => c.state === 'running').length + '/' + status.containers.length + ' running' : 'Running')
+            : status.service?.status || 'Stopped')
+          : 'Unknown';
+        const statusCls = status ? (status.service?.running ? 'success' : 'error') : '';
+        const healthLabel = status?.healthCheck ? (status.healthCheck.status === 'ok' ? ' \u2714' : ' \u274c ' + status.healthCheck.detail) : '';
         const node = state.config.workerNodes.find(n => n.id === svc.nodeId);
         const nodeLabel = node ? svc.nodeId + ' (' + node.host + ')' : svc.nodeId || 'unassigned';
         const ports = (svc.service && svc.service.ports || []).map(p => p.published + ':' + p.target).join(', ') || 'none';
@@ -5047,7 +5071,7 @@ function htmlPage(basePath: string): string {
         card.innerHTML = '<div class="split-actions"><div>' +
           '<strong>' + svc.id + '</strong>' +
           (svc.description ? ' &mdash; ' + svc.description : '') +
-          '<br><small>Node: ' + nodeLabel + ' &bull; Ports: ' + ports + ' &bull; Status: <span class="' + statusCls + '">' + statusLabel + '</span></small>' +
+          '<br><small>Node: ' + nodeLabel + ' &bull; Ports: ' + ports + ' &bull; Status: <span class="' + statusCls + '">' + statusLabel + '</span>' + healthLabel + '</small>' +
           '</div></div>';
         container.appendChild(card);
       });
