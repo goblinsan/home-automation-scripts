@@ -94,7 +94,7 @@ export interface JsonFileConfig {
 }
 
 export interface ScheduledContainerJobBuildConfig {
-  strategy: 'repo-dockerfile' | 'generated-node';
+  strategy: 'repo-dockerfile' | 'generated-node' | 'repo-compose';
   repoUrl: string;
   defaultRevision: string;
   contextPath: string;
@@ -102,6 +102,7 @@ export interface ScheduledContainerJobBuildConfig {
   packageRoot?: string;
   nodeVersion?: string;
   installCommand?: string;
+  composeFile?: string;
 }
 
 export interface ScheduledContainerJobWorkloadConfig {
@@ -555,7 +556,7 @@ function parseScheduledContainerJobBuildConfig(value: unknown, field: string): S
   }
 
   const strategy = value.strategy;
-  if (strategy !== 'repo-dockerfile' && strategy !== 'generated-node') {
+  if (strategy !== 'repo-dockerfile' && strategy !== 'generated-node' && strategy !== 'repo-compose') {
     throw new Error(`Invalid strategy for ${field}.strategy`);
   }
 
@@ -567,7 +568,8 @@ function parseScheduledContainerJobBuildConfig(value: unknown, field: string): S
     dockerfilePath: typeof value.dockerfilePath === 'string' ? value.dockerfilePath : undefined,
     packageRoot: typeof value.packageRoot === 'string' ? value.packageRoot : '.',
     nodeVersion: typeof value.nodeVersion === 'string' ? value.nodeVersion : '24',
-    installCommand: typeof value.installCommand === 'string' ? value.installCommand : 'npm ci --omit=dev'
+    installCommand: typeof value.installCommand === 'string' ? value.installCommand : 'npm ci --omit=dev',
+    composeFile: typeof value.composeFile === 'string' ? value.composeFile : undefined
   };
 }
 

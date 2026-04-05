@@ -1342,6 +1342,29 @@ export async function deployRemoteWorkload(
   if (workload.kind === 'container-service' && workload.service) {
     await runRemoteShell(node, `mkdir -p ${shellQuote(getRemoteWorkloadDataDir(node, workload))}`, context);
     await prepareScheduledContainerJobSource(node, workload, revisionOverride, context);
+
+    if (workload.service.build?.strategy === 'repo-compose') {
+      // repo-compose: use the repo's own docker-compose.yml directly
+      const sourceDir = getRemoteWorkloadSourceDir(node, workload);
+      const composeFile = workload.service.build.composeFile || 'docker-compose.yml';
+      // Sync env file to source dir so compose can use env_file or variable substitution
+      if (workload.service.environment.length > 0) {
+        await runRemoteShell(
+          node,
+          `cp ${shellQuote(`${stackDir}/service.env`)} ${shellQuote(`${sourceDir}/.env`)}`,
+          context
+        );
+      }
+      if (workload.service.autoStart) {
+        await runRemoteShell(
+          node,
+          `${node.dockerComposeCommand} -f ${shellQuote(`${sourceDir}/${composeFile}`)} --project-name ${shellQuote(getRemoteWorkloadProjectName(workload))} up -d --build`,
+          context
+        );
+      }
+      return;
+    }
+
     if (workload.service.build?.strategy === 'generated-node') {
       await runRemoteShell(
         node,
@@ -1384,6 +1407,15 @@ export async function controlMinecraftWorkload(
   await invokeRemoteWorkerControl(node, workload.id, action, payload, context);
 }
 
+function getServiceComposeCommand(node: WorkerNodeConfig, workload: RemoteWorkloadConfig): string {
+  if (workload.service?.build?.strategy === 'repo-compose') {
+    const sourceDir = getRemoteWorkloadSourceDir(node, workload);
+    const composeFile = workload.service.build.composeFile || 'docker-compose.yml';
+    return `${node.dockerComposeCommand} -f ${shellQuote(`${sourceDir}/${composeFile}`)} --project-name ${shellQuote(getRemoteWorkloadProjectName(workload))}`;
+  }
+  return `${node.dockerComposeCommand} -f ${shellQuote(`${getRemoteWorkloadStackDir(node, workload)}/compose.yml`)} --project-name ${shellQuote(getRemoteWorkloadProjectName(workload))}`;
+}
+
 export async function controlContainerServiceWorkload(
   config: GatewayConfig,
   workloadId: string,
@@ -1396,12 +1428,12 @@ export async function controlContainerServiceWorkload(
   }
 
   const node = getWorkerNode(config, workload.nodeId);
-  const composeCommand = `${node.dockerComposeCommand} -f ${shellQuote(`${getRemoteWorkloadStackDir(node, workload)}/compose.yml`)} --project-name ${shellQuote(getRemoteWorkloadProjectName(workload))}`;
+  const composeCommand = getServiceComposeCommand(node, workload);
   const shellCommand = action === 'start'
-    ? `${composeCommand} up -d service`
+    ? `${composeCommand} up -d`
     : action === 'stop'
-      ? `${composeCommand} stop service`
-      : `${composeCommand} restart service`;
+      ? `${composeCommand} stop`
+      : `${composeCommand} restart`;
   await runRemoteShell(node, shellCommand, context);
 }
 
@@ -1458,6 +1490,45 @@ export async function getContainerServiceWorkloadStatus(config: GatewayConfig, w
   }
 
   const node = getWorkerNode(config, workload.nodeId);
+
+  if (workload.service.build?.strategy === 'repo-compose') {
+    // For repo-compose, check status via docker compose ps
+    const composeCommand = getServiceComposeCommand(node, workload);
+    const psResult = await runRemoteShellCapture(node, `${composeCommand} ps --format json 2>/dev/null || true`);
+    let running = false;
+    let exists = false;
+    if (psResult.code === 0 && psResult.stdout.trim()) {
+      try {
+        const lines = psResult.stdout.trim().split('\n').filter(Boolean);
+        for (const line of lines) {
+          const container = JSON.parse(line);
+          exists = true;
+          if (container.State === 'running') {
+            running = true;
+          }
+        }
+      } catch {
+        // ps output not parseable, fall through
+      }
+    }
+    const service: RemoteContainerStatus = {
+      containerName: `${getRemoteWorkloadProjectName(workload)}`,
+      exists,
+      status: running ? 'running' : exists ? 'exited' : 'missing',
+      running
+    };
+    const healthCheck = workload.service.healthCheck
+      ? await probeContainerServiceHealth(node, `${getRemoteWorkloadProjectName(workload)}-nginx-1`, workload.service.healthCheck)
+      : undefined;
+
+    return {
+      workloadId: workload.id,
+      nodeId: node.id,
+      service,
+      ...(healthCheck ? { healthCheck } : {})
+    };
+  }
+
   const serviceContainerName = `${getRemoteWorkloadProjectName(workload)}-service`;
   const service = await inspectRemoteContainer(node, serviceContainerName);
   const healthCheck = workload.service.healthCheck

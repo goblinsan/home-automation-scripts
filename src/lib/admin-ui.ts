@@ -7074,9 +7074,8 @@ function htmlPage(basePath: string): string {
             description: desc,
             kind: 'container-service',
             service: {
-              image: '',
               build: {
-                strategy: 'repo-dockerfile',
+                strategy: 'repo-compose',
                 repoUrl: repo,
                 defaultRevision: 'main',
                 contextPath: '.',
@@ -7087,15 +7086,14 @@ function htmlPage(basePath: string): string {
               runtimeClass: 'nvidia',
               command: '',
               environment: [
-                { key: 'WHISPER_MODEL', value: model, secret: false, description: 'faster-whisper model size' }
+                { key: 'STT_MODEL_SIZE', value: model, secret: false, description: 'faster-whisper model size' },
+                { key: 'HOST_PORT', value: String(port), secret: false, description: 'Published port for nginx entry point' },
+                { key: 'STT_MODEL_DIR', value: dataDir + '/models', secret: false, description: 'Host path for cached whisper models' }
               ],
-              volumeMounts: [
-                { source: dataDir + '/models', target: '/root/.cache/huggingface', readOnly: false },
-                { source: dataDir + '/uploads', target: '/app/uploads', readOnly: false }
-              ],
+              volumeMounts: [],
               jsonFiles: [],
               ports: [
-                { published: port, target: 5101, protocol: 'tcp' }
+                { published: port, target: 80, protocol: 'tcp' }
               ],
               healthCheck: {
                 protocol: 'http',
