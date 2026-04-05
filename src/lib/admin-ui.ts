@@ -6940,7 +6940,7 @@ function htmlPage(basePath: string): string {
             </label>
             <label class="wizard-field">
               <span class="wizard-label">Git Repo URL</span>
-              <input id="svcFieldRepo" type="text" value="https://github.com/jamescoghlan/stt-service.git" />
+              <input id="svcFieldRepo" type="text" value="https://github.com/goblinsan/stt-service.git" />
               <span class="wizard-hint">The repo will be cloned and built on the node. Uses docker-compose to bring up the stack.</span>
             </label>
             <label class="wizard-field">
