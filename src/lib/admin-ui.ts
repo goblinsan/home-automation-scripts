@@ -6803,7 +6803,20 @@ function htmlPage(basePath: string): string {
           setStatus('Node ' + nodeId + ' setup complete', 'ok');
           pushActionFeed('Node ' + nodeId + ' setup complete');
         } else {
-          setStatus('Node setup had issues — check the log', 'error');
+          // Collect errors from the wizard log and surface them in the action feed
+          const errorEntries = progressLog.querySelectorAll('.wiz-error');
+          const errorMessages = [];
+          errorEntries.forEach(entry => {
+            const text = entry.textContent.replace(/^[^\s]\s*/, '').trim();
+            if (text) errorMessages.push(text);
+          });
+          if (errorMessages.length > 0) {
+            errorMessages.forEach(msg => pushActionFeed('Node setup: ' + msg, 'error'));
+            setStatus('Node setup failed — ' + errorMessages.length + ' error(s) shown in activity feed below', 'error');
+          } else {
+            pushActionFeed('Node setup failed — no node config was returned', 'error');
+            setStatus('Node setup had issues — see activity feed below', 'error');
+          }
         }
       }
 
