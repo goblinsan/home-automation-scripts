@@ -132,10 +132,12 @@ export async function runMigrations(): Promise<void> {
 
   // Read migration files sorted by name
   let files: string[];
+  console.log('[migrations] Looking for migration files in:', MIGRATIONS_DIR);
   try {
     files = (await readdir(MIGRATIONS_DIR)).filter((f) => f.endsWith('.sql')).sort();
-  } catch {
-    console.warn('[migrations] No migration directory found at', MIGRATIONS_DIR);
+    console.log('[migrations] Found files:', files);
+  } catch (err) {
+    console.warn('[migrations] No migration directory found at', MIGRATIONS_DIR, err instanceof Error ? err.message : err);
     return;
   }
 

@@ -31,6 +31,7 @@ import {
   buildHealthSnapshot,
   recordHealthCheck,
   getHealthHistory,
+  runMigrations,
   getBenchmarkRuns,
   createBenchmarkRun,
   addBenchmarkResult,
@@ -8895,6 +8896,8 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         // Ensure metrics are initialized (handles first-run or restart race)
         try {
           getPool();
+          // Pool exists but tables might not — ensure migrations ran
+          await runMigrations();
         } catch {
           try {
             await initMetrics(config.monitoring);
