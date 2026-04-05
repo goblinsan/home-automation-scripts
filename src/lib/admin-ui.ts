@@ -2670,7 +2670,7 @@ function htmlPage(basePath: string): string {
       status.textContent = message;
       status.title = message;
       status.className = kind === 'error' ? 'status-error' : kind === 'progress' ? 'status-progress' : 'status-ok';
-      if (kind === 'progress') {
+      if (kind === 'progress' || kind === 'error') {
         if (actionFeedCollapseTimer) {
           clearTimeout(actionFeedCollapseTimer);
         }
@@ -6241,10 +6241,9 @@ function htmlPage(basePath: string): string {
 
     document.getElementById('toggleActionFeedButton').addEventListener('click', () => {
       state.actionFeedCollapsed = !state.actionFeedCollapsed;
-      if (!state.actionFeedCollapsed) {
-        scheduleActionFeedAutoCollapse();
-      } else if (actionFeedCollapseTimer) {
+      if (actionFeedCollapseTimer) {
         clearTimeout(actionFeedCollapseTimer);
+        actionFeedCollapseTimer = null;
       }
       applyActionFeedVisibility();
     });
