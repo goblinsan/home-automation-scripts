@@ -327,6 +327,13 @@ export interface ServiceProfiles {
   piProxy: PiProxyServiceProfile;
 }
 
+export interface MonitoringConfig {
+  enabled: boolean;
+  postgres: { host: string; port: number; database: string; user: string; password: string };
+  redis: { host: string; port: number };
+  healthCheckIntervalSeconds: number;
+}
+
 export interface GatewayConfig {
   gateway: GatewaySettings;
   apps: AppConfig[];
@@ -335,6 +342,7 @@ export interface GatewayConfig {
   remoteWorkloads: RemoteWorkloadConfig[];
   features: FeatureFlagConfig[];
   serviceProfiles: ServiceProfiles;
+  monitoring?: MonitoringConfig;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1126,6 +1134,31 @@ function parseAdminUiSettings(value: unknown): AdminUiSettings {
   };
 }
 
+function parseMonitoringConfig(raw: unknown): MonitoringConfig | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!isRecord(raw)) throw new Error('monitoring must be an object');
+  if (!raw.enabled) return { enabled: false, postgres: { host: '', port: 5432, database: '', user: '', password: '' }, redis: { host: '', port: 6379 }, healthCheckIntervalSeconds: 60 };
+
+  if (!isRecord(raw.postgres)) throw new Error('monitoring.postgres must be an object');
+  if (!isRecord(raw.redis)) throw new Error('monitoring.redis must be an object');
+
+  return {
+    enabled: true,
+    postgres: {
+      host: assertString(raw.postgres.host, 'monitoring.postgres.host'),
+      port: assertNumber(raw.postgres.port, 'monitoring.postgres.port'),
+      database: assertString(raw.postgres.database, 'monitoring.postgres.database'),
+      user: assertString(raw.postgres.user, 'monitoring.postgres.user'),
+      password: typeof raw.postgres.password === 'string' ? raw.postgres.password : '',
+    },
+    redis: {
+      host: assertString(raw.redis.host, 'monitoring.redis.host'),
+      port: assertNumber(raw.redis.port, 'monitoring.redis.port'),
+    },
+    healthCheckIntervalSeconds: typeof raw.healthCheckIntervalSeconds === 'number' ? raw.healthCheckIntervalSeconds : 60,
+  };
+}
+
 export function parseGatewayConfig(raw: unknown): GatewayConfig {
   if (!isRecord(raw)) {
     throw new Error('Gateway config must be an object');
@@ -1211,7 +1244,9 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
     throw new Error(`service profile piProxy references unknown worker node ${serviceProfiles.piProxy.nodeId}`);
   }
 
-  return { gateway, apps, scheduledJobs, workerNodes, remoteWorkloads, features, serviceProfiles };
+  const monitoring = parseMonitoringConfig(raw.monitoring);
+
+  return { gateway, apps, scheduledJobs, workerNodes, remoteWorkloads, features, serviceProfiles, monitoring };
 }
 
 export async function loadGatewayConfig(configPath: string): Promise<GatewayConfig> {

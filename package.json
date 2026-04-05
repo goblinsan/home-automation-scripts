@@ -14,5 +14,9 @@
     "build": "node src/cli.ts build --config configs/gateway.config.example.json --out generated",
     "validate": "node src/cli.ts validate --config configs/gateway.config.example.json",
     "ui": "node src/cli.ts serve-ui --config configs/gateway.config.example.json --host 0.0.0.0 --port 4173 --out generated"
+  },
+  "dependencies": {
+    "ioredis": "^5.10.1",
+    "pg": "^8.20.0"
   }
 }

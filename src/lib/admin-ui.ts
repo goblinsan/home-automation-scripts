@@ -21,6 +21,23 @@ import {
   type AgentRunResult,
   type NodeSetupRequest
 } from './deploy.ts';
+import {
+  initMetrics,
+  shutdownMetrics,
+  startHealthCollector,
+  stopHealthCollector,
+  getCachedHealthSnapshot,
+  buildHealthSnapshot,
+  recordHealthCheck,
+  getHealthHistory,
+  getBenchmarkRuns,
+  createBenchmarkRun,
+  addBenchmarkResult,
+  finishBenchmarkRun,
+  deleteBenchmarkRun,
+  purgeOldHealthChecks,
+  type HealthProbeFunction,
+} from './metrics.ts';
 import { DEFAULT_WORKFLOW_SEED_PATH, importWorkflowSeed } from './workflows.ts';
 
 export interface AdminServerOptions {
@@ -1565,6 +1582,7 @@ function htmlPage(basePath: string): string {
         <button class="tab-button" data-tab="services">Services</button>
         <button class="tab-button" data-tab="agents">Agents &amp; Automations</button>
         <button class="tab-button" data-tab="infra">Infrastructure</button>
+        <button class="tab-button" data-tab="monitoring">Monitoring</button>
         <button class="tab-button" data-tab="settings">Settings</button>
       </nav>
     </div>
@@ -2145,6 +2163,109 @@ function htmlPage(basePath: string): string {
 
       </div>
 
+      <!-- ═══ MONITORING TAB ═══ -->
+      <div class="tab-panel" data-tab-panel="monitoring" hidden>
+      <nav class="sub-tab-nav" data-sub-group="monitoring">
+        <button class="sub-tab-button active" data-sub-tab="mon-health">Health</button>
+        <button class="sub-tab-button" data-sub-tab="mon-benchmarks">Benchmarks</button>
+        <button class="sub-tab-button" data-sub-tab="mon-settings">Monitoring Settings</button>
+      </nav>
+
+      <!-- Health sub-tab -->
+      <div class="sub-tab-panel active" data-sub-tab-panel="mon-health">
+      <div class="section-list">
+        <div class="card card-quiet">
+          <div class="split-actions">
+            <div>
+              <span class="pill">Health Monitor</span>
+              <h3>System Health Overview</h3>
+              <p>Live status of all nodes, apps, and services. Health checks run on a configurable interval and store time-series metrics in Postgres.</p>
+            </div>
+            <div>
+              <button id="refreshHealthButton">Refresh</button>
+              <button id="runHealthCheckButton" class="primary">Run Check Now</button>
+            </div>
+          </div>
+        </div>
+        <div id="monitoringDisabledBanner" class="card" style="border-left:3px solid var(--color-warning);display:none">
+          <p><strong>Monitoring is not enabled.</strong> Configure Postgres and Redis in the Monitoring Settings sub-tab, then enable monitoring to start collecting health data.</p>
+        </div>
+        <div id="healthTargetsContainer" class="section-list"></div>
+        <details class="card section-card" id="healthHistorySection" style="display:none">
+          <summary>
+            <div class="section-summary-copy">
+              <span class="pill">History</span>
+              <h3>Health Check History</h3>
+              <p>Recent check results for the selected target</p>
+            </div>
+          </summary>
+          <div class="section-body">
+            <div id="healthHistoryContainer"></div>
+          </div>
+        </details>
+      </div>
+      </div>
+
+      <!-- Benchmarks sub-tab -->
+      <div class="sub-tab-panel" data-sub-tab-panel="mon-benchmarks">
+      <div class="section-list">
+        <div class="card card-quiet">
+          <div class="split-actions">
+            <div>
+              <span class="pill">Benchmarks</span>
+              <h3>Service Benchmarks</h3>
+              <p>Record, compare, and track performance metrics across service configurations. Use this to find the optimal engine and settings for your hardware.</p>
+            </div>
+            <div>
+              <button id="refreshBenchmarksButton">Refresh</button>
+              <button id="newBenchmarkRunButton" class="primary">New Run</button>
+            </div>
+          </div>
+        </div>
+        <div id="benchmarkRunsContainer" class="section-list"></div>
+        <div id="benchmarkCompareContainer" style="display:none"></div>
+      </div>
+      </div>
+
+      <!-- Monitoring Settings sub-tab -->
+      <div class="sub-tab-panel" data-sub-tab-panel="mon-settings">
+      <div class="section-list">
+        <details class="card section-card" open>
+          <summary>
+            <div class="section-summary-copy">
+              <span class="pill">Connection</span>
+              <h3>Monitoring Data Stores</h3>
+              <p>Configure the Postgres and Redis connections used for health metrics and benchmark results.</p>
+            </div>
+          </summary>
+          <div class="section-body">
+            <div class="row">
+              <label class="check"><input id="monEnabled" type="checkbox" /> Monitoring Enabled</label>
+            </div>
+            <h4 style="margin-top:.75rem">Postgres</h4>
+            <div class="row">
+              <label>Host <input id="monPgHost" /></label>
+              <label>Port <input id="monPgPort" type="number" /></label>
+              <label>Database <input id="monPgDatabase" /></label>
+              <label>User <input id="monPgUser" /></label>
+              <label>Password <input id="monPgPassword" type="password" /></label>
+            </div>
+            <h4 style="margin-top:.75rem">Redis</h4>
+            <div class="row">
+              <label>Host <input id="monRedisHost" /></label>
+              <label>Port <input id="monRedisPort" type="number" /></label>
+            </div>
+            <h4 style="margin-top:.75rem">Collection</h4>
+            <div class="row">
+              <label>Health Check Interval (seconds) <input id="monHealthInterval" type="number" /></label>
+            </div>
+          </div>
+        </details>
+      </div>
+      </div>
+
+      </div><!-- /monitoring tab -->
+
       <!-- ═══ SETTINGS TAB ═══ -->
       <div class="tab-panel" data-tab-panel="settings" hidden>
       <nav class="sub-tab-nav" data-sub-group="settings">
@@ -2590,6 +2711,8 @@ function htmlPage(basePath: string): string {
       piProxyRegistry: null,
       piProxyStatus: null,
       kulrsActivityStatus: null,
+      healthSnapshot: null,
+      benchmarkRuns: [],
       actionFeedCollapsed: false,
       agentRun: {
         agentId: '',
@@ -2604,6 +2727,7 @@ function htmlPage(basePath: string): string {
         infra: 'infra-gateway',
         services: 'svc-remote',
         agents: 'agents-list',
+        monitoring: 'mon-health',
         settings: 'settings-creds'
       },
       dataLoaded: {},
@@ -3803,6 +3927,220 @@ function htmlPage(basePath: string): string {
           : '<div><strong>Tokens:</strong> not reported</div>',
         \`<div><strong>Content:</strong><br />\${result.content.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')}</div>\`
       ].join('');
+    }
+
+    // ── Monitoring: fetch + render ──
+
+    async function fetchHealthSnapshot() {
+      try {
+        const data = await requestJson('GET', '/api/monitoring/health', null, 15000);
+        state.healthSnapshot = data;
+        renderHealthTargets();
+      } catch (err) {
+        state.healthSnapshot = null;
+        renderHealthTargets();
+      }
+    }
+
+    async function fetchBenchmarkRuns() {
+      try {
+        const data = await requestJson('GET', '/api/monitoring/benchmarks', null, 15000);
+        state.benchmarkRuns = data.runs || [];
+        renderBenchmarkRuns();
+      } catch (err) {
+        state.benchmarkRuns = [];
+        renderBenchmarkRuns();
+      }
+    }
+
+    async function fetchHealthHistory(kind, id) {
+      try {
+        const data = await requestJson('GET', '/api/monitoring/health/history?kind=' + encodeURIComponent(kind) + '&id=' + encodeURIComponent(id), null, 15000);
+        renderHealthHistory(data.rows || [], kind, id);
+      } catch (err) {
+        renderHealthHistory([], kind, id);
+      }
+    }
+
+    function renderMonitoringSettings() {
+      if (!state.config) return;
+      const mon = state.config.monitoring || { enabled: false, postgres: { host: '', port: 5432, database: '', user: '', password: '' }, redis: { host: '', port: 6379 }, healthCheckIntervalSeconds: 60 };
+      document.getElementById('monEnabled').checked = mon.enabled;
+      document.getElementById('monPgHost').value = mon.postgres.host;
+      document.getElementById('monPgPort').value = String(mon.postgres.port);
+      document.getElementById('monPgDatabase').value = mon.postgres.database;
+      document.getElementById('monPgUser').value = mon.postgres.user;
+      document.getElementById('monPgPassword').value = mon.postgres.password;
+      document.getElementById('monRedisHost').value = mon.redis.host;
+      document.getElementById('monRedisPort').value = String(mon.redis.port);
+      document.getElementById('monHealthInterval').value = String(mon.healthCheckIntervalSeconds);
+    }
+
+    function readMonitoringSettings() {
+      if (!state.config) return;
+      state.config.monitoring = {
+        enabled: document.getElementById('monEnabled').checked,
+        postgres: {
+          host: document.getElementById('monPgHost').value,
+          port: parseInt(document.getElementById('monPgPort').value) || 5432,
+          database: document.getElementById('monPgDatabase').value,
+          user: document.getElementById('monPgUser').value,
+          password: document.getElementById('monPgPassword').value,
+        },
+        redis: {
+          host: document.getElementById('monRedisHost').value,
+          port: parseInt(document.getElementById('monRedisPort').value) || 6379,
+        },
+        healthCheckIntervalSeconds: parseInt(document.getElementById('monHealthInterval').value) || 60,
+      };
+    }
+
+    function statusBadge(status) {
+      const colors = { healthy: 'var(--color-success)', degraded: 'var(--color-warning)', down: 'var(--color-error)', unknown: 'var(--color-muted)' };
+      const color = colors[status] || colors.unknown;
+      return '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';margin-right:6px" title="' + escapeHtml(status) + '"></span>';
+    }
+
+    function renderHealthTargets() {
+      const container = document.getElementById('healthTargetsContainer');
+      const banner = document.getElementById('monitoringDisabledBanner');
+      if (!container) return;
+
+      const mon = state.config && state.config.monitoring;
+      if (!mon || !mon.enabled) {
+        banner.style.display = '';
+        container.innerHTML = '';
+        return;
+      }
+      banner.style.display = 'none';
+
+      if (!state.healthSnapshot || !state.healthSnapshot.targets || state.healthSnapshot.targets.length === 0) {
+        container.innerHTML = '<div class="card card-quiet"><p>No health data yet. Click <strong>Run Check Now</strong> to collect the first snapshot.</p></div>';
+        return;
+      }
+
+      const targets = state.healthSnapshot.targets;
+      container.innerHTML = targets.map(function(t) {
+        const uptime = t.uptimePercent24h !== null ? t.uptimePercent24h.toFixed(1) + '%' : '—';
+        const latency = t.responseTimeMs !== null ? t.responseTimeMs + 'ms' : '—';
+        const lastCheck = t.lastChecked ? new Date(t.lastChecked).toLocaleString() : 'never';
+        return '<div class="card" style="border-left:3px solid ' + (t.status === 'healthy' ? 'var(--color-success)' : t.status === 'degraded' ? 'var(--color-warning)' : t.status === 'down' ? 'var(--color-error)' : 'var(--color-muted)') + '">' +
+          '<div class="split-actions">' +
+            '<div>' +
+              statusBadge(t.status) +
+              '<strong>' + escapeHtml(t.label) + '</strong>' +
+              ' <span class="pill">' + escapeHtml(t.kind) + '</span>' +
+              ' <span class="pill">' + escapeHtml(t.id) + '</span>' +
+            '</div>' +
+            '<div style="display:flex;gap:1rem;align-items:center;font-size:.85rem">' +
+              '<span title="24h uptime">⬆ ' + uptime + '</span>' +
+              '<span title="Response time">⏱ ' + latency + '</span>' +
+              '<span title="Last checked">🕐 ' + escapeHtml(lastCheck) + '</span>' +
+              '<button class="health-history-btn" data-kind="' + escapeHtml(t.kind) + '" data-id="' + escapeHtml(t.id) + '" style="font-size:.8rem">History</button>' +
+            '</div>' +
+          '</div>' +
+          (t.details ? '<pre style="margin:.5rem 0 0;font-size:.75rem;max-height:6rem;overflow-y:auto;background:var(--color-card);padding:.4rem;border-radius:4px">' + escapeHtml(JSON.stringify(t.details, null, 2)) + '</pre>' : '') +
+        '</div>';
+      }).join('');
+
+      container.querySelectorAll('.health-history-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          fetchHealthHistory(btn.dataset.kind, btn.dataset.id);
+        });
+      });
+    }
+
+    function renderHealthHistory(rows, kind, id) {
+      const section = document.getElementById('healthHistorySection');
+      const container = document.getElementById('healthHistoryContainer');
+      if (!section || !container) return;
+      section.style.display = '';
+      section.open = true;
+
+      if (rows.length === 0) {
+        container.innerHTML = '<p>No history for ' + escapeHtml(kind) + '/' + escapeHtml(id) + '</p>';
+        return;
+      }
+
+      container.innerHTML =
+        '<table style="width:100%;font-size:.8rem;border-collapse:collapse">' +
+        '<thead><tr><th style="text-align:left;padding:.3rem">Time</th><th>Status</th><th>Latency</th><th>Details</th></tr></thead>' +
+        '<tbody>' +
+        rows.map(function(r) {
+          return '<tr style="border-top:1px solid var(--color-border)">' +
+            '<td style="padding:.3rem">' + escapeHtml(new Date(r.checked_at).toLocaleString()) + '</td>' +
+            '<td style="padding:.3rem">' + statusBadge(r.status) + escapeHtml(r.status) + '</td>' +
+            '<td style="padding:.3rem">' + (r.response_time_ms != null ? r.response_time_ms + 'ms' : '—') + '</td>' +
+            '<td style="padding:.3rem;max-width:20rem;overflow:hidden;text-overflow:ellipsis">' + escapeHtml(r.details || '') + '</td>' +
+          '</tr>';
+        }).join('') +
+        '</tbody></table>';
+    }
+
+    function renderBenchmarkRuns() {
+      const container = document.getElementById('benchmarkRunsContainer');
+      if (!container) return;
+
+      if (!state.benchmarkRuns || state.benchmarkRuns.length === 0) {
+        container.innerHTML = '<div class="card card-quiet"><p>No benchmark runs recorded yet. Click <strong>New Run</strong> to record a benchmark.</p></div>';
+        return;
+      }
+
+      container.innerHTML = state.benchmarkRuns.map(function(run) {
+        const status = run.finished_at ? 'completed' : 'running';
+        const duration = run.finished_at ? ((new Date(run.finished_at) - new Date(run.started_at)) / 1000).toFixed(1) + 's' : 'in progress';
+        const resultsHtml = run.results && run.results.length > 0
+          ? '<table style="width:100%;font-size:.78rem;border-collapse:collapse;margin-top:.5rem">' +
+            '<thead><tr><th style="text-align:left;padding:.25rem">Test</th><th>Metric</th><th>Value</th><th>Unit</th></tr></thead>' +
+            '<tbody>' + run.results.map(function(r) {
+              return '<tr style="border-top:1px solid var(--color-border)">' +
+                '<td style="padding:.25rem">' + escapeHtml(r.test_name) + '</td>' +
+                '<td style="padding:.25rem">' + escapeHtml(r.metric) + '</td>' +
+                '<td style="padding:.25rem"><strong>' + r.value + '</strong></td>' +
+                '<td style="padding:.25rem">' + escapeHtml(r.unit) + '</td>' +
+              '</tr>';
+            }).join('') + '</tbody></table>'
+          : '<p style="font-size:.8rem;color:var(--color-muted)">No results recorded</p>';
+
+        return '<details class="card section-card">' +
+          '<summary>' +
+            '<div class="section-summary-copy">' +
+              '<span class="pill">' + escapeHtml(run.engine) + '</span>' +
+              '<span class="pill">' + escapeHtml(run.suite_id) + '</span>' +
+              ' <strong>' + escapeHtml(run.name) + '</strong>' +
+              ' <span style="font-size:.8rem;color:var(--color-muted)">' + escapeHtml(duration) + ' — ' + escapeHtml(run.hardware || '?') + '</span>' +
+            '</div>' +
+          '</summary>' +
+          '<div class="section-body">' +
+            '<div class="row" style="font-size:.82rem">' +
+              '<div><strong>Engine:</strong> ' + escapeHtml(run.engine) + '</div>' +
+              '<div><strong>Hardware:</strong> ' + escapeHtml(run.hardware) + '</div>' +
+              '<div><strong>Started:</strong> ' + escapeHtml(new Date(run.started_at).toLocaleString()) + '</div>' +
+              (run.finished_at ? '<div><strong>Finished:</strong> ' + escapeHtml(new Date(run.finished_at).toLocaleString()) + '</div>' : '') +
+            '</div>' +
+            (run.notes ? '<p style="font-size:.82rem;margin-top:.5rem"><em>' + escapeHtml(run.notes) + '</em></p>' : '') +
+            '<pre style="font-size:.72rem;max-height:8rem;overflow-y:auto;background:var(--color-card);padding:.4rem;border-radius:4px;margin-top:.5rem">' + escapeHtml(JSON.stringify(run.config, null, 2)) + '</pre>' +
+            resultsHtml +
+            '<div style="margin-top:.5rem;display:flex;gap:.5rem">' +
+              '<button class="delete-benchmark-btn" data-run-id="' + run.id + '" style="font-size:.78rem;color:var(--color-error)">Delete Run</button>' +
+            '</div>' +
+          '</div>' +
+        '</details>';
+      }).join('');
+
+      container.querySelectorAll('.delete-benchmark-btn').forEach(function(btn) {
+        btn.addEventListener('click', async function() {
+          if (!confirm('Delete benchmark run #' + btn.dataset.runId + '?')) return;
+          try {
+            await requestJson('DELETE', '/api/monitoring/benchmarks/' + btn.dataset.runId, null, 10000);
+            setStatus('Deleted benchmark run');
+            state.dataLoaded.benchmarkRuns = 0;
+            fetchBenchmarkRuns();
+          } catch (err) {
+            setStatus(err.message, 'error');
+          }
+        });
+      });
     }
 
     function renderRuntime() {
@@ -5859,6 +6197,7 @@ function htmlPage(basePath: string): string {
       renderJobs();
       renderFeatures();
       renderRuntime();
+      renderMonitoringSettings();
       syncRawJson();
       renderActiveTab();
     }
@@ -5945,6 +6284,16 @@ function htmlPage(basePath: string): string {
           }
           if (isStale('jobsCatalog')) {
             fetches.push(fetchJobsCatalog().then(() => markLoaded('jobsCatalog')));
+          }
+          break;
+        case 'mon-health':
+          if (isStale('healthSnapshot')) {
+            fetches.push(fetchHealthSnapshot().then(() => markLoaded('healthSnapshot')));
+          }
+          break;
+        case 'mon-benchmarks':
+          if (isStale('benchmarkRuns')) {
+            fetches.push(fetchBenchmarkRuns().then(() => markLoaded('benchmarkRuns')));
           }
           break;
       }
@@ -6744,6 +7093,97 @@ function htmlPage(basePath: string): string {
         }
       });
     });
+    // ── Monitoring button handlers ──
+    document.getElementById('refreshHealthButton').addEventListener('click', async () => {
+      const btn = document.getElementById('refreshHealthButton');
+      await withBusyButton(btn, 'Refreshing…', async () => {
+        state.dataLoaded.healthSnapshot = 0;
+        await fetchHealthSnapshot();
+        setStatus('Health snapshot refreshed');
+      });
+    });
+    document.getElementById('runHealthCheckButton').addEventListener('click', async () => {
+      const btn = document.getElementById('runHealthCheckButton');
+      await withBusyButton(btn, 'Checking…', async () => {
+        try {
+          await requestJson('POST', '/api/monitoring/health/check', {}, 30000);
+          state.dataLoaded.healthSnapshot = 0;
+          await fetchHealthSnapshot();
+          setStatus('Health check completed');
+        } catch (err) { setStatus(err.message, 'error'); }
+      });
+    });
+    document.getElementById('refreshBenchmarksButton').addEventListener('click', async () => {
+      const btn = document.getElementById('refreshBenchmarksButton');
+      await withBusyButton(btn, 'Refreshing…', async () => {
+        state.dataLoaded.benchmarkRuns = 0;
+        await fetchBenchmarkRuns();
+        setStatus('Benchmarks refreshed');
+      });
+    });
+    document.getElementById('newBenchmarkRunButton').addEventListener('click', () => {
+      showNewBenchmarkModal();
+    });
+    // Monitoring settings auto-read
+    ['monEnabled', 'monPgHost', 'monPgPort', 'monPgDatabase', 'monPgUser', 'monPgPassword', 'monRedisHost', 'monRedisPort', 'monHealthInterval'].forEach(function(id) {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('change', readMonitoringSettings);
+      if (el && el.type !== 'checkbox') el.addEventListener('input', readMonitoringSettings);
+    });
+
+    function showNewBenchmarkModal() {
+      let modal = document.getElementById('newBenchmarkModal');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'newBenchmarkModal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
+        document.body.appendChild(modal);
+      }
+      modal.innerHTML =
+        '<div style="background:var(--color-bg);border:1px solid var(--color-border);border-radius:8px;max-width:36rem;width:90vw;padding:1.25rem;box-shadow:0 8px 32px rgba(0,0,0,.4)">' +
+          '<h3 style="margin:0 0 .75rem">New Benchmark Run</h3>' +
+          '<div class="row">' +
+            '<label>Suite ID <input id="bmSuiteId" value="stt-transcription" /></label>' +
+            '<label>Run Name <input id="bmName" placeholder="e.g. faster-whisper large-v3 float16" /></label>' +
+          '</div>' +
+          '<div class="row">' +
+            '<label>Engine <input id="bmEngine" placeholder="e.g. faster-whisper" /></label>' +
+            '<label>Hardware <input id="bmHardware" placeholder="e.g. RTX 4060 8GB" /></label>' +
+          '</div>' +
+          '<div class="row">' +
+            '<label style="grid-column:1/-1">Config JSON <textarea id="bmConfig" rows="3" style="font-family:monospace;font-size:.82rem">{}</textarea></label>' +
+          '</div>' +
+          '<div class="row">' +
+            '<label style="grid-column:1/-1">Notes <textarea id="bmNotes" rows="2"></textarea></label>' +
+          '</div>' +
+          '<div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.75rem">' +
+            '<button id="bmCancel">Cancel</button>' +
+            '<button id="bmCreate" class="primary">Create Run</button>' +
+          '</div>' +
+        '</div>';
+      modal.hidden = false;
+      modal.addEventListener('click', function(e) { if (e.target === modal) modal.hidden = true; });
+      modal.querySelector('#bmCancel').addEventListener('click', function() { modal.hidden = true; });
+      modal.querySelector('#bmCreate').addEventListener('click', async function() {
+        try {
+          let config = {};
+          try { config = JSON.parse(document.getElementById('bmConfig').value); } catch {}
+          await requestJson('POST', '/api/monitoring/benchmarks', {
+            suiteId: document.getElementById('bmSuiteId').value,
+            name: document.getElementById('bmName').value,
+            engine: document.getElementById('bmEngine').value,
+            hardware: document.getElementById('bmHardware').value,
+            config: config,
+            notes: document.getElementById('bmNotes').value,
+          }, 10000);
+          modal.hidden = true;
+          setStatus('Benchmark run created');
+          state.dataLoaded.benchmarkRuns = 0;
+          fetchBenchmarkRuns();
+        } catch (err) { setStatus(err.message, 'error'); }
+      });
+    }
+
     document.getElementById('reloadWorkflowsButton').addEventListener('click', async () => {
       try {
         await fetchWorkflows();
@@ -8498,6 +8938,97 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         return;
       }
 
+      // ── Monitoring API endpoints ──
+
+      if (request.method === 'GET' && path === '/api/monitoring/health') {
+        const cached = await getCachedHealthSnapshot();
+        if (cached) {
+          sendJson(response, 200, cached);
+          return;
+        }
+        // No cached snapshot — try to build one live
+        const config = await loadGatewayConfig(options.configPath);
+        const targets = buildMonitoringTargets(config);
+        const snapshot = await buildHealthSnapshot(targets);
+        sendJson(response, 200, snapshot);
+        return;
+      }
+
+      if (request.method === 'POST' && path === '/api/monitoring/health/check') {
+        const config = await loadGatewayConfig(options.configPath);
+        const targets = buildMonitoringTargets(config);
+        const probe = createHealthProbe(config);
+        const results = await probe();
+        for (const r of results) {
+          await recordHealthCheck(r.kind, r.id, r.status, r.responseTimeMs, r.details);
+        }
+        const snapshot = await buildHealthSnapshot(targets);
+        sendJson(response, 200, snapshot);
+        return;
+      }
+
+      if (request.method === 'GET' && path.startsWith('/api/monitoring/health/history')) {
+        const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+        const kind = url.searchParams.get('kind') || '';
+        const id = url.searchParams.get('id') || '';
+        const hours = parseInt(url.searchParams.get('hours') || '24') || 24;
+        if (!kind || !id) {
+          sendJson(response, 400, { error: 'kind and id query params required' });
+          return;
+        }
+        const rows = await getHealthHistory(kind, id, hours);
+        sendJson(response, 200, { rows });
+        return;
+      }
+
+      if (request.method === 'GET' && path === '/api/monitoring/benchmarks') {
+        const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+        const suiteId = url.searchParams.get('suite') || undefined;
+        const runs = await getBenchmarkRuns(suiteId);
+        sendJson(response, 200, { runs });
+        return;
+      }
+
+      if (request.method === 'POST' && path === '/api/monitoring/benchmarks') {
+        const body = JSON.parse(await readBody(request)) as {
+          suiteId: string; name: string; engine: string;
+          config?: Record<string, unknown>; hardware?: string; notes?: string;
+        };
+        const runId = await createBenchmarkRun(
+          body.suiteId, body.name, body.engine,
+          body.config || {}, body.hardware || '', body.notes || ''
+        );
+        sendJson(response, 200, { message: 'Benchmark run created', runId });
+        return;
+      }
+
+      const benchmarkRunIdMatch = path.match(/^\/api\/monitoring\/benchmarks\/(\d+)$/);
+
+      if (benchmarkRunIdMatch && request.method === 'DELETE') {
+        await deleteBenchmarkRun(parseInt(benchmarkRunIdMatch[1]));
+        sendJson(response, 200, { message: 'Benchmark run deleted' });
+        return;
+      }
+
+      if (benchmarkRunIdMatch && request.method === 'POST') {
+        const runId = parseInt(benchmarkRunIdMatch[1]);
+        const body = JSON.parse(await readBody(request)) as {
+          action?: string; testName?: string; metric?: string; value?: number; unit?: string;
+        };
+        if (body.action === 'finish') {
+          await finishBenchmarkRun(runId);
+          sendJson(response, 200, { message: 'Benchmark run finished' });
+          return;
+        }
+        if (body.testName && body.metric && body.value !== undefined) {
+          await addBenchmarkResult(runId, body.testName, body.metric, body.value, body.unit || '');
+          sendJson(response, 200, { message: 'Benchmark result added' });
+          return;
+        }
+        sendJson(response, 400, { error: 'Invalid benchmark action' });
+        return;
+      }
+
       sendJson(response, 404, { error: 'Not found' });
     } catch (error) {
       sendJson(response, 400, {
@@ -8505,6 +9036,96 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       });
     }
   });
+
+  // ── Monitoring init ──
+
+  function buildMonitoringTargets(config: GatewayConfig): Array<{ kind: string; id: string; label: string }> {
+    const targets: Array<{ kind: string; id: string; label: string }> = [];
+    for (const node of config.workerNodes) {
+      if (!node.enabled) continue;
+      targets.push({ kind: 'node', id: node.id, label: `${node.id} (${node.host})` });
+    }
+    for (const app of config.apps) {
+      if (!app.enabled) continue;
+      targets.push({ kind: 'app', id: app.id, label: app.id });
+    }
+    for (const w of config.remoteWorkloads) {
+      if (!w.enabled) continue;
+      targets.push({ kind: 'workload', id: w.id, label: `${w.id} (${w.kind})` });
+    }
+    return targets;
+  }
+
+  function createHealthProbe(config: GatewayConfig): HealthProbeFunction {
+    return async () => {
+      const results: Array<{ kind: string; id: string; label: string; status: string; responseTimeMs: number | null; details: Record<string, unknown> | null }> = [];
+
+      // Probe worker nodes via SSH
+      for (const node of config.workerNodes) {
+        if (!node.enabled) continue;
+        const t0 = Date.now();
+        try {
+          const { execSync } = await import('node:child_process');
+          execSync(`ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -p ${node.sshPort} ${node.sshUser}@${node.host} echo ok`, { timeout: 10_000, stdio: 'pipe' });
+          results.push({ kind: 'node', id: node.id, label: `${node.id} (${node.host})`, status: 'healthy', responseTimeMs: Date.now() - t0, details: null });
+        } catch {
+          results.push({ kind: 'node', id: node.id, label: `${node.id} (${node.host})`, status: 'down', responseTimeMs: Date.now() - t0, details: null });
+        }
+      }
+
+      // Probe apps via health endpoint
+      for (const app of config.apps) {
+        if (!app.enabled) continue;
+        const slot = app.slots.blue;
+        const url = `http://127.0.0.1:${slot.port}${app.healthPath}`;
+        const t0 = Date.now();
+        try {
+          const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+          results.push({
+            kind: 'app', id: app.id, label: app.id,
+            status: resp.ok ? 'healthy' : 'degraded',
+            responseTimeMs: Date.now() - t0,
+            details: { statusCode: resp.status, url }
+          });
+        } catch {
+          results.push({ kind: 'app', id: app.id, label: app.id, status: 'down', responseTimeMs: Date.now() - t0, details: { url } });
+        }
+      }
+
+      // Probe container-service workloads via their status
+      for (const w of config.remoteWorkloads) {
+        if (!w.enabled || w.kind !== 'container-service') continue;
+        const t0 = Date.now();
+        try {
+          const status = await getContainerServiceWorkloadStatus(config, w.id);
+          const allHealthy = status.services && status.services.every((s: { status: string }) => s.status === 'running');
+          results.push({
+            kind: 'workload', id: w.id, label: `${w.id} (${w.kind})`,
+            status: allHealthy ? 'healthy' : 'degraded',
+            responseTimeMs: Date.now() - t0,
+            details: { services: status.services }
+          });
+        } catch {
+          results.push({ kind: 'workload', id: w.id, label: `${w.id} (${w.kind})`, status: 'down', responseTimeMs: Date.now() - t0, details: null });
+        }
+      }
+
+      return results;
+    };
+  }
+
+  // Start monitoring if enabled in config
+  try {
+    const config = await loadGatewayConfig(options.configPath);
+    if (config.monitoring?.enabled) {
+      await initMetrics(config.monitoring);
+      const probe = createHealthProbe(config);
+      startHealthCollector(config.monitoring.healthCheckIntervalSeconds, probe);
+      console.log('[monitoring] Health collector started');
+    }
+  } catch (err) {
+    console.error('[monitoring] Failed to initialize:', err instanceof Error ? err.message : err);
+  }
 
   await new Promise<void>((resolve) => {
     server.listen(options.port, options.host, () => {

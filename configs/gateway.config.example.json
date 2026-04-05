@@ -464,5 +464,20 @@
       "pollIntervalSeconds": 30,
       "serviceUser": "deploy"
     }
+  },
+  "monitoring": {
+    "enabled": false,
+    "postgres": {
+      "host": "198.51.100.42",
+      "port": 5432,
+      "database": "gateway_metrics",
+      "user": "gateway",
+      "password": ""
+    },
+    "redis": {
+      "host": "198.51.100.200",
+      "port": 6379
+    },
+    "healthCheckIntervalSeconds": 60
   }
 }
