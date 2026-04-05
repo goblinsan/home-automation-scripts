@@ -8,6 +8,7 @@ import {
   bootstrapWorkerNode,
   controlContainerServiceWorkload,
   controlMinecraftWorkload,
+  getContainerServiceLogs,
   getContainerServiceWorkloadStatus,
   deployPiProxyService,
   deployRemoteWorkload,
@@ -4721,10 +4722,23 @@ function htmlPage(basePath: string): string {
                 </div>
                 <div class="toolbar">
                   <button data-action="service-refresh-status">Refresh Status</button>
+                  <button data-action="service-logs">View Logs</button>
                   <button data-action="service-start">Start</button>
                   <button data-action="service-stop">Stop</button>
                   <button data-action="service-restart">Restart</button>
                 </div>
+              </div>
+              <div data-panel="service-logs" hidden>
+                <div class="toolbar" style="margin-bottom:.5rem">
+                  <select data-control="logsService">
+                    <option value="">All services</option>
+                    \${(serviceStatus?.containers || []).map(c => '<option value="' + escapeHtml(c.service) + '">' + escapeHtml(c.service) + '</option>').join('')}
+                  </select>
+                  <button data-action="service-logs-refresh">Refresh</button>
+                  <button data-action="service-logs-close">Close</button>
+                </div>
+                <pre class="wizard-log" data-output="service-logs" style="max-height:24rem;overflow:auto;font-size:.78rem"></pre>
+              </div>
               </div>
               <div class="row">
                 <label>Image<input data-service-field="image" value="\${service.image || ''}" placeholder="ghcr.io/example/service:latest" /></label>
@@ -5005,6 +5019,34 @@ function htmlPage(basePath: string): string {
             } catch (error) {
               setStatus(error.message, 'error');
             }
+          });
+
+          const logsPanel = element.querySelector('[data-panel="service-logs"]');
+          const logsOutput = element.querySelector('[data-output="service-logs"]');
+          const logsServiceSelect = element.querySelector('[data-control="logsService"]');
+
+          async function fetchAndShowLogs() {
+            const svc = logsServiceSelect?.value || '';
+            const qs = svc ? '?service=' + encodeURIComponent(svc) + '&tail=200' : '?tail=200';
+            try {
+              logsOutput.textContent = 'Loading logs…';
+              const result = await requestJson('GET', '/api/remote-workloads/' + encodeURIComponent(workload.id) + '/service-logs' + qs);
+              logsOutput.textContent = (result.lines || []).join('\\n') || '(no output)';
+              logsOutput.scrollTop = logsOutput.scrollHeight;
+            } catch (error) {
+              logsOutput.textContent = 'Error: ' + (error.message || error);
+            }
+          }
+
+          element.querySelector('[data-action="service-logs"]').addEventListener('click', async () => {
+            logsPanel.hidden = !logsPanel.hidden;
+            if (!logsPanel.hidden) {
+              await fetchAndShowLogs();
+            }
+          });
+          element.querySelector('[data-action="service-logs-refresh"]')?.addEventListener('click', fetchAndShowLogs);
+          element.querySelector('[data-action="service-logs-close"]')?.addEventListener('click', () => {
+            logsPanel.hidden = true;
           });
         }
 
@@ -7854,6 +7896,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       const remoteWorkloadDeployMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/deploy$/);
       const remoteWorkloadStatusMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/status$/);
       const remoteServiceStatusMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/service-status$/);
+      const remoteServiceLogsMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/service-logs$/);
       const remoteServiceActionMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/service\/(start|stop|restart)$/);
       const remoteMinecraftActionMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/(start|stop|restart|broadcast|kick|ban|update-if-empty|force-update)$/);
       const remoteMinecraftUpdateRequestMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/update-request$/);
@@ -8130,6 +8173,16 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           decodeURIComponent(remoteServiceStatusMatch[1])
         );
         sendJson(response, 200, status);
+        return;
+      }
+
+      if (remoteServiceLogsMatch && request.method === 'GET') {
+        const config = await loadGatewayConfig(options.configPath);
+        const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+        const service = url.searchParams.get('service') || undefined;
+        const tail = Math.min(Math.max(parseInt(url.searchParams.get('tail') || '100', 10) || 100, 10), 500);
+        const logs = await getContainerServiceLogs(config, decodeURIComponent(remoteServiceLogsMatch[1]), service, tail);
+        sendJson(response, 200, logs);
         return;
       }
 

@@ -1484,6 +1484,27 @@ async function probeContainerServiceHealth(
   };
 }
 
+export async function getContainerServiceLogs(
+  config: GatewayConfig,
+  workloadId: string,
+  serviceName?: string,
+  tailLines = 100
+): Promise<{ workloadId: string; service: string; lines: string[] }> {
+  const workload = getRemoteWorkload(config, workloadId);
+  if (!(workload.kind === 'container-service' && workload.service)) {
+    throw new Error(`Remote workload ${workloadId} is not a container-service workload`);
+  }
+  const node = getWorkerNode(config, workload.nodeId);
+  const composeCommand = getServiceComposeCommand(node, workload);
+  const svcArg = serviceName ? ` ${shellQuote(serviceName)}` : '';
+  const result = await runRemoteShellCapture(node, `${composeCommand} logs --tail ${tailLines} --no-color${svcArg} 2>&1`);
+  return {
+    workloadId,
+    service: serviceName || 'all',
+    lines: result.stdout.split('\n')
+  };
+}
+
 export async function getContainerServiceWorkloadStatus(config: GatewayConfig, workloadId: string): Promise<ContainerServiceWorkloadStatus> {
   const workload = getRemoteWorkload(config, workloadId);
   if (!(workload.kind === 'container-service' && workload.service)) {
