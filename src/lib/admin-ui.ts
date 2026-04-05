@@ -5859,7 +5859,9 @@ function htmlPage(basePath: string): string {
       });
       const data = response.status === 204 ? null : await response.json();
       if (!response.ok) {
-        throw new Error(data?.error || 'Request failed');
+        const err = new Error(data?.error || 'Request failed');
+        if (data) { Object.assign(err, data); }
+        throw err;
       }
       return data;
     }
@@ -7203,7 +7205,12 @@ function htmlPage(basePath: string): string {
           appendLog('Service deployed successfully!', 'success');
           pushActionFeed('Deployed service ' + workloadId);
         } catch (err) {
-          appendLog('Deploy failed: ' + (err.message || err), 'error');
+          const detail = err.failedStep ? ' [step: ' + err.failedStep + ']' : '';
+          const errorType = err.errorType ? ' (' + err.errorType + ')' : '';
+          appendLog('Deploy failed: ' + (err.message || err) + detail + errorType, 'error');
+          if (err.deployLog && err.deployLog.length > 0) {
+            appendLog('Deploy log: ' + err.deployLog.join(' → '), 'info');
+          }
           appendLog('');
           appendLog('The workload config has been saved. You can retry the deploy from the workload card.', 'info');
         }
@@ -8043,17 +8050,39 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       }
 
       if (remoteWorkloadDeployMatch && request.method === 'POST') {
-        const config = await loadGatewayConfig(options.configPath);
-        const body = JSON.parse(await readBody(request) || '{}') as { revision?: string };
-        await buildArtifacts(config, options.buildOutDir);
-        await deployRemoteWorkload(
-          config,
-          decodeURIComponent(remoteWorkloadDeployMatch[1]),
-          options.buildOutDir,
-          typeof body.revision === 'string' && body.revision.trim().length > 0 ? body.revision.trim() : undefined,
-          { dryRun: false, log: () => undefined }
-        );
-        sendJson(response, 200, { message: `Deployed remote workload ${decodeURIComponent(remoteWorkloadDeployMatch[1])}` });
+        const workloadId = decodeURIComponent(remoteWorkloadDeployMatch[1]);
+        const deployLog: string[] = [];
+        try {
+          deployLog.push('loading config');
+          const config = await loadGatewayConfig(options.configPath);
+          deployLog.push('parsing body');
+          const body = JSON.parse(await readBody(request) || '{}') as { revision?: string };
+          deployLog.push('building artifacts');
+          await buildArtifacts(config, options.buildOutDir);
+          deployLog.push('deploying workload');
+          await deployRemoteWorkload(
+            config,
+            workloadId,
+            options.buildOutDir,
+            typeof body.revision === 'string' && body.revision.trim().length > 0 ? body.revision.trim() : undefined,
+            { dryRun: false, log: (msg: string) => deployLog.push(msg) }
+          );
+          sendJson(response, 200, { message: `Deployed remote workload ${workloadId}` });
+        } catch (deployError) {
+          const msg = deployError instanceof Error ? deployError.message : String(deployError);
+          const name = deployError instanceof Error ? deployError.constructor.name : 'unknown';
+          console.error(`[deploy ${workloadId}] Failed at step: ${deployLog[deployLog.length - 1] || '?'}`);
+          console.error(`[deploy ${workloadId}] ${name}: ${msg}`);
+          if (deployError instanceof Error && deployError.stack) {
+            console.error(deployError.stack);
+          }
+          sendJson(response, 400, {
+            error: msg,
+            failedStep: deployLog[deployLog.length - 1] || 'unknown',
+            errorType: name,
+            deployLog
+          });
+        }
         return;
       }
 
