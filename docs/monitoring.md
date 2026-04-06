@@ -15,7 +15,6 @@ architecture, what gets probed, and the contract for monitored targets.
 │  │ Health Probe    │──┼──→ Worker Nodes (SSH)
 │  │ Loop            │──┼──→ Apps (HTTP health endpoint)
 │  │                 │──┼──→ Container Workloads (docker status)
-│  │                 │──┼──→ Service Profiles (HTTP reachability)
 │  └───────┬────────┘  │
 │          │           │
 │          ▼           │
@@ -63,12 +62,6 @@ port to check. It does not probe the inactive slot.
 - **Healthy**: Server container status contains "Up"
 - **Down**: Container stopped, exited, or node unreachable
 
-### Service Profiles
-
-- **Method**: HTTP reachability to configured base URLs
-- **Healthy**: Endpoint responds with 2xx
-- **Down**: Connection refused or timeout
-
 ## Data Storage
 
 ### Postgres (Required)
@@ -78,7 +71,7 @@ Health check results are stored in the `health_checks` table:
 | Column | Type | Purpose |
 |--------|------|---------|
 | `id` | serial | Primary key |
-| `target_kind` | text | `node`, `app`, `workload`, `service-profile` |
+| `target_kind` | text | `node`, `app`, `workload` |
 | `target_id` | text | Identifier matching config |
 | `status` | text | `healthy`, `degraded`, `down`, `unknown` |
 | `response_time_ms` | integer | Probe response time |
@@ -135,18 +128,23 @@ This is displayed in the admin UI's Monitoring tab.
 
 ## Data Retention
 
-Old health check records are automatically purged based on a configurable
-retention period. The purge runs periodically alongside the health probe loop.
+A purge helper (`purgeOldHealthChecks`) exists in the codebase, but old health
+rows are not currently purged automatically by the running collector. If
+retention becomes necessary, this should be wired into a scheduled maintenance
+path or the collector loop.
 
 ## Benchmark System
 
-Alongside health monitoring, the system supports performance benchmarks:
+The control plane includes manual storage and comparison support for benchmark
+runs. It does not run benchmarks automatically — it records runs and results
+supplied through the admin UI or API.
 
-- **Benchmark runs**: Named test sessions with start/end times
-- **Benchmark results**: Individual measurements within a run (latency, throughput, etc.)
+- **Benchmark runs**: Named test sessions with suite ID, engine, hardware notes
+- **Benchmark results**: Individual measurements within a run (test name, metric, value, unit)
 
-This is used for tracking inference service performance (STT, TTS, LLM) over
-time. Benchmarks are stored in `benchmark_runs` and `benchmark_results` tables.
+Benchmark data is stored in `benchmark_runs` and `benchmark_results` tables.
+The Monitoring tab provides UI for creating runs, viewing results, and comparing
+across runs.
 
 ## Admin UI Integration
 

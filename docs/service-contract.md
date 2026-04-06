@@ -1,22 +1,28 @@
-# Service Contract
+# Blue/Green App Contract
 
 This document defines what an application must provide to be deployed, monitored,
-configured, and controlled by the gateway control plane.
+configured, and controlled by the gateway control plane as a blue/green app.
 
-If you are building or modifying a service that will be managed by this system,
-your repo must satisfy these requirements.
+The control plane also manages scheduled jobs, remote workloads, and service
+profiles, which have different requirements. This document covers only the
+blue/green app deployment model.
 
-## 1. Container Contract
+## 1. What The Control Plane Actually Requires
 
-### Required: Docker Compose
+For a blue/green managed app, the deploy engine requires a config entry that
+provides:
 
-Every app must have a `docker-compose.yml` at its repo root that:
+- `repoUrl` — where to clone the app source
+- `deployRoot` — the host directory for slot checkouts
+- `healthPath` — the endpoint to smoke-test after startup
+- `buildCommands` — commands to run in the checkout before starting
+- `slots.blue.startCommand` / `slots.blue.stopCommand`
+- `slots.green.startCommand` / `slots.green.stopCommand`
 
-- Accepts `HOST_PORT` as an environment variable for the externally bound port
-- Supports `docker compose up -d --build --remove-orphans` as the start command
-- Supports `docker compose down --remove-orphans` as the stop command
-- Uses a project name that includes the slot identifier (provided by the deploy
-  system via tokenized commands)
+The deploy engine is **command-driven**. It does not inherently require Docker
+Compose, `HOST_PORT`, or a specific repo layout. It runs whatever start/stop
+commands the config defines for each slot. Those commands are tokenized with
+slot-specific values (see section 7).
 
 ### Required: Health Endpoint
 
@@ -30,34 +36,28 @@ service is ready to accept traffic. This endpoint is used for:
 The endpoint path is configured per-app in `gateway.config.json` (e.g.,
 `/health`, `/healthz`, `/api/agents`). It must respond within 5 seconds.
 
-### Required: PORT Binding
-
-The container must listen on the port specified by `HOST_PORT`. The deploy system
-resolves this from the slot configuration — blue and green slots use different
-ports so both can run simultaneously during transitions.
-
 ### Recommended: Stateless Containers
 
 Containers should not store persistent state inside the container filesystem.
 Use mounted volumes or external services (Postgres, Redis) for durable data.
-The deploy system destroys and recreates the slot container on each deploy.
+The deploy system destroys and recreates the slot on each deploy.
 
-## 2. Repo Layout Contract
+## 2. Current House Style For Gateway Apps
 
-The deploy system clones your repo into `/srv/apps/<app-id>/<slot>/` on the
-gateway host. It expects:
+The existing gateway apps all follow this convention:
 
-```
-<repo-root>/
-  docker-compose.yml    ← required
-  Dockerfile            ← required (referenced by docker-compose.yml)
-  package.json          ← if Node.js, for build commands
-```
+- A repo-root `docker-compose.yml` and `Dockerfile`
+- Slot commands that pass `HOST_PORT=__SLOT_PORT__` to Docker Compose
+- Env files referenced from `__SHARED__`
+- Docker Compose project names that include `__SLOT__` for blue/green isolation
+
+Follow this pattern for consistency unless you have a reason not to. The deploy
+engine does not enforce it — it simply runs the configured commands.
 
 ### Build Commands
 
 The control plane runs configured build commands in the repo checkout directory
-before starting the container. Common examples:
+before starting the slot. Common examples:
 
 - `npm ci`
 - `npm run build`
@@ -68,20 +68,21 @@ system.
 
 ## 3. Environment File Contract
 
-The control plane generates environment files from service profiles and places
+The control plane can generate environment files from service profiles and place
 them in the app's `shared/` directory at deploy time:
 
 ```
 /srv/apps/<app-id>/shared/<env-file-name>
 ```
 
-Your `docker-compose.yml` should reference the env file using a path that the
-deploy system resolves via token substitution. The deploy command replaces tokens
-like `__SHARED__` with the actual shared directory path.
+This is a service-profile convention, not a deploy-engine requirement. If your
+app has a service profile in the control plane config, the deploy system will
+write the generated env file to the shared directory using token substitution
+(e.g., `__SHARED__` resolves to the shared path).
 
 ### What Goes in Env Files
 
-The control plane manages:
+Service profiles manage:
 
 - Runtime configuration (ports, base URLs, feature flags)
 - API keys and secrets
@@ -96,12 +97,15 @@ If your app exposes management APIs that the control plane interacts with, those
 endpoints are part of the deployment contract. Changing them requires a
 coordinated update to `gateway-control-plane`.
 
-### gateway-api Endpoints
+The paths listed below are **upstream app paths** — the paths your app must
+serve. The control plane's admin UI proxies these through its own namespaced
+routes (e.g., `/api/chat-platform/providers/status` proxies to the upstream
+app's `/api/providers/status`).
 
-The control plane proxies workflow management through these endpoints:
+### gateway-api Upstream Endpoints
 
-| Method | Path | Purpose |
-|--------|------|---------|
+| Method | Upstream Path | Purpose |
+|--------|---------------|---------|
 | GET | `/api/workflows` | List all workflows |
 | GET | `/api/workflows/:id` | Get workflow by ID |
 | POST | `/api/workflows` | Create workflow |
@@ -114,12 +118,10 @@ The control plane proxies workflow management through these endpoints:
 | POST | `/api/workflows/:id/run` | Trigger workflow run |
 | POST | `/internal/workflows/:id/execute` | Internal execution hook |
 
-### gateway-chat-platform Endpoints
+### gateway-chat-platform Upstream Endpoints
 
-The control plane manages agents and providers through these endpoints:
-
-| Method | Path | Purpose |
-|--------|------|---------|
+| Method | Upstream Path | Purpose |
+|--------|---------------|---------|
 | GET | `/api/providers/status` | Provider availability |
 | GET | `/api/providers/:name/models` | List models for provider |
 | GET | `/api/agents` | List agents (also used as readiness) |
@@ -198,32 +200,33 @@ If you change any of the following in your app repo, the control plane config or
 code must be updated in the same change set:
 
 - Health endpoint path or behavior
-- Docker Compose service names or startup contract
+- Container startup contract (Dockerfile, compose, service names)
 - Environment variable names your app requires
 - Management API endpoint paths, request shapes, or response shapes
 - Port expectations
 - Readiness semantics (what "healthy" means)
 
-Each app's `.github/copilot-instructions.md` contains its own list of
-coordination requirements. Read those before making cross-repo changes.
+Where present, repo-level `.github/copilot-instructions.md` files should be
+treated as part of the coordination contract. Read those before making
+cross-repo changes.
 
 ## 9. Adding a New App
 
 To add a new app to the control plane:
 
-1. Create the app repo with a `Dockerfile` and `docker-compose.yml` that
-   accepts `HOST_PORT`
-2. Add a health endpoint
-3. Add an entry to `gateway.config.json` under `apps[]` with:
+1. Create the app repo with a health endpoint and a way to start/stop the
+   service (the current house style uses Docker Compose with `HOST_PORT`)
+2. Add an entry to `gateway.config.json` under `apps[]` with:
    - unique `id`
-   - `repoUrl` pointing to your GitHub repo
+   - `repoUrl` pointing to your repo
    - `healthPath` for your health endpoint
+   - `buildCommands` for any pre-start build steps
    - `slots.blue` and `slots.green` with distinct ports and tokenized
      start/stop commands
    - `routePath` and/or `hostnames[]` for nginx routing
-4. Optionally add a service profile if the control plane should manage env
+3. Optionally add a service profile if the control plane should manage env
    files or runtime config for the app
-5. Add a `deploy-on-merge.yml` GitHub Actions workflow that calls the
+4. Add a deploy workflow (e.g., `deploy-on-merge.yml`) that calls the
    control plane's deploy script on the self-hosted gateway runner
-6. Run `build` to regenerate nginx and upstream configs
-7. Deploy with `deploy-app.sh`
+5. Run `build` to regenerate nginx and upstream configs
+6. Deploy with `deploy-app.sh`

@@ -103,7 +103,6 @@ The control plane collects health data from all managed targets:
 - Worker nodes (SSH reachability)
 - Apps (HTTP health endpoints)
 - Remote workloads (container status)
-- Service profiles (API reachability)
 
 Results are stored in Postgres with 24-hour uptime calculations and optional
 Redis caching. The admin UI shows live status and history.
@@ -116,8 +115,8 @@ Redis caching. The admin UI shows live status and history.
 | `gateway-api` | Workflow engine, job runner, GitHub integration | Blue/green Docker app |
 | `gateway-chat-platform` | AI chat with agents, providers, TTS | Blue/green Docker app (multi-container) |
 
-Each repo has a `.github/copilot-instructions.md` that documents the contract
-boundary with this control plane. Read those before making changes that cross
+Related repos may include `.github/copilot-instructions.md` files documenting
+coordination expectations. Read those before making changes that cross
 repo boundaries.
 
 ## Documentation Map

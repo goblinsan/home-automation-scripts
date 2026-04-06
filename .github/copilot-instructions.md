@@ -15,6 +15,10 @@ For private operational details (IPs, credentials, topology), check `docs/local/
 if you have access. Those files are gitignored and contain the real infrastructure
 state.
 
+> Public docs describe stable architecture and contracts.
+> `docs/local/` contains live operational detail and may drift; treat it as
+> situational context, not schema.
+
 ## What this repo is
 
 This is the infrastructure control plane for a private gateway. It manages
@@ -35,7 +39,8 @@ defined in `docs/service-contract.md`.
 | `src/lib/deploy.ts` | Blue/green deploy, rollback, smoke test |
 | `src/lib/nginx.ts` | Nginx config and upstream generation |
 | `src/lib/metrics.ts` | Health monitoring, Postgres/Redis, benchmarks |
-| `src/lib/workers.ts` | Remote worker node management over SSH |
+| `src/lib/remote-worker.ts` | Gateway-worker rendering and deploy |
+| `src/lib/remote-workloads.ts` | Remote workload rendering and deploy |
 | `src/cli.ts` | CLI entry point for all commands |
 | `deploy/bin/*.sh` | Deploy wrapper scripts called by GitHub Actions |
 | `migration/metrics/*.sql` | Monitoring database migrations |
