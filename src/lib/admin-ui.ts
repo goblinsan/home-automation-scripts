@@ -8465,7 +8465,17 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           try {
             slots[app.id] = await readCurrentSlot(app);
           } catch {
-            slots[app.id] = 'unknown';
+            // current-slot file not accessible (may not be mounted in container)
+            // Try to infer by probing both slot health endpoints
+            let inferred = 'unknown';
+            for (const slotName of ['blue', 'green'] as const) {
+              const slot = app.slots[slotName];
+              try {
+                const resp = await fetch(`http://127.0.0.1:${slot.port}${app.healthPath}`, { signal: AbortSignal.timeout(3000) });
+                if (resp.ok) { inferred = slotName; break; }
+              } catch { /* try next */ }
+            }
+            slots[app.id] = inferred;
           }
         }
         sendJson(response, 200, slots);
@@ -9058,24 +9068,40 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         }
       }
 
-      // Probe apps via health endpoint (use active slot)
+      // Probe apps via health endpoint (try active slot, fall back to opposite)
       for (const app of config.apps) {
         if (!app.enabled) continue;
         let activeSlot: 'blue' | 'green' = 'blue';
         try { activeSlot = await readCurrentSlot(app); } catch { /* default blue */ }
-        const slot = app.slots[activeSlot];
-        const url = `http://127.0.0.1:${slot.port}${app.healthPath}`;
-        const t0 = Date.now();
-        try {
-          const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
-          results.push({
-            kind: 'app', id: app.id, label: app.id,
-            status: resp.ok ? 'healthy' : 'degraded',
-            responseTimeMs: Date.now() - t0,
-            details: { statusCode: resp.status, url }
-          });
-        } catch {
-          results.push({ kind: 'app', id: app.id, label: app.id, status: 'down', responseTimeMs: Date.now() - t0, details: { url } });
+
+        // Try active slot first, then opposite (handles container not having /srv/apps mounted)
+        const slotsToTry: Array<'blue' | 'green'> = [activeSlot, activeSlot === 'blue' ? 'green' : 'blue'];
+        let probed = false;
+        for (const slotName of slotsToTry) {
+          const slot = app.slots[slotName];
+          const url = `http://127.0.0.1:${slot.port}${app.healthPath}`;
+          const t0 = Date.now();
+          try {
+            const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+            results.push({
+              kind: 'app', id: app.id, label: app.id,
+              status: resp.ok ? 'healthy' : 'degraded',
+              responseTimeMs: Date.now() - t0,
+              details: { statusCode: resp.status, url, slot: slotName }
+            });
+            probed = true;
+            break;
+          } catch {
+            // If this was the last slot to try, record the failure
+            if (slotName === slotsToTry[slotsToTry.length - 1]) {
+              results.push({ kind: 'app', id: app.id, label: app.id, status: 'down', responseTimeMs: Date.now() - t0, details: { url, slot: slotName } });
+              probed = true;
+            }
+            // Otherwise try the next slot
+          }
+        }
+        if (!probed) {
+          results.push({ kind: 'app', id: app.id, label: app.id, status: 'down', responseTimeMs: 0, details: null });
         }
       }
 
@@ -9085,12 +9111,13 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         const t0 = Date.now();
         try {
           const status = await getContainerServiceWorkloadStatus(config, w.id);
-          const allHealthy = status.services && status.services.every((s: { status: string }) => s.status === 'running');
+          // status.service is the primary service status; status.containers is the per-container list (repo-compose)
+          const isHealthy = status.service?.running === true;
           results.push({
             kind: 'workload', id: w.id, label: `${w.id} (${w.kind})`,
-            status: allHealthy ? 'healthy' : 'degraded',
+            status: isHealthy ? 'healthy' : 'degraded',
             responseTimeMs: Date.now() - t0,
-            details: { services: status.services }
+            details: { service: status.service, containers: status.containers ?? null }
           });
         } catch {
           results.push({ kind: 'workload', id: w.id, label: `${w.id} (${w.kind})`, status: 'down', responseTimeMs: Date.now() - t0, details: null });
@@ -9103,12 +9130,13 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         const t0 = Date.now();
         try {
           const status = await getMinecraftWorkloadStatus(config, w.id);
-          const isHealthy = status.containers && status.containers.some((c: { status: string }) => /up/i.test(c.status));
+          // status.server is the container inspect result with .running and .status
+          const isHealthy = status.server?.running === true;
           results.push({
             kind: 'workload', id: w.id, label: `${w.id} (${w.kind})`,
             status: isHealthy ? 'healthy' : 'down',
             responseTimeMs: Date.now() - t0,
-            details: { containers: status.containers }
+            details: { server: status.server, worker: status.worker }
           });
         } catch {
           results.push({ kind: 'workload', id: w.id, label: `${w.id} (${w.kind})`, status: 'down', responseTimeMs: Date.now() - t0, details: null });
