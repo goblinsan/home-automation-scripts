@@ -2805,38 +2805,55 @@ function htmlPage(basePath: string): string {
     function showDeployTelemetryModal(workloadId, deployLog, durationMs, success) {
       let modal = document.getElementById('deployTelemetryModal');
       if (!modal) {
-        modal = document.createElement('div');
+        modal = document.createElement('dialog');
         modal.id = 'deployTelemetryModal';
-        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
+        modal.className = 'wizard-dialog';
+        modal.style.maxWidth = '56rem';
+        modal.style.width = '90vw';
+        modal.innerHTML =
+          '<div class="wizard-content">' +
+            '<div class="wizard-header">' +
+              '<h2 id="deployTelemetryTitle" style="font-size:1rem"></h2>' +
+              '<div style="display:flex;gap:.5rem;align-items:center">' +
+                '<button id="copyTelemetryBtn" type="button" style="font-size:.8rem">Copy</button>' +
+                '<button id="closeTelemetryBtn" type="button" class="wizard-close" aria-label="Close deploy telemetry">×</button>' +
+              '</div>' +
+            '</div>' +
+            '<div style="padding:1rem 1.25rem;border-bottom:1px solid var(--line);font-size:.9rem;color:var(--text)">' +
+              '<span id="deployTelemetryStatus"></span>' +
+            '</div>' +
+            '<pre id="telemetryContent" class="wizard-log" style="flex:1;overflow-y:auto;margin:0;padding:1rem 1.25rem;font-size:.78rem;line-height:1.5;white-space:pre-wrap;word-break:break-all;background:#f6f6f2;color:var(--text)"></pre>' +
+          '</div>';
+        modal.addEventListener('click', (event) => {
+          if (event.target === modal) {
+            modal.close();
+          }
+        });
         document.body.appendChild(modal);
       }
       const totalSecs = durationMs ? (durationMs / 1000).toFixed(1) + 's' : '?';
-      const statusLabel = success ? '<span class="success">✔ Deployed</span>' : '<span class="error">✘ Failed</span>';
-      modal.innerHTML =
-        '<div style="background:var(--color-bg);border:1px solid var(--color-border);border-radius:8px;max-width:56rem;width:90vw;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.4)">' +
-          '<div style="padding:.75rem 1rem;border-bottom:1px solid var(--color-border);display:flex;justify-content:space-between;align-items:center">' +
-            '<strong>Deploy Telemetry: ' + escapeHtml(workloadId) + ' ' + statusLabel + ' &mdash; ' + totalSecs + '</strong>' +
-            '<div style="display:flex;gap:.5rem">' +
-              '<button id="copyTelemetryBtn" style="font-size:.8rem">Copy</button>' +
-              '<button id="closeTelemetryBtn" style="font-size:.8rem">Close</button>' +
-            '</div>' +
-          '</div>' +
-          '<pre id="telemetryContent" style="flex:1;overflow-y:auto;margin:0;padding:.75rem 1rem;font-size:.78rem;line-height:1.5;white-space:pre-wrap;word-break:break-all">' +
-          deployLog.map(formatTelemetryLine).join('\\n') +
-          '</pre>' +
-        '</div>';
-      modal.hidden = false;
-      modal.querySelector('#closeTelemetryBtn').addEventListener('click', () => { modal.hidden = true; });
-      modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
-      modal.querySelector('#copyTelemetryBtn').addEventListener('click', () => {
+      const title = modal.querySelector('#deployTelemetryTitle');
+      const status = modal.querySelector('#deployTelemetryStatus');
+      const content = modal.querySelector('#telemetryContent');
+      const closeButton = modal.querySelector('#closeTelemetryBtn');
+      const copyButton = modal.querySelector('#copyTelemetryBtn');
+      title.textContent = 'Deploy Telemetry: ' + workloadId;
+      status.innerHTML = (success ? '<span class="success">✔ Deployed</span>' : '<span class="error">✘ Failed</span>') + ' — ' + escapeHtml(totalSecs);
+      content.innerHTML = deployLog.map(formatTelemetryLine).join('\\n');
+      closeButton.onclick = () => { modal.close(); };
+      copyButton.onclick = () => {
         const plain = deployLog.map(function(entry) {
           return '[' + (entry.ts / 1000).toFixed(1) + 's] ' + (entry.msg || '');
         }).join('\\n');
         navigator.clipboard.writeText(plain).then(() => {
-          modal.querySelector('#copyTelemetryBtn').textContent = 'Copied!';
-          setTimeout(() => { modal.querySelector('#copyTelemetryBtn').textContent = 'Copy'; }, 2000);
+          copyButton.textContent = 'Copied!';
+          setTimeout(() => { copyButton.textContent = 'Copy'; }, 2000);
         });
-      });
+      };
+      if (modal.open) {
+        modal.close();
+      }
+      modal.showModal();
     }
 
     function joinBase(path) {
@@ -7655,7 +7672,7 @@ function htmlPage(basePath: string): string {
             <label class="wizard-field">
               <span class="wizard-label">Default Model Path</span>
               <input id="svcFieldModelPath" type="text" value="/data/models/llm/model.gguf" />
-              <span class="wizard-hint">Initial GGUF file to load when the service starts.</span>
+              <span class="wizard-hint">Initial GGUF file to load when the service starts. If it is not there yet, the wrapper will come up in no-model mode so you can download or load one later.</span>
             </label>
             <label class="wizard-field">
               <span class="wizard-label">Context Size</span>
