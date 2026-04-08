@@ -2556,7 +2556,15 @@ function htmlPage(basePath: string): string {
         <div class="wizard-preset-grid">
           <button class="svc-catalog-card" data-svc="stt-service">
             <strong>Speech to Text</strong>
-            <small>GPU-accelerated transcription API + UI powered by faster-whisper. Drag-and-drop audio, language detection, word timestamps.</small>
+            <small>Guided install for <code>stt-service</code> with faster-whisper, optional pyannote diarization, and GPU-friendly defaults.</small>
+          </button>
+          <button class="svc-catalog-card" data-svc="llm-service">
+            <strong>Local LLM Service</strong>
+            <small>Guided install for <code>llm-service</code> with llama.cpp, model-management API, and shared-GPU guardrails.</small>
+          </button>
+          <button class="svc-catalog-card" data-svc="cv-sam-service">
+            <strong>CV / SAM Service</strong>
+            <small>Guided install for <code>cv-sam-service</code> with Segment Anything, image analysis endpoints, and workflow-ready defaults.</small>
           </button>
           <button class="svc-catalog-card" data-svc="container-service">
             <strong>Custom Container Service</strong>
@@ -4487,6 +4495,17 @@ function htmlPage(basePath: string): string {
     function firstWorkerNodeId() {
       const namedNode = state.config.workerNodes.find((node) => typeof node.id === 'string' && node.id.trim().length > 0);
       return namedNode ? namedNode.id : '';
+    }
+
+    function firstGpuWorkerNodeId() {
+      const gpuNode = state.config.workerNodes.find((node) => {
+        const haystack = [node.id, node.description, node.host]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes('gpu') || haystack.includes('cuda') || haystack.includes('tags-node');
+      });
+      return gpuNode?.id || firstWorkerNodeId();
     }
 
     function nextWorkerNodeId() {
@@ -7514,13 +7533,14 @@ function htmlPage(basePath: string): string {
 
         const nodes = state.config.workerNodes;
         const defaultNode = firstWorkerNodeId();
+        const defaultGpuNode = firstGpuWorkerNodeId();
 
         if (selectedSvc === 'stt-service') {
-          document.getElementById('svcConfigDesc').textContent = 'Configure Speech-to-Text service for your GPU node.';
+          document.getElementById('svcConfigDesc').textContent = 'Configure stt-service for your GPU node. The wizard will save a repo-compose workload, inject the environment settings, and deploy it immediately.';
           container.innerHTML = \`
             <label class="wizard-field">
               <span class="wizard-label">Target Node</span>
-              <select id="svcFieldNode">\${nodes.map(n => '<option value="' + n.id + '"' + (n.id === defaultNode ? ' selected' : '') + '>' + n.id + ' (' + n.host + ')' + '</option>').join('')}</select>
+              <select id="svcFieldNode">\${nodes.map(n => '<option value="' + n.id + '"' + (n.id === defaultGpuNode ? ' selected' : '') + '>' + n.id + ' (' + n.host + ')' + '</option>').join('')}</select>
               <span class="wizard-hint">The worker node where this service will be deployed.</span>
             </label>
             <label class="wizard-field">
@@ -7539,9 +7559,9 @@ function htmlPage(basePath: string): string {
               <span class="wizard-hint">Exposed port for the STT API + UI (nginx entry point).</span>
             </label>
             <label class="wizard-field">
-              <span class="wizard-label">Data Directory</span>
-              <input id="svcFieldDataDir" type="text" value="/data/stt-service" />
-              <span class="wizard-hint">Host path for persistent data (model cache, uploaded files).</span>
+              <span class="wizard-label">Model Cache Directory</span>
+              <input id="svcFieldDataDir" type="text" value="/data/models/stt-service" />
+              <span class="wizard-hint">Host path for cached Whisper and pyannote models.</span>
             </label>
             <label class="wizard-field">
               <span class="wizard-label">Whisper Model Size</span>
@@ -7555,8 +7575,153 @@ function htmlPage(basePath: string): string {
               <span class="wizard-hint">Larger models are more accurate but use more GPU memory.</span>
             </label>
             <label class="wizard-field">
+              <span class="wizard-label">Enable Diarization</span>
+              <select id="svcFieldEnableDiarization">
+                <option value="yes" selected>Yes</option>
+                <option value="no">No</option>
+              </select>
+              <span class="wizard-hint">Adds pyannote environment settings and prompts you for the HuggingFace token.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">HF Token</span>
+              <input id="svcFieldHfToken" type="password" value="" placeholder="hf_xxx" />
+              <span class="wizard-hint">Required for pyannote speaker diarization. Stored as a secret env var in the workload config.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Diarization Whisper Model</span>
+              <select id="svcFieldDiarizeModel">
+                <option value="">Use main model</option>
+                <option value="small" selected>small – lower VRAM, good diarization pairing</option>
+                <option value="medium">medium – balanced</option>
+              </select>
+              <span class="wizard-hint">When diarization is enabled, use a smaller Whisper model to stay within an 8 GB VRAM budget.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Pyannote Idle Timeout (sec)</span>
+              <input id="svcFieldPyannoteIdle" type="number" value="300" />
+              <span class="wizard-hint">Automatically unload pyannote after inactivity to free VRAM for other services.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Warm Up Pyannote at Startup</span>
+              <select id="svcFieldPyannoteWarmup">
+                <option value="true">Yes</option>
+                <option value="false" selected>No, lazy load on first diarize request</option>
+              </select>
+              <span class="wizard-hint">Disable warmup if you want faster initial deploys and lower idle VRAM usage.</span>
+            </label>
+            <label class="wizard-field">
               <span class="wizard-label">Description</span>
-              <input id="svcFieldDesc" type="text" value="Speech-to-Text transcription API + web UI" />
+              <input id="svcFieldDesc" type="text" value="Speech-to-text API + UI with optional speaker diarization" />
+            </label>
+          \`;
+        } else if (selectedSvc === 'llm-service') {
+          document.getElementById('svcConfigDesc').textContent = 'Configure llm-service for your GPU node. The wizard will register the repo-compose workload, set the model/runtime paths, and deploy the wrapper plus llama.cpp stack.';
+          container.innerHTML = \`
+            <label class="wizard-field">
+              <span class="wizard-label">Target Node</span>
+              <select id="svcFieldNode">\${nodes.map(n => '<option value="' + n.id + '"' + (n.id === defaultGpuNode ? ' selected' : '') + '>' + n.id + ' (' + n.host + ')' + '</option>').join('')}</select>
+              <span class="wizard-hint">The worker node where this service will be deployed.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Workload ID</span>
+              <input id="svcFieldId" type="text" value="llm-service" />
+              <span class="wizard-hint">Unique identifier for this workload.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Git Repo URL</span>
+              <input id="svcFieldRepo" type="text" value="https://github.com/goblinsan/llm-service.git" />
+              <span class="wizard-hint">The repo is cloned and built on the worker node using its docker-compose stack.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Published Port</span>
+              <input id="svcFieldPort" type="number" value="5301" />
+              <span class="wizard-hint">Exposed port for the wrapper API and OpenAI-compatible endpoints.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Models Host Directory</span>
+              <input id="svcFieldModelsHostDir" type="text" value="/data/models" />
+              <span class="wizard-hint">Host path mounted to <code>/data/models</code> inside the container.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Runtime State Directory</span>
+              <input id="svcFieldStateDir" type="text" value="/data/llm" />
+              <span class="wizard-hint">Host path mounted to <code>/data/llm</code> for wrapper state, logs, and downloads.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Model Directory in Container</span>
+              <input id="svcFieldModelsDir" type="text" value="/data/models/llm" />
+              <span class="wizard-hint">Directory scanned by the wrapper for GGUF models.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Default Model Path</span>
+              <input id="svcFieldModelPath" type="text" value="/data/models/llm/model.gguf" />
+              <span class="wizard-hint">Initial GGUF file to load when the service starts.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Context Size</span>
+              <input id="svcFieldCtxSize" type="number" value="4096" />
+              <span class="wizard-hint">Higher values improve long-context prompts but consume more VRAM.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Max Concurrent Requests</span>
+              <input id="svcFieldMaxConcurrent" type="number" value="1" min="1" />
+              <span class="wizard-hint">Keep this at 1 on a shared 8 GB GPU to avoid LLM/STT contention.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Admin Token</span>
+              <input id="svcFieldAdminToken" type="password" value="" placeholder="optional" />
+              <span class="wizard-hint">Used for model-management endpoints such as download and load.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Description</span>
+              <input id="svcFieldDesc" type="text" value="Local llama.cpp wrapper with model management API" />
+            </label>
+          \`;
+        } else if (selectedSvc === 'cv-sam-service') {
+          document.getElementById('svcConfigDesc').textContent = 'Configure cv-sam-service for your GPU node. The wizard will save the repo-compose workload, pin the SAM model variant, and deploy the API stack.';
+          container.innerHTML = \`
+            <label class="wizard-field">
+              <span class="wizard-label">Target Node</span>
+              <select id="svcFieldNode">\${nodes.map(n => '<option value="' + n.id + '"' + (n.id === defaultGpuNode ? ' selected' : '') + '>' + n.id + ' (' + n.host + ')' + '</option>').join('')}</select>
+              <span class="wizard-hint">The worker node where this service will be deployed.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Workload ID</span>
+              <input id="svcFieldId" type="text" value="cv-sam-service" />
+              <span class="wizard-hint">Unique identifier for this workload.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Git Repo URL</span>
+              <input id="svcFieldRepo" type="text" value="https://github.com/goblinsan/cv-sam-service.git" />
+              <span class="wizard-hint">The repo is cloned and built on the worker node using its docker-compose stack.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Published Port</span>
+              <input id="svcFieldPort" type="number" value="5201" />
+              <span class="wizard-hint">Exposed port for the segmentation and image-analysis API.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Models Host Directory</span>
+              <input id="svcFieldModelsHostDir" type="text" value="/data/models" />
+              <span class="wizard-hint">Host path mounted to <code>/data/models</code> inside the container.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">SAM Model Directory</span>
+              <input id="svcFieldModelDir" type="text" value="/data/models/sam" />
+              <span class="wizard-hint">Location inside the container where SAM checkpoints are cached.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">SAM Variant</span>
+              <select id="svcFieldSamVariant">
+                <option value="vit_b" selected>vit_b – recommended on shared 8 GB GPUs</option>
+                <option value="vit_l">vit_l – larger, higher VRAM</option>
+                <option value="vit_h">vit_h – largest, highest VRAM</option>
+              </select>
+              <span class="wizard-hint">Prefer <code>vit_b</code> when STT or LLM workloads share the GPU.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Description</span>
+              <input id="svcFieldDesc" type="text" value="Segment Anything + CV utility API" />
             </label>
           \`;
         } else if (selectedSvc === 'container-service') {
@@ -7657,6 +7822,69 @@ function htmlPage(basePath: string): string {
           const dataDir = document.getElementById('svcFieldDataDir').value || '/data/stt-service';
           const model = document.getElementById('svcFieldModel').value || 'medium';
           const repo = document.getElementById('svcFieldRepo').value || '';
+          const enableDiarization = document.getElementById('svcFieldEnableDiarization').value === 'yes';
+          const hfToken = (document.getElementById('svcFieldHfToken').value || '').trim();
+          const diarizeModel = (document.getElementById('svcFieldDiarizeModel').value || '').trim();
+          const pyannoteIdle = parseInt(document.getElementById('svcFieldPyannoteIdle').value, 10) || 300;
+          const pyannoteWarmup = (document.getElementById('svcFieldPyannoteWarmup').value || 'false').trim();
+          const environment = [
+            { key: 'STT_MODEL_SIZE', value: model, secret: false, description: 'faster-whisper model size' },
+            { key: 'HOST_PORT', value: String(port), secret: false, description: 'Published port for nginx entry point' },
+            { key: 'STT_MODEL_DIR', value: dataDir, secret: false, description: 'Host path for cached whisper and pyannote models' }
+          ];
+          if (enableDiarization) {
+            environment.push(
+              { key: 'STT_HF_TOKEN', value: hfToken, secret: true, description: 'HuggingFace token for pyannote diarization models' },
+              { key: 'STT_PYANNOTE_IDLE_TIMEOUT_SEC', value: String(pyannoteIdle), secret: false, description: 'Idle timeout before unloading pyannote' },
+              { key: 'STT_WARMUP_PYANNOTE', value: pyannoteWarmup, secret: false, description: 'Warm pyannote at startup' }
+            );
+            if (diarizeModel) {
+              environment.push({ key: 'STT_DIARIZE_WHISPER_MODEL', value: diarizeModel, secret: false, description: 'Smaller Whisper model for diarized requests' });
+            }
+          }
+
+          workload = {
+            id: workloadId,
+            enabled: true,
+            nodeId: nodeId,
+            description: desc,
+            kind: 'container-service',
+            service: {
+              build: {
+                strategy: 'repo-compose',
+                repoUrl: repo,
+                defaultRevision: 'main',
+                contextPath: '.',
+              },
+              networkMode: 'bridge',
+              restartPolicy: 'unless-stopped',
+              autoStart: true,
+              runtimeClass: 'nvidia',
+              command: '',
+              environment,
+              volumeMounts: [],
+              jsonFiles: [],
+              ports: [
+                { published: port, target: 80, protocol: 'tcp' }
+              ],
+              healthCheck: {
+                protocol: 'http',
+                port: port,
+                path: '/api/health',
+                expectedStatus: 200
+              }
+            }
+          };
+        } else if (selectedSvc === 'llm-service') {
+          const port = parseInt(document.getElementById('svcFieldPort').value, 10) || 5301;
+          const repo = (document.getElementById('svcFieldRepo').value || '').trim();
+          const modelsHostDir = (document.getElementById('svcFieldModelsHostDir').value || '/data/models').trim();
+          const stateDir = (document.getElementById('svcFieldStateDir').value || '/data/llm').trim();
+          const modelsDir = (document.getElementById('svcFieldModelsDir').value || '/data/models/llm').trim();
+          const modelPath = (document.getElementById('svcFieldModelPath').value || '/data/models/llm/model.gguf').trim();
+          const ctxSize = parseInt(document.getElementById('svcFieldCtxSize').value, 10) || 4096;
+          const maxConcurrent = parseInt(document.getElementById('svcFieldMaxConcurrent').value, 10) || 1;
+          const adminToken = (document.getElementById('svcFieldAdminToken').value || '').trim();
 
           workload = {
             id: workloadId,
@@ -7677,14 +7905,63 @@ function htmlPage(basePath: string): string {
               runtimeClass: 'nvidia',
               command: '',
               environment: [
-                { key: 'STT_MODEL_SIZE', value: model, secret: false, description: 'faster-whisper model size' },
-                { key: 'HOST_PORT', value: String(port), secret: false, description: 'Published port for nginx entry point' },
-                { key: 'STT_MODEL_DIR', value: dataDir + '/models', secret: false, description: 'Host path for cached whisper models' }
+                { key: 'HOST_PORT', value: String(port), secret: false, description: 'Published port for the wrapper API' },
+                { key: 'MODELS_HOST_DIR', value: modelsHostDir, secret: false, description: 'Host path mounted to /data/models' },
+                { key: 'LLM_STATE_DIR', value: stateDir, secret: false, description: 'Host path mounted to /data/llm' },
+                { key: 'MODELS_DIR', value: modelsDir, secret: false, description: 'Directory scanned for GGUF models' },
+                { key: 'MODEL_PATH', value: modelPath, secret: false, description: 'Initial GGUF file loaded at startup' },
+                { key: 'CTX_SIZE', value: String(ctxSize), secret: false, description: 'llama.cpp context size' },
+                { key: 'MAX_CONCURRENT_REQUESTS', value: String(maxConcurrent), secret: false, description: 'Concurrent inference request limit' },
+                { key: 'ADMIN_TOKEN', value: adminToken, secret: true, description: 'Admin token for model management endpoints' }
               ],
               volumeMounts: [],
               jsonFiles: [],
               ports: [
-                { published: port, target: 80, protocol: 'tcp' }
+                { published: port, target: 8080, protocol: 'tcp' }
+              ],
+              healthCheck: {
+                protocol: 'http',
+                port: port,
+                path: '/health',
+                expectedStatus: 200
+              }
+            }
+          };
+        } else if (selectedSvc === 'cv-sam-service') {
+          const port = parseInt(document.getElementById('svcFieldPort').value, 10) || 5201;
+          const repo = (document.getElementById('svcFieldRepo').value || '').trim();
+          const modelsHostDir = (document.getElementById('svcFieldModelsHostDir').value || '/data/models').trim();
+          const modelDir = (document.getElementById('svcFieldModelDir').value || '/data/models/sam').trim();
+          const samVariant = (document.getElementById('svcFieldSamVariant').value || 'vit_b').trim();
+
+          workload = {
+            id: workloadId,
+            enabled: true,
+            nodeId: nodeId,
+            description: desc,
+            kind: 'container-service',
+            service: {
+              build: {
+                strategy: 'repo-compose',
+                repoUrl: repo,
+                defaultRevision: 'main',
+                contextPath: '.',
+              },
+              networkMode: 'bridge',
+              restartPolicy: 'unless-stopped',
+              autoStart: true,
+              runtimeClass: 'nvidia',
+              command: '',
+              environment: [
+                { key: 'HOST_PORT', value: String(port), secret: false, description: 'Published port for the CV API' },
+                { key: 'MODELS_HOST_DIR', value: modelsHostDir, secret: false, description: 'Host path mounted to /data/models' },
+                { key: 'MODEL_DIR', value: modelDir, secret: false, description: 'Checkpoint cache directory inside the container' },
+                { key: 'CV_SAM_VARIANT', value: samVariant, secret: false, description: 'Segment Anything model variant' }
+              ],
+              volumeMounts: [],
+              jsonFiles: [],
+              ports: [
+                { published: port, target: 5201, protocol: 'tcp' }
               ],
               healthCheck: {
                 protocol: 'http',

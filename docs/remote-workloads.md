@@ -99,45 +99,40 @@ updated config, and then starting the service on the new node. This is the
 intended pattern for GPU-bound services that may need to move between hosts as
 capacity changes.
 
-## Speech Service Starters
+## GPU Service Install Wizard
 
-The Nodes tab now includes two starter buttons for speech-to-text services:
+The Nodes tab includes a guided `Deploy a Service` flow for GPU-oriented
+services. The wizard saves the workload config and immediately deploys it to
+the selected worker node.
 
-- `Add STT Transcript`
-- `Add STT Diarization`
+Current guided presets:
 
-Both create `container-service` workloads backed by the
-`yoeven/insanely-fast-whisper-api:latest` image, which is built for GPU-backed
-Whisper transcription.
-
-Default starter shape:
-
-- `stt-transcript`
-  - published port `9001`
-  - target port `9000`
-  - TCP health check on `9001`
-  - optional `ADMIN_KEY`
-- `stt-diarization`
-  - published port `9002`
-  - target port `9000`
-  - TCP health check on `9002`
-  - requires `HF_TOKEN` for pyannote diarization models
-  - optional `ADMIN_KEY`
+- `Speech to Text`
+  - deploys `https://github.com/goblinsan/stt-service.git`
+  - configures faster-whisper defaults plus optional pyannote diarization
+  - lets you choose the Whisper model size, Hugging Face token, diarization
+    model override, and pyannote idle-timeout behavior
+- `Local LLM Service`
+  - deploys `https://github.com/goblinsan/llm-service.git`
+  - configures llama.cpp wrapper defaults, model directory paths, and admin
+    token
+  - keeps `MAX_CONCURRENT_REQUESTS=1` by default for shared 8 GB GPU nodes
+- `CV / SAM Service`
+  - deploys `https://github.com/goblinsan/cv-sam-service.git`
+  - configures Segment Anything defaults, model cache directory, and SAM
+    variant
+  - prefers `vit_b` for shared-GPU installs
 
 Operational notes:
 
-- put these on a GPU-capable node such as `tags-node`
-- keep `runtimeClass: "nvidia"`
-- if you want model caches on durable storage, add a volume mount to a node-local
-  model directory before deploying
-- the diarization service usually needs accepted Hugging Face model terms plus a
-  valid access token
-
-Recommended split:
-
-- use `stt-transcript` for fast plain transcripts
-- use `stt-diarization` only for requests that need speaker separation, since it
-  is heavier and requires extra model access
+- these presets prefer the first GPU-like worker node in config and fall back
+  to the first worker node if no GPU-specific node is detected
+- each preset writes a `container-service` workload using `build.strategy:
+  "repo-compose"`
+- repo-specific environment variables are written into the workload so the
+  service's own `docker-compose.yml` can use them during deploy
+- local-only node ids, hostnames, and storage paths still belong in your
+  untracked config, not in tracked docs
 
 API intent:
 
