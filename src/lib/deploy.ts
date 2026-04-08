@@ -93,12 +93,24 @@ async function runShell(command: string, cwd: string, context: CommandContext): 
   });
 }
 
-async function runShellCapture(command: string, cwd: string, extraEnv?: Record<string, string>): Promise<{ code: number; stdout: string; stderr: string }> {
+async function runShellCapture(
+  command: string,
+  cwd: string,
+  extraEnv?: Record<string, string>,
+  timeoutMs?: number
+): Promise<{ code: number; stdout: string; stderr: string }> {
   const { spawn } = await import('node:child_process');
   return await new Promise((resolve, reject) => {
     const child = spawn(command, { cwd, shell: true, stdio: ['ignore', 'pipe', 'pipe'], env: extraEnv ? { ...process.env, ...extraEnv } : undefined });
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
+    const timer = timeoutMs && timeoutMs > 0
+      ? setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGTERM');
+      }, timeoutMs)
+      : null;
     child.stdout?.on('data', (chunk: Buffer | string) => {
       stdout += String(chunk);
     });
@@ -106,13 +118,23 @@ async function runShellCapture(command: string, cwd: string, extraEnv?: Record<s
       stderr += String(chunk);
     });
     child.on('exit', (code) => {
+      if (timer) {
+        clearTimeout(timer);
+      }
       resolve({
-        code: code ?? 1,
+        code: timedOut ? 124 : (code ?? 1),
         stdout,
-        stderr
+        stderr: timedOut
+          ? `${stderr}${stderr ? '\n' : ''}Command timed out after ${timeoutMs}ms`
+          : stderr
       });
     });
-    child.on('error', reject);
+    child.on('error', (error) => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+      reject(error);
+    });
   });
 }
 
@@ -205,8 +227,12 @@ async function runRemoteShell(node: WorkerNodeConfig, command: string, context: 
   await runShell(`ssh ${sshOptions(node)} ${sshTarget(node)} ${shellQuote(command)}`, process.cwd(), context);
 }
 
-async function runRemoteShellCapture(node: WorkerNodeConfig, command: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  return await runShellCapture(`ssh ${sshOptions(node)} ${sshTarget(node)} ${shellQuote(command)}`, process.cwd());
+async function runRemoteShellCapture(
+  node: WorkerNodeConfig,
+  command: string,
+  timeoutMs?: number
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  return await runShellCapture(`ssh ${sshOptions(node)} ${sshTarget(node)} ${shellQuote(command)}`, process.cwd(), undefined, timeoutMs);
 }
 
 async function copyDirectoryToRemote(node: WorkerNodeConfig, localDir: string, remoteDir: string, context: CommandContext): Promise<void> {
@@ -1511,7 +1537,18 @@ export async function getContainerServiceLogs(
   const node = getWorkerNode(config, workload.nodeId);
   const composeCommand = getServiceComposeCommand(node, workload);
   const svcArg = serviceName ? ` ${shellQuote(serviceName)}` : '';
-  const result = await runRemoteShellCapture(node, `${composeCommand} logs --tail ${tailLines} --no-color${svcArg} 2>&1`);
+  const result = await runRemoteShellCapture(
+    node,
+    `${composeCommand} logs --tail ${tailLines} --no-color${svcArg} 2>&1`,
+    8_000
+  );
+  if (result.code !== 0) {
+    throw new Error(
+      result.stderr.trim()
+      || result.stdout.trim()
+      || `Timed out fetching logs for ${workloadId}`
+    );
+  }
   return {
     workloadId,
     service: serviceName || 'all',
