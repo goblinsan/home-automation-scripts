@@ -3008,7 +3008,8 @@ function htmlPage(basePath: string): string {
     }
 
     function joinBase(path) {
-      const normalizedPath = path.startsWith('/api/') ? '/__admin' + path : path;
+      const needsAdminPrefix = basePath !== '/' && path.startsWith('/api/');
+      const normalizedPath = needsAdminPrefix ? '/__admin' + path : path;
       if (basePath === '/') {
         return normalizedPath.startsWith('/') ? normalizedPath : \`/\${normalizedPath}\`;
       }
