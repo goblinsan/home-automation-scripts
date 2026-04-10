@@ -10,7 +10,7 @@ import {
   controlMinecraftWorkload,
   getContainerServiceLogs,
   getContainerServiceWorkloadStatus,
-  deployApp,
+  deployAppOnGatewayHost,
   deployPiProxyService,
   deployRemoteWorkload,
   getMinecraftWorkloadStatus,
@@ -587,6 +587,25 @@ function adminFaviconDataUri(): string {
 function getForwardedBasePath(request: IncomingMessage): string {
   const headerValue = request.headers['x-forwarded-prefix'];
   return normalizeBasePath(typeof headerValue === 'string' ? headerValue : undefined);
+}
+
+async function detectActiveAppSlot(app: GatewayConfig['apps'][number]): Promise<string> {
+  try {
+    return await readCurrentSlot(app);
+  } catch {
+    for (const slotName of ['blue', 'green'] as const) {
+      const slot = app.slots[slotName];
+      try {
+        const resp = await fetch(`http://127.0.0.1:${slot.port}${app.healthPath}`, { signal: AbortSignal.timeout(3000) });
+        if (resp.ok) {
+          return slotName;
+        }
+      } catch {
+        // try next slot
+      }
+    }
+    return 'unknown';
+  }
 }
 
 function createRuntimeSnapshot(
@@ -9172,21 +9191,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         const config = await loadGatewayConfig(options.configPath);
         const slots: Record<string, string> = {};
         for (const app of config.apps) {
-          try {
-            slots[app.id] = await readCurrentSlot(app);
-          } catch {
-            // current-slot file not accessible (may not be mounted in container)
-            // Try to infer by probing both slot health endpoints
-            let inferred = 'unknown';
-            for (const slotName of ['blue', 'green'] as const) {
-              const slot = app.slots[slotName];
-              try {
-                const resp = await fetch(`http://127.0.0.1:${slot.port}${app.healthPath}`, { signal: AbortSignal.timeout(3000) });
-                if (resp.ok) { inferred = slotName; break; }
-              } catch { /* try next */ }
-            }
-            slots[app.id] = inferred;
-          }
+          slots[app.id] = await detectActiveAppSlot(app);
         }
         sendJson(response, 200, slots);
         return;
@@ -9397,16 +9402,19 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           const body = JSON.parse(await readBody(request) || '{}') as { revision?: string };
           logStep('building artifacts');
           await buildArtifacts(config, options.buildOutDir);
-          logStep('deploying app');
-          await deployApp(
+          logStep('deploying app on gateway host');
+          await deployAppOnGatewayHost(
             config,
             appId,
             typeof body.revision === 'string' && body.revision.trim().length > 0 ? body.revision.trim() : undefined,
-            false,
             { dryRun: false, log: logStep }
           );
           logStep('reading active slot');
-          const activeSlot = await readCurrentSlot(config.apps.find((app) => app.id === appId)!);
+          const app = config.apps.find((candidate) => candidate.id === appId);
+          if (!app) {
+            throw new Error(`Unknown app: ${appId}`);
+          }
+          const activeSlot = await detectActiveAppSlot(app);
           logStep('done');
           sendJson(response, 200, {
             message: `Deployed managed app ${appId}`,
