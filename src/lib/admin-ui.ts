@@ -10,6 +10,7 @@ import {
   controlMinecraftWorkload,
   getContainerServiceLogs,
   getContainerServiceWorkloadStatus,
+  deployApp,
   deployPiProxyService,
   deployRemoteWorkload,
   getMinecraftWorkloadStatus,
@@ -4172,7 +4173,10 @@ function htmlPage(basePath: string): string {
               <strong>\${app.id || 'new-app'}</strong>
               <span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:4px;font-size:0.8em;background:\${slotColor};color:#fff;">\${activeSlot}</span>
             </div>
-            <button class="danger">Remove</button>
+            <div class="toolbar">
+              <button data-action="deploy">Deploy</button>
+              <button data-action="remove" class="danger">Remove</button>
+            </div>
           </div>
           <div class="row">
             <label class="check"><input type="checkbox" data-field="enabled" \${app.enabled ? 'checked' : ''} /> Enabled</label>
@@ -4192,12 +4196,40 @@ function htmlPage(basePath: string): string {
             <label>Green Start Command<input data-slot="green" data-field="startCommand" value="\${app.slots.green.startCommand}" /></label>
             <label>Green Stop Command<input data-slot="green" data-field="stopCommand" value="\${app.slots.green.stopCommand}" /></label>
           </div>
+          <div class="row">
+            <label>Deploy Revision<input data-control="deployRevision" placeholder="optional sha/tag" /></label>
+          </div>
           <label>Build Commands (one per line)<textarea data-field="buildCommands">\${app.buildCommands.join('\\n')}</textarea></label>
         \`;
 
-        element.querySelector('.danger').addEventListener('click', () => {
+        element.querySelector('[data-action="remove"]').addEventListener('click', () => {
           state.config.apps.splice(index, 1);
           render();
+        });
+
+        element.querySelector('[data-action="deploy"]').addEventListener('click', async () => {
+          const deployButton = element.querySelector('[data-action="deploy"]');
+          await withBusyButton(deployButton, 'Deploying…', async () => {
+            const appId = app.id;
+            const deployLog = [];
+            const t0 = Date.now();
+            try {
+              await persistConfigState();
+              const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
+              const result = await requestJson('POST', \`/api/apps/\${encodeURIComponent(appId)}/deploy\`, revision ? { revision } : {}, 300000);
+              state.appSlots[appId] = result.activeSlot || state.appSlots[appId];
+              renderApps();
+              setStatus(\`Deployed managed app \${appId}\`, 'ok');
+              if (result.deployLog) {
+                showDeployTelemetryModal(appId, result.deployLog, result.durationMs, true);
+              }
+            } catch (error) {
+              setStatus(error.message || String(error), 'error');
+              if (error.deployLog) {
+                showDeployTelemetryModal(appId, error.deployLog, error.durationMs, false);
+              }
+            }
+          });
         });
 
         element.querySelectorAll('input, textarea').forEach((input) => {
@@ -9114,6 +9146,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       const workflowIdMatch = path.match(/^\/api\/workflows\/([^/]+)$/);
       const workflowActionMatch = path.match(/^\/api\/workflows\/([^/]+)\/(enable|disable|sleep|resume|run)$/);
       const agentRunMatch = path.match(/^\/api\/chat-platform\/agents\/([^/]+)\/run$/);
+      const appDeployMatch = path.match(/^\/api\/apps\/([^/]+)\/deploy$/);
       const remoteWorkloadDeployMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/deploy$/);
       const remoteWorkloadStatusMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/status$/);
       const remoteServiceStatusMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/service-status$/);
@@ -9349,6 +9382,55 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           message: `Imported ${result.operations.length} workflow seed entries from ${result.filePath}`,
           operations: result.operations
         });
+        return;
+      }
+
+      if (appDeployMatch && request.method === 'POST') {
+        const appId = decodeURIComponent(appDeployMatch[1]);
+        const deployLog: { ts: number; msg: string }[] = [];
+        const t0 = Date.now();
+        const logStep = (msg: string) => { deployLog.push({ ts: Date.now() - t0, msg }); };
+        try {
+          logStep('loading config');
+          const config = await loadGatewayConfig(options.configPath);
+          logStep('parsing body');
+          const body = JSON.parse(await readBody(request) || '{}') as { revision?: string };
+          logStep('building artifacts');
+          await buildArtifacts(config, options.buildOutDir);
+          logStep('deploying app');
+          await deployApp(
+            config,
+            appId,
+            typeof body.revision === 'string' && body.revision.trim().length > 0 ? body.revision.trim() : undefined,
+            false,
+            { dryRun: false, log: logStep }
+          );
+          logStep('reading active slot');
+          const activeSlot = await readCurrentSlot(config.apps.find((app) => app.id === appId)!);
+          logStep('done');
+          sendJson(response, 200, {
+            message: `Deployed managed app ${appId}`,
+            activeSlot,
+            durationMs: Date.now() - t0,
+            deployLog
+          });
+        } catch (deployError) {
+          const msg = deployError instanceof Error ? deployError.message : String(deployError);
+          const name = deployError instanceof Error ? deployError.constructor.name : 'unknown';
+          logStep('FAILED: ' + msg);
+          console.error(`[deploy app ${appId}] Failed at step: ${deployLog[deployLog.length - 2]?.msg || '?'}`);
+          console.error(`[deploy app ${appId}] ${name}: ${msg}`);
+          if (deployError instanceof Error && deployError.stack) {
+            console.error(deployError.stack);
+          }
+          sendJson(response, 400, {
+            error: msg,
+            failedStep: deployLog.length > 1 ? deployLog[deployLog.length - 2].msg : 'unknown',
+            errorType: name,
+            durationMs: Date.now() - t0,
+            deployLog
+          });
+        }
         return;
       }
 
