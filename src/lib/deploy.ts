@@ -601,31 +601,6 @@ export async function deployApp(
   await installJobs(config, appId, context);
 }
 
-export async function deployAppOnGatewayHost(
-  config: GatewayConfig,
-  appId: string,
-  revision: string | undefined,
-  context: CommandContext
-): Promise<void> {
-  getApp(config, appId);
-  const deployUser = config.gateway.adminUi.user || 'deploy';
-  const deployScript = join(config.gateway.adminUi.workingDirectory, 'deploy/bin/deploy-app.sh');
-  const remoteCommand = [
-    shellQuote(deployScript),
-    '--config',
-    shellQuote(config.gateway.adminUi.configPath),
-    '--app',
-    shellQuote(appId),
-    revision ? `--revision ${shellQuote(revision)}` : ''
-  ].filter(Boolean).join(' ');
-
-  await runShell(
-    `ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${deployUser}@127.0.0.1 ${shellQuote(remoteCommand)}`,
-    process.cwd(),
-    context
-  );
-}
-
 export async function rollbackApp(config: GatewayConfig, appId: string, context: CommandContext): Promise<void> {
   const app = getApp(config, appId);
   const current = await readCurrentSlot(app);

@@ -10,7 +10,6 @@ import {
   controlMinecraftWorkload,
   getContainerServiceLogs,
   getContainerServiceWorkloadStatus,
-  deployAppOnGatewayHost,
   deployPiProxyService,
   deployRemoteWorkload,
   getMinecraftWorkloadStatus,
@@ -606,6 +605,102 @@ async function detectActiveAppSlot(app: GatewayConfig['apps'][number]): Promise<
     }
     return 'unknown';
   }
+}
+
+function parseGitHubRepo(repoUrl: string): { owner: string; repo: string } {
+  const trimmed = repoUrl.trim();
+  const httpsMatch = trimmed.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i);
+  if (httpsMatch) {
+    return { owner: httpsMatch[1], repo: httpsMatch[2] };
+  }
+
+  const sshMatch = trimmed.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/i);
+  if (sshMatch) {
+    return { owner: sshMatch[1], repo: sshMatch[2] };
+  }
+
+  throw new Error(`Unsupported GitHub repo URL: ${repoUrl}`);
+}
+
+function getGitHubDeployToken(config: GatewayConfig): string {
+  const envToken = process.env.GITHUB_TOKEN?.trim();
+  if (envToken) {
+    return envToken;
+  }
+
+  const gatewayApiToken = config.serviceProfiles.gatewayApi.environment.find((entry) => entry.key === 'GITHUB_TOKEN')?.value?.trim();
+  if (gatewayApiToken) {
+    return gatewayApiToken;
+  }
+
+  throw new Error('GitHub deploy token is not configured. Set serviceProfiles.gatewayApi.environment GITHUB_TOKEN.');
+}
+
+async function triggerManagedAppDeployWorkflow(
+  config: GatewayConfig,
+  appId: string,
+  revision: string | undefined,
+  log: (message: string) => void
+): Promise<{ workflowUrl?: string; owner: string; repo: string }> {
+  const app = config.apps.find((candidate) => candidate.id === appId);
+  if (!app) {
+    throw new Error(`Unknown app: ${appId}`);
+  }
+
+  const token = getGitHubDeployToken(config);
+  const { owner, repo } = parseGitHubRepo(app.repoUrl);
+  const workflowFile = 'deploy-on-merge.yml';
+  const apiBase = 'https://api.github.com';
+  const dispatchResponse = await fetch(
+    `${apiBase}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(workflowFile)}/dispatches`,
+    {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'gateway-control-plane',
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
+      body: JSON.stringify({
+        ref: app.defaultRevision,
+        inputs: revision ? { revision } : {}
+      })
+    }
+  );
+
+  if (dispatchResponse.status !== 204) {
+    const body = await dispatchResponse.text();
+    throw new Error(`GitHub workflow dispatch failed for ${owner}/${repo}: ${dispatchResponse.status} ${body || dispatchResponse.statusText}`);
+  }
+
+  log(`workflow dispatch accepted for ${owner}/${repo}`);
+
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  const runsResponse = await fetch(
+    `${apiBase}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(workflowFile)}/runs?event=workflow_dispatch&branch=${encodeURIComponent(app.defaultRevision)}&per_page=1`,
+    {
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${token}`,
+        'User-Agent': 'gateway-control-plane',
+        'X-GitHub-Api-Version': '2022-11-28'
+      }
+    }
+  );
+
+  if (!runsResponse.ok) {
+    log(`workflow dispatch succeeded, but workflow run lookup failed with ${runsResponse.status}`);
+    return { owner, repo };
+  }
+
+  const payload = await runsResponse.json() as { workflow_runs?: Array<{ html_url?: string }> };
+  return {
+    owner,
+    repo,
+    workflowUrl: payload.workflow_runs?.[0]?.html_url
+  };
 }
 
 function createRuntimeSnapshot(
@@ -4230,15 +4325,11 @@ function htmlPage(basePath: string): string {
           const deployButton = element.querySelector('[data-action="deploy"]');
           await withBusyButton(deployButton, 'Deploying…', async () => {
             const appId = app.id;
-            const deployLog = [];
-            const t0 = Date.now();
             try {
               await persistConfigState();
               const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
               const result = await requestJson('POST', \`/api/apps/\${encodeURIComponent(appId)}/deploy\`, revision ? { revision } : {}, 300000);
-              state.appSlots[appId] = result.activeSlot || state.appSlots[appId];
-              renderApps();
-              setStatus(\`Deployed managed app \${appId}\`, 'ok');
+              setStatus(\`Triggered deploy workflow for managed app \${appId}\`, 'ok');
               if (result.deployLog) {
                 showDeployTelemetryModal(appId, result.deployLog, result.durationMs, true);
               }
@@ -9402,23 +9493,18 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           const body = JSON.parse(await readBody(request) || '{}') as { revision?: string };
           logStep('building artifacts');
           await buildArtifacts(config, options.buildOutDir);
-          logStep('deploying app on gateway host');
-          await deployAppOnGatewayHost(
+          logStep('dispatching GitHub deploy workflow');
+          const workflowResult = await triggerManagedAppDeployWorkflow(
             config,
             appId,
             typeof body.revision === 'string' && body.revision.trim().length > 0 ? body.revision.trim() : undefined,
-            { dryRun: false, log: logStep }
+            logStep
           );
-          logStep('reading active slot');
-          const app = config.apps.find((candidate) => candidate.id === appId);
-          if (!app) {
-            throw new Error(`Unknown app: ${appId}`);
-          }
-          const activeSlot = await detectActiveAppSlot(app);
           logStep('done');
           sendJson(response, 200, {
-            message: `Deployed managed app ${appId}`,
-            activeSlot,
+            message: `Triggered deploy workflow for managed app ${appId}`,
+            workflowUrl: workflowResult.workflowUrl,
+            repository: `${workflowResult.owner}/${workflowResult.repo}`,
             durationMs: Date.now() - t0,
             deployLog
           });
