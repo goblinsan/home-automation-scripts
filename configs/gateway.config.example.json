@@ -103,6 +103,33 @@
           "stopCommand": "HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env CHAT_API_DATA_DIR=__SHARED__/chat-api-data docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml down --remove-orphans"
         }
       }
+    },
+    {
+      "id": "gateway-tools-platform",
+      "enabled": true,
+      "repoUrl": "git@github.com:goblinsan/gateway-tools-platform.git",
+      "defaultRevision": "main",
+      "deployRoot": "/srv/apps/gateway-tools-platform",
+      "hostnames": [
+        "tools.gateway.example.test"
+      ],
+      "routePath": "/",
+      "stripRoutePrefix": false,
+      "healthPath": "/api/health",
+      "upstreamConfPath": "/etc/nginx/conf.d/upstreams/gateway-tools-platform-active.conf",
+      "buildCommands": [],
+      "slots": {
+        "blue": {
+          "port": 3000,
+          "startCommand": "docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans __SLOT__",
+          "stopCommand": "docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml down --remove-orphans"
+        },
+        "green": {
+          "port": 3001,
+          "startCommand": "docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans __SLOT__",
+          "stopCommand": "docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml down --remove-orphans"
+        }
+      }
     }
   ],
   "scheduledJobs": [],

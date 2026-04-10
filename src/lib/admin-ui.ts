@@ -2599,6 +2599,42 @@ function htmlPage(basePath: string): string {
     </div>
   </dialog>
 
+  <dialog id="managedAppWizard" class="wizard-dialog">
+    <div class="wizard-content">
+      <div class="wizard-header">
+        <h2>Add Managed App</h2>
+        <button id="closeManagedAppWizardButton" class="wizard-close">&times;</button>
+      </div>
+
+      <div id="managedAppStepCatalog" class="wizard-step">
+        <p class="wizard-desc">Choose a managed gateway app preset, then review the generated blue/green deploy settings before it is added to config.</p>
+        <div class="wizard-preset-grid">
+          <button class="svc-catalog-card" data-managed-app="gateway-tools-platform">
+            <strong>Gateway Tools Platform</strong>
+            <small>Blue/green public tools UI behind Cloudflare Access. Preconfigures ports <code>3000/3001</code>, <code>/api/health</code>, and the dedicated upstream slot wiring.</small>
+          </button>
+          <button class="svc-catalog-card" data-managed-app="blank">
+            <strong>Blank Managed App</strong>
+            <small>Start from an empty blue/green app definition and fill in repo, ports, routing, and start/stop commands yourself.</small>
+          </button>
+        </div>
+        <div class="wizard-actions">
+          <button id="managedAppCatalogCancelBtn" class="wizard-btn-secondary">Cancel</button>
+          <button id="managedAppCatalogNextBtn" class="wizard-btn-primary" disabled>Next</button>
+        </div>
+      </div>
+
+      <div id="managedAppStepConfig" class="wizard-step" hidden>
+        <p class="wizard-desc" id="managedAppConfigDesc">Review the generated app configuration.</p>
+        <div id="managedAppConfigFields" class="wizard-form-grid"></div>
+        <div class="wizard-actions">
+          <button id="managedAppConfigBackBtn" class="wizard-btn-secondary">Back</button>
+          <button id="managedAppConfigAddBtn" class="wizard-btn-primary">Add App</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
   <div class="action-dock">
     <div class="action-dock-header">
       <button id="toggleActionFeedButton" class="action-dock-toggle">Hide History</button>
@@ -4123,6 +4159,7 @@ function htmlPage(basePath: string): string {
             <label>Deploy Root<input data-field="deployRoot" value="\${app.deployRoot}" /></label>
             <label>Hostnames (comma separated)<input data-field="hostnames" value="\${(app.hostnames || []).join(', ')}" /></label>
             <label>Route Path<input data-field="routePath" value="\${app.routePath}" /></label>
+            <label class="check"><input type="checkbox" data-field="stripRoutePrefix" \${app.stripRoutePrefix ? 'checked' : ''} /> Strip Route Prefix</label>
             <label>Health Path<input data-field="healthPath" value="\${app.healthPath}" /></label>
             <label>Upstream Conf Path<input data-field="upstreamConfPath" value="\${app.upstreamConfPath}" /></label>
             <label>Blue Port<input type="number" data-slot="blue" data-field="port" value="\${app.slots.blue.port}" /></label>
@@ -4151,6 +4188,8 @@ function htmlPage(basePath: string): string {
               state.config.apps[index].slots[slot][field] = field === 'port' ? Number(input.value) : input.value;
             } else if (field === 'enabled') {
               state.config.apps[index].enabled = input.checked;
+            } else if (field === 'stripRoutePrefix') {
+              state.config.apps[index].stripRoutePrefix = input.checked;
             } else if (field === 'hostnames') {
               state.config.apps[index].hostnames = input.value.split(',').map((item) => item.trim()).filter(Boolean);
             } else if (field === 'buildCommands') {
@@ -4162,7 +4201,11 @@ function htmlPage(basePath: string): string {
           });
           if (input.type === 'checkbox') {
             input.addEventListener('change', () => {
-              state.config.apps[index].enabled = input.checked;
+              if (input.dataset.field === 'stripRoutePrefix') {
+                state.config.apps[index].stripRoutePrefix = input.checked;
+              } else {
+                state.config.apps[index].enabled = input.checked;
+              }
               syncRawJson();
             });
           }
@@ -7183,26 +7226,6 @@ function htmlPage(basePath: string): string {
       }
     });
 
-    document.getElementById('addAppButton').addEventListener('click', () => {
-      state.config.apps.push({
-        id: '',
-        enabled: true,
-        repoUrl: '',
-        defaultRevision: 'main',
-        deployRoot: '',
-        hostnames: [],
-        routePath: '/',
-        healthPath: '/health',
-        upstreamConfPath: '',
-        buildCommands: [],
-        slots: {
-          blue: { port: 3001, startCommand: '', stopCommand: '' },
-          green: { port: 3002, startCommand: '', stopCommand: '' }
-        }
-      });
-      render();
-    });
-
     document.getElementById('addJobButton').addEventListener('click', () => {
       state.config.scheduledJobs.push({
         id: '',
@@ -7488,6 +7511,245 @@ function htmlPage(basePath: string): string {
       });
     })();
     // ─── End Node Setup Wizard ────────────────────────────────────────
+
+    // ─── Managed App Wizard ───────────────────────────────────────────
+    (function initManagedAppWizard() {
+      const dialog = document.getElementById('managedAppWizard');
+      let selectedManagedApp = '';
+
+      function defaultManagedAppConfig() {
+        return {
+          id: '',
+          enabled: true,
+          repoUrl: '',
+          defaultRevision: 'main',
+          deployRoot: '',
+          hostnames: [],
+          routePath: '/',
+          stripRoutePrefix: false,
+          healthPath: '/health',
+          upstreamConfPath: '',
+          buildCommands: [],
+          slots: {
+            blue: { port: 3001, startCommand: '', stopCommand: '' },
+            green: { port: 3002, startCommand: '', stopCommand: '' }
+          }
+        };
+      }
+
+      function createManagedAppPreset(presetId) {
+        if (presetId === 'gateway-tools-platform') {
+          return {
+            id: 'gateway-tools-platform',
+            enabled: true,
+            repoUrl: 'https://github.com/goblinsan/gateway-tools-platform.git',
+            defaultRevision: 'main',
+            deployRoot: '/srv/apps/gateway-tools-platform',
+            hostnames: ['tools.gateway.example.test'],
+            routePath: '/',
+            stripRoutePrefix: false,
+            healthPath: '/api/health',
+            upstreamConfPath: '/etc/nginx/conf.d/upstreams/gateway-tools-platform-active.conf',
+            buildCommands: [],
+            slots: {
+              blue: {
+                port: 3000,
+                startCommand: 'docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans __SLOT__',
+                stopCommand: 'docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
+              },
+              green: {
+                port: 3001,
+                startCommand: 'docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans __SLOT__',
+                stopCommand: 'docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
+              }
+            }
+          };
+        }
+        return defaultManagedAppConfig();
+      }
+
+      function openManagedAppWizard() {
+        selectedManagedApp = '';
+        document.getElementById('managedAppCatalogNextBtn').disabled = true;
+        dialog.querySelectorAll('[data-managed-app]').forEach((card) => card.classList.remove('selected'));
+        showManagedAppStep('catalog');
+        dialog.showModal();
+      }
+
+      function closeManagedAppWizard() {
+        dialog.close();
+      }
+
+      function showManagedAppStep(step) {
+        document.getElementById('managedAppStepCatalog').hidden = step !== 'catalog';
+        document.getElementById('managedAppStepConfig').hidden = step !== 'config';
+      }
+
+      function buildManagedAppForm() {
+        const config = createManagedAppPreset(selectedManagedApp);
+        const container = document.getElementById('managedAppConfigFields');
+        const description = document.getElementById('managedAppConfigDesc');
+        description.textContent = selectedManagedApp === 'gateway-tools-platform'
+          ? 'Review the generated gateway-tools-platform app config. This preset assumes a dedicated hostname and the repo deploy-on-merge workflow running on your existing gateway self-hosted runner.'
+          : 'Fill in the managed app config before adding it.';
+
+        container.innerHTML = \`
+          <label class="wizard-field">
+            <span class="wizard-label">App ID</span>
+            <input id="managedAppFieldId" type="text" value="\${escapeHtml(config.id)}" />
+            <span class="wizard-hint">Unique managed app identifier used by deploy-app.sh and GitHub Actions.</span>
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Git Repo URL</span>
+            <input id="managedAppFieldRepoUrl" type="text" value="\${escapeHtml(config.repoUrl)}" />
+            <span class="wizard-hint">Repository that owns the app and its deploy-on-merge workflow.</span>
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Default Revision</span>
+            <input id="managedAppFieldRevision" type="text" value="\${escapeHtml(config.defaultRevision)}" />
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Deploy Root</span>
+            <input id="managedAppFieldDeployRoot" type="text" value="\${escapeHtml(config.deployRoot)}" />
+            <span class="wizard-hint">Blue/green slot root on the gateway host.</span>
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Hostnames</span>
+            <input id="managedAppFieldHostnames" type="text" value="\${escapeHtml(config.hostnames.join(', '))}" />
+            <span class="wizard-hint">Dedicated hostname is recommended for browser-facing apps like gateway-tools-platform.</span>
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Route Path</span>
+            <input id="managedAppFieldRoutePath" type="text" value="\${escapeHtml(config.routePath)}" />
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Health Path</span>
+            <input id="managedAppFieldHealthPath" type="text" value="\${escapeHtml(config.healthPath)}" />
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Upstream Conf Path</span>
+            <input id="managedAppFieldUpstreamConfPath" type="text" value="\${escapeHtml(config.upstreamConfPath)}" />
+          </label>
+          <label class="wizard-field check">
+            <span class="wizard-label">Options</span>
+            <label class="check"><input id="managedAppFieldEnabled" type="checkbox" \${config.enabled ? 'checked' : ''} /> Enabled</label>
+            <label class="check"><input id="managedAppFieldStripRoutePrefix" type="checkbox" \${config.stripRoutePrefix ? 'checked' : ''} /> Strip Route Prefix</label>
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Blue Port</span>
+            <input id="managedAppFieldBluePort" type="number" value="\${config.slots.blue.port}" />
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Blue Start Command</span>
+            <input id="managedAppFieldBlueStart" type="text" value="\${escapeHtml(config.slots.blue.startCommand)}" />
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Blue Stop Command</span>
+            <input id="managedAppFieldBlueStop" type="text" value="\${escapeHtml(config.slots.blue.stopCommand)}" />
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Green Port</span>
+            <input id="managedAppFieldGreenPort" type="number" value="\${config.slots.green.port}" />
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Green Start Command</span>
+            <input id="managedAppFieldGreenStart" type="text" value="\${escapeHtml(config.slots.green.startCommand)}" />
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Green Stop Command</span>
+            <input id="managedAppFieldGreenStop" type="text" value="\${escapeHtml(config.slots.green.stopCommand)}" />
+          </label>
+          <label class="wizard-field" style="grid-column: 1 / -1;">
+            <span class="wizard-label">Build Commands</span>
+            <textarea id="managedAppFieldBuildCommands" rows="4">\${escapeHtml(config.buildCommands.join('\\n'))}</textarea>
+            <span class="wizard-hint">Leave empty when the repo start command already builds with docker compose.</span>
+          </label>
+          <div class="card card-quiet" style="grid-column: 1 / -1;">
+            <p><strong>Auto-deploy</strong></p>
+            <p>This preset assumes the repo has a <code>.github/workflows/deploy-on-merge.yml</code> workflow targeting <code>runs-on: [self-hosted, gateway]</code>. The control-plane app entry and the repo workflow together are what make push-to-main auto-deploy work.</p>
+          </div>
+        \`;
+      }
+
+      function readManagedAppForm() {
+        return {
+          id: (document.getElementById('managedAppFieldId').value || '').trim(),
+          enabled: document.getElementById('managedAppFieldEnabled').checked,
+          repoUrl: (document.getElementById('managedAppFieldRepoUrl').value || '').trim(),
+          defaultRevision: (document.getElementById('managedAppFieldRevision').value || 'main').trim() || 'main',
+          deployRoot: (document.getElementById('managedAppFieldDeployRoot').value || '').trim(),
+          hostnames: (document.getElementById('managedAppFieldHostnames').value || '').split(',').map((item) => item.trim()).filter(Boolean),
+          routePath: (document.getElementById('managedAppFieldRoutePath').value || '/').trim() || '/',
+          stripRoutePrefix: document.getElementById('managedAppFieldStripRoutePrefix').checked,
+          healthPath: (document.getElementById('managedAppFieldHealthPath').value || '').trim(),
+          upstreamConfPath: (document.getElementById('managedAppFieldUpstreamConfPath').value || '').trim(),
+          buildCommands: (document.getElementById('managedAppFieldBuildCommands').value || '').split('\n').map((item) => item.trim()).filter(Boolean),
+          slots: {
+            blue: {
+              port: Number(document.getElementById('managedAppFieldBluePort').value || 0),
+              startCommand: (document.getElementById('managedAppFieldBlueStart').value || '').trim(),
+              stopCommand: (document.getElementById('managedAppFieldBlueStop').value || '').trim()
+            },
+            green: {
+              port: Number(document.getElementById('managedAppFieldGreenPort').value || 0),
+              startCommand: (document.getElementById('managedAppFieldGreenStart').value || '').trim(),
+              stopCommand: (document.getElementById('managedAppFieldGreenStop').value || '').trim()
+            }
+          }
+        };
+      }
+
+      function addManagedApp() {
+        const app = readManagedAppForm();
+        if (!app.id) {
+          setStatus('App ID is required', 'error');
+          return;
+        }
+        if (!app.repoUrl || !app.deployRoot || !app.healthPath || !app.upstreamConfPath) {
+          setStatus('Repo URL, deploy root, health path, and upstream conf path are required', 'error');
+          return;
+        }
+        if (!app.slots.blue.port || !app.slots.green.port || !app.slots.blue.startCommand || !app.slots.green.startCommand) {
+          setStatus('Both blue and green slot ports and start commands are required', 'error');
+          return;
+        }
+        if (state.config.apps.some((existing) => existing.id === app.id)) {
+          setStatus('A managed app with ID "' + app.id + '" already exists', 'error');
+          return;
+        }
+        state.config.apps.push(app);
+        render();
+        syncRawJson();
+        closeManagedAppWizard();
+        setStatus('Added managed app "' + app.id + '". Save config to persist it. Pushes to main will auto-deploy once the repo workflow is present on the gateway runner.', 'ok');
+      }
+
+      dialog.querySelectorAll('[data-managed-app]').forEach((card) => {
+        card.addEventListener('click', () => {
+          dialog.querySelectorAll('[data-managed-app]').forEach((item) => item.classList.remove('selected'));
+          card.classList.add('selected');
+          selectedManagedApp = card.dataset.managedApp || '';
+          document.getElementById('managedAppCatalogNextBtn').disabled = !selectedManagedApp;
+        });
+      });
+
+      document.getElementById('addAppButton').addEventListener('click', openManagedAppWizard);
+      document.getElementById('closeManagedAppWizardButton').addEventListener('click', closeManagedAppWizard);
+      document.getElementById('managedAppCatalogCancelBtn').addEventListener('click', closeManagedAppWizard);
+      document.getElementById('managedAppCatalogNextBtn').addEventListener('click', () => {
+        if (!selectedManagedApp) return;
+        buildManagedAppForm();
+        showManagedAppStep('config');
+      });
+      document.getElementById('managedAppConfigBackBtn').addEventListener('click', () => {
+        showManagedAppStep('catalog');
+      });
+      document.getElementById('managedAppConfigAddBtn').addEventListener('click', addManagedApp);
+      dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) closeManagedAppWizard();
+      });
+    })();
+    // ─── End Managed App Wizard ──────────────────────────────────────
 
     document.getElementById('addRemoteWorkloadButton').addEventListener('click', () => {
       state.config.remoteWorkloads.push(createDefaultRemoteJobWorkload());

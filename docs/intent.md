@@ -114,6 +114,7 @@ Redis caching. The admin UI shows live status and history.
 | `gateway-control-plane` (this repo) | Infrastructure manager, admin UI, deploy scripts | Blue/green Docker app |
 | `gateway-api` | Workflow engine, job runner, GitHub integration | Blue/green Docker app |
 | `gateway-chat-platform` | AI chat with agents, providers, TTS | Blue/green Docker app (multi-container) |
+| `gateway-tools-platform` | Public authenticated tools UI for STT and CV services | Blue/green Docker app |
 
 Related repos may include `.github/copilot-instructions.md` files documenting
 coordination expectations. Read those before making changes that cross

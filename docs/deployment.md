@@ -171,6 +171,7 @@ The intended automation model is:
 - this repo deploys `gateway-control-plane`
 - the `gateway-api` repo deploys `gateway-api`
 - the `gateway-chat-platform` repo deploys `gateway-chat-platform`
+- the `gateway-tools-platform` repo deploys `gateway-tools-platform`
 
 Each workflow should run on the gateway self-hosted runner and call the live
 control-plane checkout on the host:

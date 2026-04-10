@@ -27,6 +27,7 @@ Each runner needs Docker, nginx, Node 24, and access to:
 - `/opt/gateway-control-plane`
 - `/opt/gateway-api`
 - `/opt/gateway-chat-platform`
+- `/opt/gateway-tools-platform`
 - `/srv/apps/*`
 
 ## Repo Responsibilities
@@ -36,6 +37,7 @@ Each repo owns deploying its own app:
 - `gateway-control-plane` deploys app id `gateway-control-plane`
 - `gateway-api` deploys app id `gateway-api`
 - `gateway-chat-platform` deploys app id `gateway-chat-platform`
+- `gateway-tools-platform` deploys app id `gateway-tools-platform`
 
 All three repos should call the same live deploy wrapper on the host:
 
@@ -99,6 +101,28 @@ jobs:
       - run: pnpm install
       - run: pnpm --filter @gateway/chat-ui typecheck
       - run: /opt/gateway-control-plane/deploy/bin/deploy-app.sh --config /opt/gateway-control-plane/configs/gateway.config.json --app gateway-chat-platform --revision "${GITHUB_SHA}"
+```
+
+For `gateway-tools-platform`:
+
+```yaml
+name: Deploy On Merge
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, gateway]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm run build
+      - run: /opt/gateway-control-plane/deploy/bin/deploy-app.sh --config /opt/gateway-control-plane/configs/gateway.config.json --app gateway-tools-platform --revision "${GITHUB_SHA}"
 ```
 
 ## Rollback
