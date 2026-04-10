@@ -2952,11 +2952,7 @@ function htmlPage(basePath: string): string {
     }
 
     function normalizeSingleLineInput(value) {
-      return String(value || '').replace(/\r?\n/g, '').trim();
-    }
-
-    function shellSingleQuote(value) {
-      return "'" + String(value || '').replace(/'/g, "'\\''") + "'";
+      return String(value || '').replace(/\\r?\\n/g, '').trim();
     }
 
     function createGatewayToolsEnvBuildCommands(values) {
@@ -2974,7 +2970,7 @@ function htmlPage(basePath: string): string {
       ];
       return [
         'mkdir -p __SHARED__/data',
-        "cat > __SHARED__/.env.local <<'EOF'\n" + envLines.join('\n') + '\nEOF'
+        "cat > __SHARED__/.env.local <<'EOF'\\n" + envLines.join('\\n') + '\\nEOF'
       ];
     }
 
