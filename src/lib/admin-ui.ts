@@ -7683,7 +7683,7 @@ function htmlPage(basePath: string): string {
           stripRoutePrefix: document.getElementById('managedAppFieldStripRoutePrefix').checked,
           healthPath: (document.getElementById('managedAppFieldHealthPath').value || '').trim(),
           upstreamConfPath: (document.getElementById('managedAppFieldUpstreamConfPath').value || '').trim(),
-          buildCommands: (document.getElementById('managedAppFieldBuildCommands').value || '').split('\n').map((item) => item.trim()).filter(Boolean),
+          buildCommands: (document.getElementById('managedAppFieldBuildCommands').value || '').split('\\n').map((item) => item.trim()).filter(Boolean),
           slots: {
             blue: {
               port: Number(document.getElementById('managedAppFieldBluePort').value || 0),
