@@ -2951,6 +2951,33 @@ function htmlPage(basePath: string): string {
       return findEnvironmentEntry(environment, key)?.value || fallback;
     }
 
+    function normalizeSingleLineInput(value) {
+      return String(value || '').replace(/\r?\n/g, '').trim();
+    }
+
+    function shellSingleQuote(value) {
+      return "'" + String(value || '').replace(/'/g, "'\\''") + "'";
+    }
+
+    function createGatewayToolsEnvBuildCommands(values) {
+      const envLines = [
+        'STT_SERVICE_URL=' + normalizeSingleLineInput(values.sttServiceUrl),
+        'CV_SERVICE_URL=' + normalizeSingleLineInput(values.cvServiceUrl),
+        'DATA_ROOT=/data',
+        'DATA_ROOT_HOST=__SHARED__/data',
+        'OBJECT_STORE_BUCKET=' + normalizeSingleLineInput(values.objectStoreBucket),
+        'OBJECT_STORE_REGION=' + normalizeSingleLineInput(values.objectStoreRegion || 'auto'),
+        'OBJECT_STORE_ENDPOINT=' + normalizeSingleLineInput(values.objectStoreEndpoint),
+        'OBJECT_STORE_ACCESS_KEY_ID=' + normalizeSingleLineInput(values.objectStoreAccessKeyId),
+        'OBJECT_STORE_SECRET_ACCESS_KEY=' + normalizeSingleLineInput(values.objectStoreSecretAccessKey),
+        'OBJECT_STORE_FORCE_PATH_STYLE=' + (values.objectStoreForcePathStyle ? 'true' : 'false')
+      ];
+      return [
+        'mkdir -p __SHARED__/data',
+        "cat > __SHARED__/.env.local <<'EOF'\n" + envLines.join('\n') + '\nEOF'
+      ];
+    }
+
     function upsertEnvironmentEntry(environment, key, value, description, secret = false) {
       const existing = findEnvironmentEntry(environment, key);
       if (!value) {
@@ -7550,7 +7577,16 @@ function htmlPage(basePath: string): string {
             stripRoutePrefix: false,
             healthPath: '/api/health',
             upstreamConfPath: '/etc/nginx/conf.d/upstreams/gateway-tools-platform-active.conf',
-            buildCommands: [],
+            buildCommands: createGatewayToolsEnvBuildCommands({
+              sttServiceUrl: 'http://192.168.0.63:5101',
+              cvServiceUrl: 'http://192.168.0.63:5201',
+              objectStoreBucket: '',
+              objectStoreRegion: 'auto',
+              objectStoreEndpoint: '',
+              objectStoreAccessKeyId: '',
+              objectStoreSecretAccessKey: '',
+              objectStoreForcePathStyle: false
+            }),
             slots: {
               blue: {
                 port: 3000,
@@ -7590,7 +7626,7 @@ function htmlPage(basePath: string): string {
         const container = document.getElementById('managedAppConfigFields');
         const description = document.getElementById('managedAppConfigDesc');
         description.textContent = selectedManagedApp === 'gateway-tools-platform'
-          ? 'Review the generated gateway-tools-platform app config. This preset assumes a dedicated hostname and the repo deploy-on-merge workflow running on your existing gateway self-hosted runner.'
+          ? 'Review the generated gateway-tools-platform app config. This preset assumes a dedicated hostname, an object-store-backed STT upload flow, and the repo deploy-on-merge workflow running on your existing gateway self-hosted runner.'
           : 'Fill in the managed app config before adding it.';
 
         container.innerHTML = \`
@@ -7630,6 +7666,48 @@ function htmlPage(basePath: string): string {
             <span class="wizard-label">Upstream Conf Path</span>
             <input id="managedAppFieldUpstreamConfPath" type="text" value="\${escapeHtml(config.upstreamConfPath)}" />
           </label>
+          \${selectedManagedApp === 'gateway-tools-platform' ? \`
+          <label class="wizard-field">
+            <span class="wizard-label">STT Service URL</span>
+            <input id="managedAppFieldSttServiceUrl" type="text" value="http://192.168.0.63:5101" />
+            <span class="wizard-hint">Internal URL used by the tools app to reach stt-service from the gateway host.</span>
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">CV/SAM Service URL</span>
+            <input id="managedAppFieldCvServiceUrl" type="text" value="http://192.168.0.63:5201" />
+            <span class="wizard-hint">Internal URL used by the tools app to reach cv-sam-service from the gateway host.</span>
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">R2 / S3 Bucket</span>
+            <input id="managedAppFieldObjectStoreBucket" type="text" value="" placeholder="tools-audio" />
+            <span class="wizard-hint">Bucket that will receive direct browser uploads for large STT files.</span>
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Object Store Region</span>
+            <input id="managedAppFieldObjectStoreRegion" type="text" value="auto" />
+            <span class="wizard-hint">Use <code>auto</code> for Cloudflare R2.</span>
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Object Store Endpoint</span>
+            <input id="managedAppFieldObjectStoreEndpoint" type="text" value="" placeholder="https://&lt;accountid&gt;.r2.cloudflarestorage.com" />
+            <span class="wizard-hint">S3 API endpoint for R2 or your S3-compatible object store.</span>
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Object Store Access Key</span>
+            <input id="managedAppFieldObjectStoreAccessKeyId" type="password" value="" />
+            <span class="wizard-hint">Stored into the shared app env file on the gateway host.</span>
+          </label>
+          <label class="wizard-field">
+            <span class="wizard-label">Object Store Secret</span>
+            <input id="managedAppFieldObjectStoreSecretAccessKey" type="password" value="" />
+            <span class="wizard-hint">Stored into the shared app env file on the gateway host.</span>
+          </label>
+          <label class="wizard-field check">
+            <span class="wizard-label">Object Store Options</span>
+            <label class="check"><input id="managedAppFieldObjectStoreForcePathStyle" type="checkbox" /> Force Path Style</label>
+            <span class="wizard-hint">Leave unchecked for Cloudflare R2. Enable it only for S3-compatible stores that require path-style requests.</span>
+          </label>
+          \` : ''}
           <label class="wizard-field check">
             <span class="wizard-label">Options</span>
             <label class="check"><input id="managedAppFieldEnabled" type="checkbox" \${config.enabled ? 'checked' : ''} /> Enabled</label>
@@ -7672,7 +7750,7 @@ function htmlPage(basePath: string): string {
       }
 
       function readManagedAppForm() {
-        return {
+        const app = {
           id: (document.getElementById('managedAppFieldId').value || '').trim(),
           enabled: document.getElementById('managedAppFieldEnabled').checked,
           repoUrl: (document.getElementById('managedAppFieldRepoUrl').value || '').trim(),
@@ -7697,6 +7775,20 @@ function htmlPage(basePath: string): string {
             }
           }
         };
+        if (selectedManagedApp === 'gateway-tools-platform') {
+          const generatedCommands = createGatewayToolsEnvBuildCommands({
+            sttServiceUrl: document.getElementById('managedAppFieldSttServiceUrl').value,
+            cvServiceUrl: document.getElementById('managedAppFieldCvServiceUrl').value,
+            objectStoreBucket: document.getElementById('managedAppFieldObjectStoreBucket').value,
+            objectStoreRegion: document.getElementById('managedAppFieldObjectStoreRegion').value,
+            objectStoreEndpoint: document.getElementById('managedAppFieldObjectStoreEndpoint').value,
+            objectStoreAccessKeyId: document.getElementById('managedAppFieldObjectStoreAccessKeyId').value,
+            objectStoreSecretAccessKey: document.getElementById('managedAppFieldObjectStoreSecretAccessKey').value,
+            objectStoreForcePathStyle: document.getElementById('managedAppFieldObjectStoreForcePathStyle').checked
+          });
+          app.buildCommands = generatedCommands;
+        }
+        return app;
       }
 
       function addManagedApp() {
@@ -7712,6 +7804,23 @@ function htmlPage(basePath: string): string {
         if (!app.slots.blue.port || !app.slots.green.port || !app.slots.blue.startCommand || !app.slots.green.startCommand) {
           setStatus('Both blue and green slot ports and start commands are required', 'error');
           return;
+        }
+        if (selectedManagedApp === 'gateway-tools-platform') {
+          const requiredFields = [
+            ['managedAppFieldSttServiceUrl', 'STT service URL'],
+            ['managedAppFieldCvServiceUrl', 'CV/SAM service URL'],
+            ['managedAppFieldObjectStoreBucket', 'object-store bucket'],
+            ['managedAppFieldObjectStoreEndpoint', 'object-store endpoint'],
+            ['managedAppFieldObjectStoreAccessKeyId', 'object-store access key'],
+            ['managedAppFieldObjectStoreSecretAccessKey', 'object-store secret']
+          ];
+          const missing = requiredFields
+            .filter(([fieldId]) => !normalizeSingleLineInput(document.getElementById(fieldId).value))
+            .map(([, label]) => label);
+          if (missing.length) {
+            setStatus('Gateway Tools Platform requires: ' + missing.join(', '), 'error');
+            return;
+          }
         }
         if (state.config.apps.some((existing) => existing.id === app.id)) {
           setStatus('A managed app with ID "' + app.id + '" already exists', 'error');
@@ -7887,6 +7996,16 @@ function htmlPage(basePath: string): string {
                 <option value="false" selected>No, lazy load on first diarize request</option>
               </select>
               <span class="wizard-hint">Disable warmup if you want faster initial deploys and lower idle VRAM usage.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Remote Source Allowed Hosts</span>
+              <input id="svcFieldRemoteSourceHosts" type="text" value="" placeholder="&lt;accountid&gt;.r2.cloudflarestorage.com" />
+              <span class="wizard-hint">Comma-separated host allowlist for presigned object URLs fetched by <code>/api/transcribe-from-url</code>. Required for gateway-tools-platform large uploads.</span>
+            </label>
+            <label class="wizard-field">
+              <span class="wizard-label">Remote Source Timeout (sec)</span>
+              <input id="svcFieldRemoteSourceTimeout" type="number" value="600" />
+              <span class="wizard-hint">How long the API will wait while downloading a presigned object before transcription starts.</span>
             </label>
             <label class="wizard-field">
               <span class="wizard-label">Description</span>
@@ -8106,11 +8225,17 @@ function htmlPage(basePath: string): string {
           const diarizeModel = (document.getElementById('svcFieldDiarizeModel').value || '').trim();
           const pyannoteIdle = parseInt(document.getElementById('svcFieldPyannoteIdle').value, 10) || 300;
           const pyannoteWarmup = (document.getElementById('svcFieldPyannoteWarmup').value || 'false').trim();
+          const remoteSourceHosts = (document.getElementById('svcFieldRemoteSourceHosts').value || '').trim();
+          const remoteSourceTimeout = parseInt(document.getElementById('svcFieldRemoteSourceTimeout').value, 10) || 600;
           const environment = [
             { key: 'STT_MODEL_SIZE', value: model, secret: false, description: 'faster-whisper model size' },
             { key: 'HOST_PORT', value: String(port), secret: false, description: 'Published port for nginx entry point' },
-            { key: 'STT_MODEL_DIR', value: dataDir, secret: false, description: 'Host path for cached whisper and pyannote models' }
+            { key: 'STT_MODEL_DIR', value: dataDir, secret: false, description: 'Host path for cached whisper and pyannote models' },
+            { key: 'STT_REMOTE_SOURCE_TIMEOUT_SEC', value: String(remoteSourceTimeout), secret: false, description: 'Timeout for presigned remote-source downloads' }
           ];
+          if (remoteSourceHosts) {
+            environment.push({ key: 'STT_REMOTE_SOURCE_ALLOWED_HOSTS', value: remoteSourceHosts, secret: false, description: 'Comma-separated allowlist for remote-source object URLs' });
+          }
           if (enableDiarization) {
             environment.push(
               { key: 'STT_HF_TOKEN', value: hfToken, secret: true, description: 'HuggingFace token for pyannote diarization models' },
