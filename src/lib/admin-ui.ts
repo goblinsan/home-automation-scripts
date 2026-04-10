@@ -7554,12 +7554,12 @@ function htmlPage(basePath: string): string {
             slots: {
               blue: {
                 port: 3000,
-                startCommand: 'APP_ENV_FILE=__SHARED__/.env.local DATA_ROOT_HOST=__SHARED__/data docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans __SLOT__',
+                startCommand: 'HOST_PORT=__SLOT_PORT__ APP_ENV_FILE=__SHARED__/.env.local DATA_ROOT_HOST=__SHARED__/data docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans __SLOT__',
                 stopCommand: 'docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
               },
               green: {
                 port: 3001,
-                startCommand: 'APP_ENV_FILE=__SHARED__/.env.local DATA_ROOT_HOST=__SHARED__/data docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans __SLOT__',
+                startCommand: 'HOST_PORT=__SLOT_PORT__ APP_ENV_FILE=__SHARED__/.env.local DATA_ROOT_HOST=__SHARED__/data docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans __SLOT__',
                 stopCommand: 'docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
               }
             }
