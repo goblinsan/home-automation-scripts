@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { buildArtifacts } from './build.ts';
 import { getAllScheduledJobs, getWorkerNode, loadGatewayConfig, parseGatewayConfig, saveGatewayConfig, type GatewayConfig } from './config.ts';
 import {
@@ -199,6 +200,26 @@ interface MinecraftManualUpdateRecord {
 interface MinecraftManualUpdateStore {
   version: 1;
   updates: Record<string, MinecraftManualUpdateRecord>;
+}
+
+interface DeployTelemetryEntry {
+  ts: number;
+  msg: string;
+}
+
+interface RemoteDeployJobRecord {
+  jobId: string;
+  workloadId: string;
+  status: 'queued' | 'running' | 'success' | 'error';
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  durationMs: number | null;
+  message?: string;
+  error?: string;
+  errorType?: string;
+  failedStep?: string;
+  deployLog: DeployTelemetryEntry[];
 }
 
 interface MinecraftManualUpdateScheduler {
@@ -5450,7 +5471,9 @@ function htmlPage(basePath: string): string {
               const workloadId = workload.id;
               const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
               await persistConfigState({ renderAfterSave: false });
-              const result = await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {}, 300000);
+              const queued = await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {}, 30000);
+              setStatus(queued.message || \`Queued deploy for remote workload \${workloadId}\`, 'progress');
+              const result = await waitForRemoteDeployJob(workloadId, queued.jobId);
               if (workload.kind === 'container-service') {
                 try {
                   await refreshContainerServiceStatus(workloadId, { silent: true });
@@ -6056,9 +6079,10 @@ function htmlPage(basePath: string): string {
           renderBedrockServers();
           syncRawJson();
           const workloadId = targetWorkload.id;
-          await persistConfigState();
+          await persistConfigState({ renderAfterSave: false });
           const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
-          await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {}, 300000);
+          const queued = await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {}, 30000);
+          await waitForRemoteDeployJob(workloadId, queued.jobId);
           await refreshMinecraftStatus(workloadId);
           return workloadId;
         };
@@ -6633,6 +6657,30 @@ function htmlPage(basePath: string): string {
       } finally {
         clearTimeout(timer);
       }
+    }
+
+    async function waitForRemoteDeployJob(workloadId, jobId, options = {}) {
+      const timeoutMs = options.timeoutMs || 30 * 60 * 1000;
+      const pollIntervalMs = options.pollIntervalMs || 2000;
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const result = await requestJson(
+          'GET',
+          '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/deploy-jobs/' + encodeURIComponent(jobId),
+          undefined,
+          20000
+        );
+        if (result.status === 'success') {
+          return result;
+        }
+        if (result.status === 'error') {
+          const err = new Error(result.error || ('Deploy failed for ' + workloadId));
+          Object.assign(err, result);
+          throw err;
+        }
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      }
+      throw new Error('Deploy polling timed out for ' + workloadId);
     }
 
     function describeContainerStatus(container) {
@@ -8656,7 +8704,10 @@ function htmlPage(basePath: string): string {
           appendLog('Configuration saved ✓', 'success');
 
           appendLog('Starting deploy of ' + workloadId + '…');
-          const result = await requestJson('POST', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/deploy', {}, 300000);
+          const queued = await requestJson('POST', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/deploy', {}, 30000);
+          appendLog(queued.message || ('Queued deploy for ' + workloadId), 'success');
+          appendLog('Polling deploy status…');
+          const result = await waitForRemoteDeployJob(workloadId, queued.jobId);
           appendLog(result.message || 'Deploy completed ✓', 'success');
           if (result.deployLog) {
             renderDeployTelemetry(result.deployLog, result.durationMs, log);
@@ -9282,6 +9333,83 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
   const startedAtMs = Date.now();
   const htmlCache = new Map<string, string>();
   const minecraftUpdateScheduler = await loadMinecraftManualUpdateScheduler(options.configPath, options.buildOutDir);
+  const remoteDeployJobs = new Map<string, RemoteDeployJobRecord>();
+  const REMOTE_DEPLOY_JOB_TTL_MS = 6 * 60 * 60 * 1000;
+
+  const pruneRemoteDeployJobs = (): void => {
+    const cutoff = Date.now() - REMOTE_DEPLOY_JOB_TTL_MS;
+    for (const [jobId, job] of remoteDeployJobs.entries()) {
+      const completedAtMs = job.completedAt ? new Date(job.completedAt).getTime() : null;
+      if (completedAtMs !== null && Number.isFinite(completedAtMs) && completedAtMs < cutoff) {
+        remoteDeployJobs.delete(jobId);
+      }
+    }
+  };
+
+  const startRemoteDeployJob = (workloadId: string, revision?: string): RemoteDeployJobRecord => {
+    pruneRemoteDeployJobs();
+    const jobId = randomUUID();
+    const createdAt = new Date().toISOString();
+    const deployLog: DeployTelemetryEntry[] = [];
+    const record: RemoteDeployJobRecord = {
+      jobId,
+      workloadId,
+      status: 'queued',
+      createdAt,
+      startedAt: null,
+      completedAt: null,
+      durationMs: null,
+      deployLog
+    };
+    remoteDeployJobs.set(jobId, record);
+
+    void (async () => {
+      const t0 = Date.now();
+      const logStep = (msg: string): void => {
+        deployLog.push({ ts: Date.now() - t0, msg });
+      };
+
+      record.status = 'running';
+      record.startedAt = new Date().toISOString();
+
+      try {
+        logStep('loading config');
+        const config = await loadGatewayConfig(options.configPath);
+        logStep('building artifacts');
+        await buildArtifacts(config, options.buildOutDir);
+        logStep('deploying workload');
+        await deployRemoteWorkload(
+          config,
+          workloadId,
+          options.buildOutDir,
+          revision,
+          { dryRun: false, log: logStep }
+        );
+        logStep('done');
+        record.status = 'success';
+        record.message = `Deployed remote workload ${workloadId}`;
+      } catch (deployError) {
+        const msg = deployError instanceof Error ? deployError.message : String(deployError);
+        const name = deployError instanceof Error ? deployError.constructor.name : 'unknown';
+        logStep('FAILED: ' + msg);
+        record.status = 'error';
+        record.error = msg;
+        record.errorType = name;
+        record.failedStep = deployLog.length > 1 ? deployLog[deployLog.length - 2].msg : 'unknown';
+        console.error(`[deploy ${workloadId}] Failed at step: ${record.failedStep}`);
+        console.error(`[deploy ${workloadId}] ${name}: ${msg}`);
+        if (deployError instanceof Error && deployError.stack) {
+          console.error(deployError.stack);
+        }
+      } finally {
+        record.completedAt = new Date().toISOString();
+        record.durationMs = Date.now() - t0;
+      }
+    })();
+
+    return record;
+  };
+
   const server = createServer(async (request, response) => {
     try {
       const path = getRequestPath(request);
@@ -9307,6 +9435,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       const agentRunMatch = path.match(/^\/api\/chat-platform\/agents\/([^/]+)\/run$/);
       const appDeployMatch = path.match(/^\/api\/apps\/([^/]+)\/deploy$/);
       const remoteWorkloadDeployMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/deploy$/);
+      const remoteWorkloadDeployJobMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/deploy-jobs\/([^/]+)$/);
       const remoteWorkloadStatusMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/status$/);
       const remoteServiceStatusMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/service-status$/);
       const remoteServiceLogsMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/service-logs$/);
@@ -9579,47 +9708,28 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
 
       if (remoteWorkloadDeployMatch && request.method === 'POST') {
         const workloadId = decodeURIComponent(remoteWorkloadDeployMatch[1]);
-        const deployLog: { ts: number; msg: string }[] = [];
-        const t0 = Date.now();
-        const logStep = (msg: string) => { deployLog.push({ ts: Date.now() - t0, msg }); };
-        try {
-          logStep('loading config');
-          const config = await loadGatewayConfig(options.configPath);
-          logStep('parsing body');
-          const body = JSON.parse(await readBody(request) || '{}') as { revision?: string };
-          logStep('building artifacts');
-          await buildArtifacts(config, options.buildOutDir);
-          logStep('deploying workload');
-          await deployRemoteWorkload(
-            config,
-            workloadId,
-            options.buildOutDir,
-            typeof body.revision === 'string' && body.revision.trim().length > 0 ? body.revision.trim() : undefined,
-            { dryRun: false, log: logStep }
-          );
-          logStep('done');
-          sendJson(response, 200, {
-            message: `Deployed remote workload ${workloadId}`,
-            durationMs: Date.now() - t0,
-            deployLog
-          });
-        } catch (deployError) {
-          const msg = deployError instanceof Error ? deployError.message : String(deployError);
-          const name = deployError instanceof Error ? deployError.constructor.name : 'unknown';
-          logStep('FAILED: ' + msg);
-          console.error(`[deploy ${workloadId}] Failed at step: ${deployLog[deployLog.length - 2]?.msg || '?'}`);
-          console.error(`[deploy ${workloadId}] ${name}: ${msg}`);
-          if (deployError instanceof Error && deployError.stack) {
-            console.error(deployError.stack);
-          }
-          sendJson(response, 400, {
-            error: msg,
-            failedStep: deployLog.length > 1 ? deployLog[deployLog.length - 2].msg : 'unknown',
-            errorType: name,
-            durationMs: Date.now() - t0,
-            deployLog
-          });
+        const body = JSON.parse(await readBody(request) || '{}') as { revision?: string };
+        const job = startRemoteDeployJob(
+          workloadId,
+          typeof body.revision === 'string' && body.revision.trim().length > 0 ? body.revision.trim() : undefined
+        );
+        sendJson(response, 202, {
+          message: `Queued deploy for remote workload ${workloadId}`,
+          jobId: job.jobId,
+          status: job.status
+        });
+        return;
+      }
+
+      if (remoteWorkloadDeployJobMatch && request.method === 'GET') {
+        const workloadId = decodeURIComponent(remoteWorkloadDeployJobMatch[1]);
+        const jobId = decodeURIComponent(remoteWorkloadDeployJobMatch[2]);
+        const job = remoteDeployJobs.get(jobId);
+        if (!job || job.workloadId !== workloadId) {
+          sendJson(response, 404, { error: `Deploy job not found for remote workload ${workloadId}` });
+          return;
         }
+        sendJson(response, 200, job);
         return;
       }
 
