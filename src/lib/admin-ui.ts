@@ -2836,6 +2836,7 @@ function htmlPage(basePath: string): string {
       jobsCatalog: [],
       minecraftStatuses: {},
       remoteServiceStatuses: {},
+      remoteDeployJobIds: {},
       chatProviders: [],
       providerModels: {},
       ttsStatus: null,
@@ -2864,6 +2865,50 @@ function htmlPage(basePath: string): string {
       dataLoaded: {},
       subTabLoading: {}
     };
+
+    const REMOTE_DEPLOY_JOB_IDS_STORAGE_KEY = 'gateway-admin-remote-deploy-job-ids';
+
+    function loadStoredRemoteDeployJobIds() {
+      try {
+        const raw = window.localStorage.getItem(REMOTE_DEPLOY_JOB_IDS_STORAGE_KEY);
+        if (!raw) {
+          return {};
+        }
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function persistRemoteDeployJobIds() {
+      try {
+        window.localStorage.setItem(
+          REMOTE_DEPLOY_JOB_IDS_STORAGE_KEY,
+          JSON.stringify(state.remoteDeployJobIds || {})
+        );
+      } catch {
+        // ignore storage failures
+      }
+    }
+
+    function rememberRemoteDeployJobId(workloadId, jobId) {
+      if (!workloadId || !jobId) {
+        return;
+      }
+      state.remoteDeployJobIds[workloadId] = jobId;
+      persistRemoteDeployJobIds();
+    }
+
+    function clearRememberedRemoteDeployJobId(workloadId) {
+      if (!workloadId || !state.remoteDeployJobIds[workloadId]) {
+        return;
+      }
+      delete state.remoteDeployJobIds[workloadId];
+      persistRemoteDeployJobIds();
+    }
+
+    state.remoteDeployJobIds = loadStoredRemoteDeployJobIds();
 
     const STALE_MS = 30000;
     function isStale(key) {
@@ -5521,8 +5566,13 @@ function htmlPage(basePath: string): string {
               const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
               await persistConfigState({ renderAfterSave: false });
               const queued = await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {}, 30000);
-              setStatus(queued.message || \`Queued deploy for remote workload \${workloadId}\`, 'progress');
+              rememberRemoteDeployJobId(workloadId, queued.jobId);
+              setStatus(
+                (queued.message || \`Queued deploy for remote workload \${workloadId}\`) + (queued.jobId ? \` (\${queued.jobId})\` : ''),
+                'progress'
+              );
               const result = await waitForRemoteDeployJob(workloadId, queued.jobId);
+              clearRememberedRemoteDeployJobId(workloadId);
               if (workload.kind === 'container-service') {
                 try {
                   await refreshContainerServiceStatus(workloadId, { silent: true });
@@ -5717,14 +5767,36 @@ function htmlPage(basePath: string): string {
 
           element.querySelector('[data-action="service-deploy-log"]')?.addEventListener('click', async () => {
             try {
-              const result = await requestJson(
-                'GET',
-                '/api/remote-workloads/' + encodeURIComponent(workload.id) + '/deploy-jobs/latest',
-                undefined,
-                20000
-              );
+              const knownJobId = state.remoteDeployJobIds[workload.id];
+              let result = null;
+              if (knownJobId) {
+                try {
+                  result = await requestJson(
+                    'GET',
+                    '/api/remote-workloads/' + encodeURIComponent(workload.id) + '/deploy-jobs/' + encodeURIComponent(knownJobId),
+                    undefined,
+                    20000
+                  );
+                } catch (jobError) {
+                  const detail = describeClientError(jobError);
+                  if (!detail.includes('not found')) {
+                    throw jobError;
+                  }
+                }
+              }
+              if (!result) {
+                result = await requestJson(
+                  'GET',
+                  '/api/remote-workloads/' + encodeURIComponent(workload.id) + '/deploy-jobs/latest',
+                  undefined,
+                  20000
+                );
+              }
               if (!result?.deployLog || result.deployLog.length === 0) {
                 throw new Error('No deploy telemetry is available yet for ' + workload.id);
+              }
+              if (result?.jobId) {
+                rememberRemoteDeployJobId(workload.id, result.jobId);
               }
               showDeployTelemetryModal(
                 workload.id,
