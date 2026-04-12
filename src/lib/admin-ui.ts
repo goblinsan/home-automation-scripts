@@ -4345,8 +4345,8 @@ function htmlPage(basePath: string): string {
           await withBusyButton(deployButton, 'Deploying…', async () => {
             const appId = app.id;
             try {
-              await persistConfigState();
               const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
+              await persistConfigState({ renderAfterSave: false });
               const result = await requestJson('POST', \`/api/apps/\${encodeURIComponent(appId)}/deploy\`, revision ? { revision } : {}, 300000);
               setStatus(\`Triggered deploy workflow for managed app \${appId}\`, 'ok');
               if (result.deployLog) {
@@ -5448,8 +5448,8 @@ function htmlPage(basePath: string): string {
             try {
               ensureRemoteWorkloadNodeId(workload);
               const workloadId = workload.id;
-              await persistConfigState();
               const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
+              await persistConfigState({ renderAfterSave: false });
               const result = await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {}, 300000);
               if (workload.kind === 'container-service') {
                 try {
@@ -6972,11 +6972,13 @@ function htmlPage(basePath: string): string {
       }
     }
 
-    async function persistConfigState() {
+    async function persistConfigState(options = {}) {
       normalizeRemoteWorkloadNodeIds();
       const result = await requestJson('POST', '/api/config', state.config);
       state.config = result.config;
-      render();
+      if (options.renderAfterSave !== false) {
+        render();
+      }
       return result;
     }
 
@@ -8650,7 +8652,7 @@ function htmlPage(basePath: string): string {
 
         try {
           appendLog('Saving configuration…');
-          await persistConfigState();
+          await persistConfigState({ renderAfterSave: false });
           appendLog('Configuration saved ✓', 'success');
 
           appendLog('Starting deploy of ' + workloadId + '…');
