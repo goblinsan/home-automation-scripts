@@ -6661,22 +6661,33 @@ function htmlPage(basePath: string): string {
 
     async function waitForRemoteDeployJob(workloadId, jobId, options = {}) {
       const timeoutMs = options.timeoutMs || 30 * 60 * 1000;
-      const pollIntervalMs = options.pollIntervalMs || 2000;
+      const pollIntervalMs = options.pollIntervalMs || 5000;
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
-        const result = await requestJson(
-          'GET',
-          '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/deploy-jobs/' + encodeURIComponent(jobId),
-          undefined,
-          20000
-        );
-        if (result.status === 'success') {
-          return result;
-        }
-        if (result.status === 'error') {
-          const err = new Error(result.error || ('Deploy failed for ' + workloadId));
-          Object.assign(err, result);
-          throw err;
+        try {
+          const result = await requestJson(
+            'GET',
+            '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/deploy-jobs/' + encodeURIComponent(jobId),
+            undefined,
+            60000
+          );
+          if (result.status === 'success') {
+            return result;
+          }
+          if (result.status === 'error') {
+            const err = new Error(result.error || ('Deploy failed for ' + workloadId));
+            Object.assign(err, result);
+            throw err;
+          }
+        } catch (error) {
+          const detail = describeClientError(error);
+          const transient = detail.startsWith('Request timed out:')
+            || detail.includes('502')
+            || detail.includes('503')
+            || detail.includes('504');
+          if (!transient) {
+            throw error;
+          }
         }
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
       }
