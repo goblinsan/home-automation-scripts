@@ -5675,7 +5675,7 @@ function htmlPage(basePath: string): string {
             const qs = svc ? '?service=' + encodeURIComponent(svc) + '&tail=200' : '?tail=200';
             try {
               logsOutput.textContent = 'Loading logs…';
-              const result = await requestJson('GET', '/api/remote-workloads/' + encodeURIComponent(workload.id) + '/service-logs' + qs);
+              const result = await requestJson('GET', '/api/remote-workloads/' + encodeURIComponent(workload.id) + '/service-logs' + qs, undefined, 120000);
               logsOutput.textContent = (result.lines || []).join('\\n') || '(no output)';
               logsOutput.scrollTop = logsOutput.scrollHeight;
             } catch (error) {
@@ -6911,7 +6911,7 @@ function htmlPage(basePath: string): string {
     }
 
     async function refreshContainerServiceStatus(workloadId, options = {}) {
-      const status = await requestJson('GET', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/service-status', undefined, 20000);
+      const status = await requestJson('GET', '/api/remote-workloads/' + encodeURIComponent(workloadId) + '/service-status', undefined, 60000);
       state.remoteServiceStatuses[workloadId] = status;
       if (!options.silent) {
         renderRemoteWorkloads();

@@ -1540,7 +1540,7 @@ export async function getContainerServiceLogs(
   const result = await runRemoteShellCapture(
     node,
     `${composeCommand} logs --tail ${tailLines} --no-color${svcArg} 2>&1`,
-    8_000
+    60_000
   );
   if (result.code !== 0) {
     throw new Error(
