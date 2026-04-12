@@ -6731,7 +6731,7 @@ function htmlPage(basePath: string): string {
     }
 
     async function waitForRemoteDeployJob(workloadId, jobId, options = {}) {
-      const timeoutMs = options.timeoutMs || 30 * 60 * 1000;
+      const timeoutMs = options.timeoutMs || 2 * 60 * 60 * 1000;
       const pollIntervalMs = options.pollIntervalMs || 5000;
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
