@@ -8450,6 +8450,11 @@ function htmlPage(basePath: string): string {
               <span class="wizard-hint">Higher values improve long-context prompts but consume more VRAM.</span>
             </label>
             <label class="wizard-field">
+              <span class="wizard-label">CUDA Architectures</span>
+              <input id="svcFieldCudaArch" type="text" value="89" />
+              <span class="wizard-hint">CMake CUDA arch list for the llama.cpp build. Use <code>89</code> for RTX 4060-class Ada GPUs, <code>86</code> for many RTX 30xx cards, or another explicit arch list for a different node.</span>
+            </label>
+            <label class="wizard-field">
               <span class="wizard-label">Max Concurrent Requests</span>
               <input id="svcFieldMaxConcurrent" type="number" value="1" min="1" />
               <span class="wizard-hint">Keep this at 1 on a shared 8 GB GPU to avoid LLM/STT contention.</span>
@@ -8676,6 +8681,7 @@ function htmlPage(basePath: string): string {
           const modelsDir = (document.getElementById('svcFieldModelsDir').value || '/data/models/llm').trim();
           const modelPath = (document.getElementById('svcFieldModelPath').value || '/data/models/llm/model.gguf').trim();
           const ctxSize = parseInt(document.getElementById('svcFieldCtxSize').value, 10) || 4096;
+          const cudaArch = (document.getElementById('svcFieldCudaArch').value || '89').trim() || '89';
           const maxConcurrent = parseInt(document.getElementById('svcFieldMaxConcurrent').value, 10) || 1;
           const adminToken = (document.getElementById('svcFieldAdminToken').value || '').trim();
 
@@ -8704,6 +8710,7 @@ function htmlPage(basePath: string): string {
                 { key: 'MODELS_DIR', value: modelsDir, secret: false, description: 'Directory scanned for GGUF models' },
                 { key: 'MODEL_PATH', value: modelPath, secret: false, description: 'Initial GGUF file loaded at startup' },
                 { key: 'CTX_SIZE', value: String(ctxSize), secret: false, description: 'llama.cpp context size' },
+                { key: 'LLAMA_CUDA_ARCHITECTURES', value: cudaArch, secret: false, description: 'CUDA architectures used when building llama.cpp' },
                 { key: 'MAX_CONCURRENT_REQUESTS', value: String(maxConcurrent), secret: false, description: 'Concurrent inference request limit' },
                 { key: 'ADMIN_TOKEN', value: adminToken, secret: true, description: 'Admin token for model management endpoints' }
               ],
