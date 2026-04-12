@@ -6398,22 +6398,24 @@ function htmlPage(basePath: string): string {
     }
 
     async function fetchConfig() {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 10000);
-      try {
-        const response = await fetch(joinBase('/api/config'), { signal: controller.signal });
-        if (!response.ok) {
-          throw new Error(await response.text());
+      let lastError = null;
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          state.config = await requestJson('GET', '/api/config', undefined, attempt === 1 ? 30000 : 60000);
+          render();
+          setStatus('Current', 'ok', { log: false });
+          return;
+        } catch (error) {
+          lastError = error;
+          const detail = describeClientError(error);
+          const timedOut = detail === 'Request timed out: /api/config' || detail === 'Config load timed out';
+          if (!timedOut || attempt === 2) {
+            throw new Error(timedOut ? 'Config load timed out' : detail);
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
-        state.config = await response.json();
-        render();
-        setStatus('Current', 'ok', { log: false });
-      } catch (err) {
-        if (err.name === 'AbortError') { throw new Error('Config load timed out'); }
-        throw err;
-      } finally {
-        clearTimeout(timer);
       }
+      throw new Error(describeClientError(lastError));
     }
 
     async function loadTabData(tab, options = {}) {
