@@ -5339,6 +5339,7 @@ function htmlPage(basePath: string): string {
                 </div>
                 <div class="toolbar">
                   <button data-action="service-refresh-status">Refresh Status</button>
+                  <button data-action="service-deploy-log">View Deploy</button>
                   <button data-action="service-logs">View Logs</button>
                   <button data-action="service-start">Start</button>
                   <button data-action="service-stop">Stop</button>
@@ -5663,6 +5664,28 @@ function htmlPage(basePath: string): string {
               setStatus('Container service status refreshed: ' + describeContainerStatus(refreshed.service));
             } catch (error) {
               setStatus(error.message, 'error');
+            }
+          });
+
+          element.querySelector('[data-action="service-deploy-log"]')?.addEventListener('click', async () => {
+            try {
+              const result = await requestJson(
+                'GET',
+                '/api/remote-workloads/' + encodeURIComponent(workload.id) + '/deploy-jobs/latest',
+                undefined,
+                20000
+              );
+              if (!result?.deployLog || result.deployLog.length === 0) {
+                throw new Error('No deploy telemetry is available yet for ' + workload.id);
+              }
+              showDeployTelemetryModal(
+                workload.id,
+                result.deployLog,
+                result.durationMs,
+                result.status === 'success'
+              );
+            } catch (error) {
+              setStatus(describeClientError(error), 'error');
             }
           });
 
@@ -9345,6 +9368,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
   const htmlCache = new Map<string, string>();
   const minecraftUpdateScheduler = await loadMinecraftManualUpdateScheduler(options.configPath, options.buildOutDir);
   const remoteDeployJobs = new Map<string, RemoteDeployJobRecord>();
+  const latestRemoteDeployJobByWorkload = new Map<string, string>();
   const REMOTE_DEPLOY_JOB_TTL_MS = 6 * 60 * 60 * 1000;
 
   const pruneRemoteDeployJobs = (): void => {
@@ -9352,6 +9376,9 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
     for (const [jobId, job] of remoteDeployJobs.entries()) {
       const completedAtMs = job.completedAt ? new Date(job.completedAt).getTime() : null;
       if (completedAtMs !== null && Number.isFinite(completedAtMs) && completedAtMs < cutoff) {
+        if (latestRemoteDeployJobByWorkload.get(job.workloadId) === jobId) {
+          latestRemoteDeployJobByWorkload.delete(job.workloadId);
+        }
         remoteDeployJobs.delete(jobId);
       }
     }
@@ -9373,6 +9400,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       deployLog
     };
     remoteDeployJobs.set(jobId, record);
+    latestRemoteDeployJobByWorkload.set(workloadId, jobId);
 
     void (async () => {
       const t0 = Date.now();
@@ -9447,6 +9475,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       const appDeployMatch = path.match(/^\/api\/apps\/([^/]+)\/deploy$/);
       const remoteWorkloadDeployMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/deploy$/);
       const remoteWorkloadDeployJobMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/deploy-jobs\/([^/]+)$/);
+      const remoteWorkloadLatestDeployJobMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/deploy-jobs\/latest$/);
       const remoteWorkloadStatusMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/status$/);
       const remoteServiceStatusMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/service-status$/);
       const remoteServiceLogsMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/service-logs$/);
@@ -9738,6 +9767,23 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         const job = remoteDeployJobs.get(jobId);
         if (!job || job.workloadId !== workloadId) {
           sendJson(response, 404, { error: `Deploy job not found for remote workload ${workloadId}` });
+          return;
+        }
+        sendJson(response, 200, job);
+        return;
+      }
+
+      if (remoteWorkloadLatestDeployJobMatch && request.method === 'GET') {
+        const workloadId = decodeURIComponent(remoteWorkloadLatestDeployJobMatch[1]);
+        const jobId = latestRemoteDeployJobByWorkload.get(workloadId);
+        if (!jobId) {
+          sendJson(response, 404, { error: `No deploy job found for remote workload ${workloadId}` });
+          return;
+        }
+        const job = remoteDeployJobs.get(jobId);
+        if (!job || job.workloadId !== workloadId) {
+          latestRemoteDeployJobByWorkload.delete(workloadId);
+          sendJson(response, 404, { error: `No deploy job found for remote workload ${workloadId}` });
           return;
         }
         sendJson(response, 200, job);
