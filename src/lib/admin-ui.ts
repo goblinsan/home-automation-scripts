@@ -229,6 +229,54 @@ interface MinecraftManualUpdateScheduler {
   configPath: string;
 }
 
+function getRemoteDeployJobsRuntimeDir(buildOutDir: string): string {
+  return join(buildOutDir, 'admin-ui-runtime', 'remote-deploy-jobs');
+}
+
+function getRemoteDeployJobFilePath(buildOutDir: string, jobId: string): string {
+  return join(getRemoteDeployJobsRuntimeDir(buildOutDir), 'jobs', `${encodeURIComponent(jobId)}.json`);
+}
+
+function getRemoteDeployLatestFilePath(buildOutDir: string, workloadId: string): string {
+  return join(getRemoteDeployJobsRuntimeDir(buildOutDir), 'latest', `${encodeURIComponent(workloadId)}.json`);
+}
+
+async function persistRemoteDeployJobRecord(buildOutDir: string, record: RemoteDeployJobRecord): Promise<void> {
+  const jobPath = getRemoteDeployJobFilePath(buildOutDir, record.jobId);
+  const latestPath = getRemoteDeployLatestFilePath(buildOutDir, record.workloadId);
+  const payload = `${JSON.stringify(record, null, 2)}\n`;
+  await mkdir(dirname(jobPath), { recursive: true });
+  await mkdir(dirname(latestPath), { recursive: true });
+  await writeFile(jobPath, payload, 'utf8');
+  await writeFile(latestPath, payload, 'utf8');
+}
+
+async function loadPersistedRemoteDeployJobRecord(buildOutDir: string, jobId: string): Promise<RemoteDeployJobRecord | null> {
+  const filePath = getRemoteDeployJobFilePath(buildOutDir, jobId);
+  if (!existsSync(filePath)) {
+    return null;
+  }
+  try {
+    const raw = await readFile(filePath, 'utf8');
+    return JSON.parse(raw) as RemoteDeployJobRecord;
+  } catch {
+    return null;
+  }
+}
+
+async function loadLatestPersistedRemoteDeployJobRecord(buildOutDir: string, workloadId: string): Promise<RemoteDeployJobRecord | null> {
+  const filePath = getRemoteDeployLatestFilePath(buildOutDir, workloadId);
+  if (!existsSync(filePath)) {
+    return null;
+  }
+  try {
+    const raw = await readFile(filePath, 'utf8');
+    return JSON.parse(raw) as RemoteDeployJobRecord;
+  } catch {
+    return null;
+  }
+}
+
 function createEmptyMinecraftManualUpdateStore(): MinecraftManualUpdateStore {
   return {
     version: 1,
@@ -9370,6 +9418,12 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
   const remoteDeployJobs = new Map<string, RemoteDeployJobRecord>();
   const latestRemoteDeployJobByWorkload = new Map<string, string>();
   const REMOTE_DEPLOY_JOB_TTL_MS = 6 * 60 * 60 * 1000;
+  const queueRemoteDeployJobPersist = (record: RemoteDeployJobRecord): void => {
+    void persistRemoteDeployJobRecord(options.buildOutDir, record).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[deploy ${record.workloadId}] Failed to persist deploy job ${record.jobId}: ${message}`);
+    });
+  };
 
   const pruneRemoteDeployJobs = (): void => {
     const cutoff = Date.now() - REMOTE_DEPLOY_JOB_TTL_MS;
@@ -9401,15 +9455,18 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
     };
     remoteDeployJobs.set(jobId, record);
     latestRemoteDeployJobByWorkload.set(workloadId, jobId);
+    queueRemoteDeployJobPersist(record);
 
     void (async () => {
       const t0 = Date.now();
       const logStep = (msg: string): void => {
         deployLog.push({ ts: Date.now() - t0, msg });
+        queueRemoteDeployJobPersist(record);
       };
 
       record.status = 'running';
       record.startedAt = new Date().toISOString();
+      queueRemoteDeployJobPersist(record);
 
       try {
         logStep('loading config');
@@ -9427,6 +9484,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         logStep('done');
         record.status = 'success';
         record.message = `Deployed remote workload ${workloadId}`;
+        queueRemoteDeployJobPersist(record);
       } catch (deployError) {
         const msg = deployError instanceof Error ? deployError.message : String(deployError);
         const name = deployError instanceof Error ? deployError.constructor.name : 'unknown';
@@ -9443,6 +9501,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       } finally {
         record.completedAt = new Date().toISOString();
         record.durationMs = Date.now() - t0;
+        queueRemoteDeployJobPersist(record);
       }
     })();
 
@@ -9764,28 +9823,33 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       if (remoteWorkloadDeployJobMatch && request.method === 'GET') {
         const workloadId = decodeURIComponent(remoteWorkloadDeployJobMatch[1]);
         const jobId = decodeURIComponent(remoteWorkloadDeployJobMatch[2]);
-        const job = remoteDeployJobs.get(jobId);
+        const job = remoteDeployJobs.get(jobId) || await loadPersistedRemoteDeployJobRecord(options.buildOutDir, jobId);
         if (!job || job.workloadId !== workloadId) {
           sendJson(response, 404, { error: `Deploy job not found for remote workload ${workloadId}` });
           return;
         }
+        if (!remoteDeployJobs.has(jobId)) {
+          remoteDeployJobs.set(jobId, job);
+        }
+        latestRemoteDeployJobByWorkload.set(workloadId, jobId);
         sendJson(response, 200, job);
         return;
       }
 
       if (remoteWorkloadLatestDeployJobMatch && request.method === 'GET') {
         const workloadId = decodeURIComponent(remoteWorkloadLatestDeployJobMatch[1]);
-        const jobId = latestRemoteDeployJobByWorkload.get(workloadId);
-        if (!jobId) {
-          sendJson(response, 404, { error: `No deploy job found for remote workload ${workloadId}` });
-          return;
-        }
-        const job = remoteDeployJobs.get(jobId);
+        const jobId = latestRemoteDeployJobByWorkload.get(workloadId) || null;
+        const job = (jobId ? remoteDeployJobs.get(jobId) || await loadPersistedRemoteDeployJobRecord(options.buildOutDir, jobId) : null)
+          || await loadLatestPersistedRemoteDeployJobRecord(options.buildOutDir, workloadId);
         if (!job || job.workloadId !== workloadId) {
-          latestRemoteDeployJobByWorkload.delete(workloadId);
+          if (jobId) {
+            latestRemoteDeployJobByWorkload.delete(workloadId);
+          }
           sendJson(response, 404, { error: `No deploy job found for remote workload ${workloadId}` });
           return;
         }
+        remoteDeployJobs.set(job.jobId, job);
+        latestRemoteDeployJobByWorkload.set(workloadId, job.jobId);
         sendJson(response, 200, job);
         return;
       }
