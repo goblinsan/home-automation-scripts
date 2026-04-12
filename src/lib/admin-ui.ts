@@ -2894,6 +2894,22 @@ function htmlPage(basePath: string): string {
       }
     }
 
+    function describeClientError(error) {
+      if (error instanceof Error) {
+        return error.message || error.name;
+      }
+      if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+        return error.message;
+      }
+      return String(error);
+    }
+
+    function logClientError(context, error) {
+      const detail = describeClientError(error);
+      console.error('[admin-ui] ' + context + ': ' + detail, error);
+      return detail;
+    }
+
     async function withBusyButton(button, pendingLabel, task) {
       if (!button) {
         return await task();
@@ -2956,13 +2972,18 @@ function htmlPage(basePath: string): string {
     function showDeployTelemetryModal(workloadId, deployLog, durationMs, success) {
       let modal = document.getElementById('deployTelemetryModal');
       if (!modal) {
-        modal = document.createElement('dialog');
+        modal = document.createElement('div');
         modal.id = 'deployTelemetryModal';
         modal.className = 'wizard-dialog';
-        modal.style.maxWidth = '56rem';
-        modal.style.width = '90vw';
+        modal.hidden = true;
+        modal.style.position = 'fixed';
+        modal.style.inset = '0';
+        modal.style.padding = '4vh 0';
+        modal.style.background = 'rgba(0,0,0,.5)';
+        modal.style.zIndex = '9999';
+        modal.style.overflowY = 'auto';
         modal.innerHTML =
-          '<div class="wizard-content">' +
+          '<div class="wizard-content" role="dialog" aria-modal="true" style="max-width:56rem;width:90vw;margin:0 auto">' +
             '<div class="wizard-header">' +
               '<h2 id="deployTelemetryTitle" style="font-size:1rem"></h2>' +
               '<div style="display:flex;gap:.5rem;align-items:center">' +
@@ -2977,7 +2998,7 @@ function htmlPage(basePath: string): string {
           '</div>';
         modal.addEventListener('click', (event) => {
           if (event.target === modal) {
-            modal.close();
+            modal.hidden = true;
           }
         });
         document.body.appendChild(modal);
@@ -2991,7 +3012,7 @@ function htmlPage(basePath: string): string {
       title.textContent = 'Deploy Telemetry: ' + workloadId;
       status.innerHTML = (success ? '<span class="success">✔ Deployed</span>' : '<span class="error">✘ Failed</span>') + ' — ' + escapeHtml(totalSecs);
       content.innerHTML = deployLog.map(formatTelemetryLine).join('\\n');
-      closeButton.onclick = () => { modal.close(); };
+      closeButton.onclick = () => { modal.hidden = true; };
       copyButton.onclick = () => {
         const plain = deployLog.map(function(entry) {
           return '[' + (entry.ts / 1000).toFixed(1) + 's] ' + (entry.msg || '');
@@ -3001,10 +3022,7 @@ function htmlPage(basePath: string): string {
           setTimeout(() => { copyButton.textContent = 'Copy'; }, 2000);
         });
       };
-      if (modal.open) {
-        modal.close();
-      }
-      modal.showModal();
+      modal.hidden = false;
     }
 
     function joinBase(path) {
@@ -4332,12 +4350,21 @@ function htmlPage(basePath: string): string {
               const result = await requestJson('POST', \`/api/apps/\${encodeURIComponent(appId)}/deploy\`, revision ? { revision } : {}, 300000);
               setStatus(\`Triggered deploy workflow for managed app \${appId}\`, 'ok');
               if (result.deployLog) {
-                showDeployTelemetryModal(appId, result.deployLog, result.durationMs, true);
+                try {
+                  showDeployTelemetryModal(appId, result.deployLog, result.durationMs, true);
+                } catch (uiError) {
+                  const detail = logClientError('show deploy telemetry for managed app ' + appId, uiError);
+                  setStatus(\`Triggered deploy workflow for managed app \${appId}, but the telemetry viewer failed to open: \${detail}\`, 'error');
+                }
               }
             } catch (error) {
-              setStatus(error.message || String(error), 'error');
+              setStatus(describeClientError(error), 'error');
               if (error.deployLog) {
-                showDeployTelemetryModal(appId, error.deployLog, error.durationMs, false);
+                try {
+                  showDeployTelemetryModal(appId, error.deployLog, error.durationMs, false);
+                } catch (uiError) {
+                  logClientError('show failed deploy telemetry for managed app ' + appId, uiError);
+                }
               }
             }
           });
@@ -5425,17 +5452,34 @@ function htmlPage(basePath: string): string {
               const revision = element.querySelector('[data-control="deployRevision"]').value.trim();
               const result = await requestJson('POST', \`/api/remote-workloads/\${encodeURIComponent(workloadId)}/deploy\`, revision ? { revision } : {}, 300000);
               if (workload.kind === 'container-service') {
-                await refreshContainerServiceStatus(workloadId, { silent: true });
-                renderRemoteWorkloads();
+                try {
+                  await refreshContainerServiceStatus(workloadId, { silent: true });
+                  renderRemoteWorkloads();
+                  setStatus(\`Deployed remote workload \${workloadId}\`);
+                } catch (uiError) {
+                  const detail = logClientError('refresh deployed remote workload ' + workloadId, uiError);
+                  setStatus(\`Deployed remote workload \${workloadId}, but status refresh failed: \${detail}\`, 'error');
+                }
               }
-              setStatus(\`Deployed remote workload \${workloadId}\`);
+              if (workload.kind !== 'container-service') {
+                setStatus(\`Deployed remote workload \${workloadId}\`);
+              }
               if (result.deployLog) {
-                showDeployTelemetryModal(workloadId, result.deployLog, result.durationMs, true);
+                try {
+                  showDeployTelemetryModal(workloadId, result.deployLog, result.durationMs, true);
+                } catch (uiError) {
+                  const detail = logClientError('show deploy telemetry for remote workload ' + workloadId, uiError);
+                  setStatus(\`Deployed remote workload \${workloadId}, but the telemetry viewer failed to open: \${detail}\`, 'error');
+                }
               }
             } catch (error) {
-              setStatus(error.message, 'error');
+              setStatus(describeClientError(error), 'error');
               if (error.deployLog) {
-                showDeployTelemetryModal(workload.id, error.deployLog, error.durationMs, false);
+                try {
+                  showDeployTelemetryModal(workload.id, error.deployLog, error.durationMs, false);
+                } catch (uiError) {
+                  logClientError('show failed deploy telemetry for remote workload ' + workload.id, uiError);
+                }
               }
             }
           });
