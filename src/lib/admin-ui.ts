@@ -500,25 +500,48 @@ async function getKulrsActivityRuntimeStatus(config: GatewayConfig): Promise<Kul
 
   const timerName = `${kulrsJob.id}.timer`;
   const serviceName = `${kulrsJob.id}.service`;
-  const [timerResult, serviceResult] = await Promise.all([
-    runLocalCommandCapture('systemctl', [
-      'show',
-      timerName,
-      '-p', 'LoadState',
-      '-p', 'ActiveState',
-      '-p', 'SubState',
-      '-p', 'UnitFileState',
-      '-p', 'NextElapseUSecRealtime',
-      '-p', 'LastTriggerUSec'
-    ]),
-    runLocalCommandCapture('systemctl', [
-      'show',
-      serviceName,
-      '-p', 'LoadState',
-      '-p', 'ActiveState',
-      '-p', 'SubState'
-    ])
-  ]);
+  let timerResult: { code: number; stdout: string; stderr: string };
+  let serviceResult: { code: number; stdout: string; stderr: string };
+  try {
+    [timerResult, serviceResult] = await Promise.all([
+      runLocalCommandCapture('systemctl', [
+        'show',
+        timerName,
+        '-p', 'LoadState',
+        '-p', 'ActiveState',
+        '-p', 'SubState',
+        '-p', 'UnitFileState',
+        '-p', 'NextElapseUSecRealtime',
+        '-p', 'LastTriggerUSec'
+      ]),
+      runLocalCommandCapture('systemctl', [
+        'show',
+        serviceName,
+        '-p', 'LoadState',
+        '-p', 'ActiveState',
+        '-p', 'SubState'
+      ])
+    ]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      jobId: kulrsJob.id,
+      configuredEnabled: kulrsJob.enabled,
+      timerInstalled: false,
+      timerActiveState: 'unavailable',
+      timerSubState: 'unavailable',
+      timerUnitFileState: 'unavailable',
+      serviceInstalled: false,
+      serviceActiveState: 'unavailable',
+      serviceSubState: 'unavailable',
+      nextRunAt: null,
+      lastRunAt: null,
+      logPath: config.serviceProfiles.gatewayApi.kulrsActivity.cronLogPath,
+      summary: 'Host timer status unavailable from this control-plane runtime',
+      driftDetected: false,
+      error: message
+    };
+  }
 
   const timerFields = parseSystemdShowOutput(timerResult.stdout);
   const serviceFields = parseSystemdShowOutput(serviceResult.stdout);
@@ -9759,7 +9782,8 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
 
       if (request.method === 'GET' && path === '/api/service-profiles/kulrs-activity/logs') {
         const config = await loadGatewayConfig(options.configPath);
-        const tailParam = requestUrl.searchParams.get('tail');
+        const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+        const tailParam = url.searchParams.get('tail');
         const tailLines = tailParam ? Math.max(20, Math.min(1000, Number.parseInt(tailParam, 10) || 200)) : 200;
         sendJson(response, 200, await getKulrsActivityLogs(config, tailLines));
         return;
