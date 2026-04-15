@@ -67,6 +67,60 @@ export function renderKulrsActivityEnv(profile: KulrsActivityConfig): string {
       value: profile.timezone,
       secret: false,
       description: 'Timezone used for KULRS run-window gating'
+    },
+    {
+      key: 'KULRS_CREATE_MODE',
+      value: profile.createMode,
+      secret: false,
+      description: 'Palette generation strategy for CREATE slots'
+    },
+    {
+      key: 'KULRS_LLM_BASE_URL',
+      value: profile.llmBaseUrl,
+      secret: false,
+      description: 'OpenAI-compatible base URL for local palette generation'
+    },
+    {
+      key: 'KULRS_LLM_MODEL',
+      value: profile.llmModel,
+      secret: false,
+      description: 'Model id used for Kulrs palette generation'
+    },
+    {
+      key: 'KULRS_LLM_API_KEY',
+      value: profile.llmApiKey,
+      secret: true,
+      description: 'Optional bearer token for the local LLM endpoint'
+    },
+    {
+      key: 'KULRS_LLM_TIMEOUT_MS',
+      value: String(profile.llmTimeoutMs),
+      secret: false,
+      description: 'Timeout for a single palette-generation request'
+    },
+    {
+      key: 'KULRS_LLM_TEMPERATURE',
+      value: String(profile.llmTemperature),
+      secret: false,
+      description: 'Primary generation temperature for the palette prompt'
+    },
+    {
+      key: 'KULRS_CRON_LOG_PATH',
+      value: profile.cronLogPath,
+      secret: false,
+      description: 'Rolling log file written by the KULRS cron job'
+    },
+    {
+      key: 'KULRS_CRON_LOG_RETENTION_DAYS',
+      value: String(profile.cronLogRetentionDays),
+      secret: false,
+      description: 'How many days of KULRS cron lines to retain'
+    },
+    {
+      key: 'KULRS_CRON_LOG_MAX_LINES',
+      value: String(profile.cronLogMaxLines),
+      secret: false,
+      description: 'Maximum number of retained KULRS cron log lines'
     }
   ]);
 }

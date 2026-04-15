@@ -159,6 +159,7 @@ interface KulrsActivityRuntimeStatus {
   serviceSubState: string;
   nextRunAt: string | null;
   lastRunAt: string | null;
+  logPath: string;
   summary: string;
   driftDetected: boolean;
   error?: string;
@@ -557,9 +558,34 @@ async function getKulrsActivityRuntimeStatus(config: GatewayConfig): Promise<Kul
     serviceSubState,
     nextRunAt,
     lastRunAt,
+    logPath: config.serviceProfiles.gatewayApi.kulrsActivity.cronLogPath,
     summary,
     driftDetected,
     ...(errorParts.length > 0 ? { error: errorParts.join(' | ') } : {})
+  };
+}
+
+async function getKulrsActivityLogs(
+  config: GatewayConfig,
+  tailLines = 200
+): Promise<{ path: string; exists: boolean; tailLines: number; log: string }> {
+  const filePath = config.serviceProfiles.gatewayApi.kulrsActivity.cronLogPath;
+  if (!existsSync(filePath)) {
+    return {
+      path: filePath,
+      exists: false,
+      tailLines,
+      log: ''
+    };
+  }
+
+  const raw = await readFile(filePath, 'utf8');
+  const lines = raw.split('\n').filter((line) => line.length > 0);
+  return {
+    path: filePath,
+    exists: true,
+    tailLines,
+    log: lines.slice(-tailLines).join('\n')
   };
 }
 
@@ -2208,11 +2234,52 @@ function htmlPage(basePath: string): string {
                 <label>ExecStart
                   <input id="kulrsExecStart" />
                 </label>
+                <label>Create Mode
+                  <select id="kulrsCreateMode">
+                    <option value="llm">llm</option>
+                    <option value="image">image</option>
+                  </select>
+                </label>
+              </div>
+              <div class="row">
+                <label>LLM Base URL
+                  <input id="kulrsLlmBaseUrl" />
+                </label>
+                <label>LLM Model
+                  <input id="kulrsLlmModel" />
+                </label>
+                <label>LLM API Key
+                  <input id="kulrsLlmApiKey" type="password" />
+                </label>
+              </div>
+              <div class="row">
+                <label>LLM Timeout (ms)
+                  <input id="kulrsLlmTimeoutMs" type="number" min="1000" step="1000" />
+                </label>
+                <label>LLM Temperature
+                  <input id="kulrsLlmTemperature" type="number" min="0" max="2" step="0.05" />
+                </label>
+                <label>Cron Log Path
+                  <input id="kulrsCronLogPath" />
+                </label>
+              </div>
+              <div class="row">
+                <label>Log Retention (days)
+                  <input id="kulrsCronLogRetentionDays" type="number" min="1" max="7" step="1" />
+                </label>
+                <label>Log Max Lines
+                  <input id="kulrsCronLogMaxLines" type="number" min="50" max="5000" step="50" />
+                </label>
               </div>
               <label>Description
                 <input id="kulrsDescription" />
               </label>
               <div id="kulrsStatus" class="meta-list"></div>
+              <div class="button-row">
+                <button id="kulrsViewLogs" type="button">View Logs</button>
+                <button id="kulrsRefreshLogs" type="button">Refresh Logs</button>
+              </div>
+              <pre id="kulrsLogsOutput" class="wizard-log" style="max-height:20rem;overflow:auto;font-size:.78rem"></pre>
               <div class="row">
                 <label>Firebase API Key
                   <input id="kulrsFirebaseApiKey" type="password" />
@@ -3640,6 +3707,15 @@ function htmlPage(basePath: string): string {
       document.getElementById('kulrsWorkspaceDir').value = kulrs.workspaceDir;
       document.getElementById('kulrsWorkingDirectory').value = kulrs.workingDirectory;
       document.getElementById('kulrsExecStart').value = kulrs.execStart;
+      document.getElementById('kulrsCreateMode').value = kulrs.createMode;
+      document.getElementById('kulrsLlmBaseUrl').value = kulrs.llmBaseUrl;
+      document.getElementById('kulrsLlmModel').value = kulrs.llmModel;
+      document.getElementById('kulrsLlmApiKey').value = kulrs.llmApiKey;
+      document.getElementById('kulrsLlmTimeoutMs').value = String(kulrs.llmTimeoutMs);
+      document.getElementById('kulrsLlmTemperature').value = String(kulrs.llmTemperature);
+      document.getElementById('kulrsCronLogPath').value = kulrs.cronLogPath;
+      document.getElementById('kulrsCronLogRetentionDays').value = String(kulrs.cronLogRetentionDays);
+      document.getElementById('kulrsCronLogMaxLines').value = String(kulrs.cronLogMaxLines);
       document.getElementById('kulrsDescription').value = kulrs.description;
       document.getElementById('kulrsFirebaseApiKey').value = kulrs.firebaseApiKey;
       document.getElementById('kulrsUnsplashAccessKey').value = kulrs.unsplashAccessKey;
@@ -3659,6 +3735,7 @@ function htmlPage(basePath: string): string {
           '<div><strong>Timer Unit File:</strong> ' + escapeHtml(state.kulrsActivityStatus.timerUnitFileState || 'unknown') + '</div>',
           '<div><strong>Last Run:</strong> ' + escapeHtml(formatTimestamp(state.kulrsActivityStatus.lastRunAt)) + '</div>',
           '<div><strong>Next Run:</strong> ' + escapeHtml(formatTimestamp(state.kulrsActivityStatus.nextRunAt)) + '</div>',
+          '<div><strong>Log Path:</strong> ' + escapeHtml(state.kulrsActivityStatus.logPath || 'unknown') + '</div>',
           '<div><strong>Drift:</strong> ' + escapeHtml(state.kulrsActivityStatus.driftDetected ? 'yes' : 'no') + '</div>',
           '<div><strong>Summary:</strong> ' + escapeHtml(state.kulrsActivityStatus.summary || 'unknown') + '</div>'
         ].join('');
@@ -6711,6 +6788,19 @@ function htmlPage(basePath: string): string {
       return state.kulrsActivityStatus;
     }
 
+    async function fetchKulrsActivityLogs() {
+      const output = document.getElementById('kulrsLogsOutput');
+      output.textContent = 'Loading…';
+      try {
+        const result = await requestJson('GET', '/api/service-profiles/kulrs-activity/logs?tail=200', undefined, 60000);
+        output.textContent = result.exists
+          ? (result.log || '(log file is empty)')
+          : 'Log file not found at ' + result.path;
+      } catch (error) {
+        output.textContent = 'Failed to load logs: ' + error.message;
+      }
+    }
+
     async function fetchWorkflows() {
       if (state.config && !state.config.serviceProfiles.gatewayApi.enabled) {
         state.workflows = [];
@@ -7302,6 +7392,15 @@ function htmlPage(basePath: string): string {
       ['kulrsWorkspaceDir', 'workspaceDir'],
       ['kulrsWorkingDirectory', 'workingDirectory'],
       ['kulrsExecStart', 'execStart'],
+      ['kulrsCreateMode', 'createMode'],
+      ['kulrsLlmBaseUrl', 'llmBaseUrl'],
+      ['kulrsLlmModel', 'llmModel'],
+      ['kulrsLlmApiKey', 'llmApiKey'],
+      ['kulrsLlmTimeoutMs', 'llmTimeoutMs'],
+      ['kulrsLlmTemperature', 'llmTemperature'],
+      ['kulrsCronLogPath', 'cronLogPath'],
+      ['kulrsCronLogRetentionDays', 'cronLogRetentionDays'],
+      ['kulrsCronLogMaxLines', 'cronLogMaxLines'],
       ['kulrsDescription', 'description'],
       ['kulrsFirebaseApiKey', 'firebaseApiKey'],
       ['kulrsUnsplashAccessKey', 'unsplashAccessKey'],
@@ -7317,6 +7416,8 @@ function htmlPage(basePath: string): string {
         syncRawJson();
       });
     });
+    document.getElementById('kulrsViewLogs').addEventListener('click', fetchKulrsActivityLogs);
+    document.getElementById('kulrsRefreshLogs').addEventListener('click', fetchKulrsActivityLogs);
     [
       ['gatewayChatProfileEnabled', 'enabled', 'checkbox'],
       ['gatewayChatProfileAppId', 'appId'],
@@ -9653,6 +9754,14 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       if (request.method === 'GET' && path === '/api/service-profiles/kulrs-activity/status') {
         const config = await loadGatewayConfig(options.configPath);
         sendJson(response, 200, await getKulrsActivityRuntimeStatus(config));
+        return;
+      }
+
+      if (request.method === 'GET' && path === '/api/service-profiles/kulrs-activity/logs') {
+        const config = await loadGatewayConfig(options.configPath);
+        const tailParam = requestUrl.searchParams.get('tail');
+        const tailLines = tailParam ? Math.max(20, Math.min(1000, Number.parseInt(tailParam, 10) || 200)) : 200;
+        sendJson(response, 200, await getKulrsActivityLogs(config, tailLines));
         return;
       }
 

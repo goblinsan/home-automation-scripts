@@ -233,6 +233,15 @@ export interface KulrsActivityConfig {
   credentialsFilePath: string;
   workspaceDir: string;
   timezone: string;
+  createMode: 'llm' | 'image';
+  llmBaseUrl: string;
+  llmModel: string;
+  llmApiKey: string;
+  llmTimeoutMs: number;
+  llmTemperature: number;
+  cronLogPath: string;
+  cronLogRetentionDays: number;
+  cronLogMaxLines: number;
   unsplashAccessKey: string;
   firebaseApiKey: string;
   bots: KulrsBotCredentialsConfig[];
@@ -382,6 +391,19 @@ function assertNumber(value: unknown, field: string): number {
     throw new Error(`Expected number for ${field}`);
   }
   return value;
+}
+
+function parseNumberLike(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return fallback;
 }
 
 function assertNonNegativeIntegerArray(value: unknown, field: string): number[] {
@@ -844,6 +866,15 @@ function parseKulrsActivityConfig(value: unknown, appId: string): KulrsActivityC
       credentialsFilePath: '/srv/apps/gateway-api/shared/kulrs.json',
       workspaceDir: '/srv/apps/gateway-api/shared/kulrs',
       timezone: 'America/New_York',
+      createMode: 'llm',
+      llmBaseUrl: 'http://127.0.0.1:5301',
+      llmModel: 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
+      llmApiKey: '',
+      llmTimeoutMs: 25000,
+      llmTemperature: 0.7,
+      cronLogPath: '/srv/apps/gateway-api/shared/kulrs/memory/kulrs-cron.log',
+      cronLogRetentionDays: 2,
+      cronLogMaxLines: 500,
       unsplashAccessKey: '',
       firebaseApiKey: '',
       bots: []
@@ -870,6 +901,15 @@ function parseKulrsActivityConfig(value: unknown, appId: string): KulrsActivityC
       : `/srv/apps/${appId}/shared/kulrs.json`,
     workspaceDir: typeof value.workspaceDir === 'string' ? value.workspaceDir : `/srv/apps/${appId}/shared/kulrs`,
     timezone: typeof value.timezone === 'string' ? value.timezone : 'America/New_York',
+    createMode: value.createMode === 'image' ? 'image' : 'llm',
+    llmBaseUrl: typeof value.llmBaseUrl === 'string' ? value.llmBaseUrl : 'http://127.0.0.1:5301',
+    llmModel: typeof value.llmModel === 'string' ? value.llmModel : 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
+    llmApiKey: typeof value.llmApiKey === 'string' ? value.llmApiKey : '',
+    llmTimeoutMs: parseNumberLike(value.llmTimeoutMs, 25000),
+    llmTemperature: parseNumberLike(value.llmTemperature, 0.7),
+    cronLogPath: typeof value.cronLogPath === 'string' ? value.cronLogPath : `/srv/apps/${appId}/shared/kulrs/memory/kulrs-cron.log`,
+    cronLogRetentionDays: parseNumberLike(value.cronLogRetentionDays, 2),
+    cronLogMaxLines: parseNumberLike(value.cronLogMaxLines, 500),
     unsplashAccessKey: typeof value.unsplashAccessKey === 'string' ? value.unsplashAccessKey : '',
     firebaseApiKey: typeof value.firebaseApiKey === 'string' ? value.firebaseApiKey : '',
     bots: Array.isArray(value.bots)
