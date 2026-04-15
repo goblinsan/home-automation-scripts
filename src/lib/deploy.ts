@@ -198,6 +198,27 @@ async function ensureDirectory(path: string, context: CommandContext): Promise<v
   }
 }
 
+async function installSystemdUnit(
+  destinationPath: string,
+  contents: string,
+  context: CommandContext
+): Promise<void> {
+  context.log(`${context.dryRun ? '[dry-run] ' : ''}install ${destinationPath}`);
+  if (context.dryRun) {
+    return;
+  }
+
+  const tempPath = join('/tmp', `gateway-control-plane-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.unit`);
+  await writeFile(tempPath, contents, 'utf8');
+
+  try {
+    await runShell(`sudo mkdir -p ${shellQuote(dirname(destinationPath))}`, process.cwd(), context);
+    await runShell(`sudo install -m 0644 ${shellQuote(tempPath)} ${shellQuote(destinationPath)}`, process.cwd(), context);
+  } finally {
+    await rm(tempPath, { force: true });
+  }
+}
+
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
@@ -538,13 +559,8 @@ export async function installJobs(config: GatewayConfig, appId: string, context:
     const serviceBody = renderJobService(config, app, job);
     const timerBody = renderJobTimer(job);
 
-    context.log(`${context.dryRun ? '[dry-run] ' : ''}install ${servicePath}`);
-    context.log(`${context.dryRun ? '[dry-run] ' : ''}install ${timerPath}`);
-    if (!context.dryRun) {
-      await mkdir(dirname(servicePath), { recursive: true });
-      await writeFile(servicePath, serviceBody, 'utf8');
-      await writeFile(timerPath, timerBody, 'utf8');
-    }
+    await installSystemdUnit(servicePath, serviceBody, context);
+    await installSystemdUnit(timerPath, timerBody, context);
 
     timerNames.push(`${job.id}.timer`);
   }
@@ -563,11 +579,7 @@ export async function installControlPlaneService(config: GatewayConfig, context:
   const servicePath = join(config.gateway.systemdUnitDirectory, config.gateway.adminUi.serviceName);
   const serviceBody = renderControlPlaneService(config.gateway.adminUi);
 
-  context.log(`${context.dryRun ? '[dry-run] ' : ''}install ${servicePath}`);
-  if (!context.dryRun) {
-    await mkdir(dirname(servicePath), { recursive: true });
-    await writeFile(servicePath, serviceBody, 'utf8');
-  }
+  await installSystemdUnit(servicePath, serviceBody, context);
 
   await runShell(config.gateway.systemdReloadCommand, process.cwd(), context);
   await runShell(
