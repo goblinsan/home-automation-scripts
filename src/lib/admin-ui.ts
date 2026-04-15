@@ -524,6 +524,7 @@ async function getKulrsActivityRuntimeStatus(config: GatewayConfig): Promise<Kul
     ]);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const unavailable = /systemctl|ENOENT/i.test(message);
     return {
       jobId: kulrsJob.id,
       configuredEnabled: kulrsJob.enabled,
@@ -539,7 +540,7 @@ async function getKulrsActivityRuntimeStatus(config: GatewayConfig): Promise<Kul
       logPath: config.serviceProfiles.gatewayApi.kulrsActivity.cronLogPath,
       summary: 'Host timer status unavailable from this control-plane runtime',
       driftDetected: false,
-      error: message
+      ...(unavailable ? {} : { error: message })
     };
   }
 
