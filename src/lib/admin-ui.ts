@@ -1981,7 +1981,7 @@ function htmlPage(basePath: string): string {
       <div class="header-row">
         <div>
           <h1>Gateway Control Plane</h1>
-          <p>Operations-first console for nodes, workloads, monitoring, and secrets.</p>
+          <p>Operations-first console — Workloads, Secrets, Nodes, and Monitoring as composed pages.</p>
         </div>
         <div class="header-actions">
           <button id="refreshButton">Refresh</button>
@@ -1994,9 +1994,9 @@ function htmlPage(basePath: string): string {
         <button class="tab-button active" data-nav-id="overview" data-tab="overview">Overview</button>
         <button class="tab-button" data-nav-id="bootstrap" data-tab="infra" data-sub-tab="infra-gateway">Bootstrap</button>
         <button class="tab-button" data-nav-id="nodes" data-tab="infra" data-sub-tab="infra-nodes">Nodes</button>
-        <button class="tab-button" data-nav-id="workloads" data-tab="infra" data-sub-tab="infra-minecraft">Workloads</button>
+        <button class="tab-button" data-nav-id="workloads" data-tab="workloads" data-sub-tab="wl-remote">Workloads</button>
         <button class="tab-button" data-nav-id="monitor" data-tab="monitoring" data-sub-tab="mon-health">Monitor</button>
-        <button class="tab-button" data-nav-id="secrets" data-tab="services" data-sub-tab="svc-profiles">Secrets</button>
+        <button class="tab-button" data-nav-id="secrets" data-tab="secrets">Secrets</button>
       </nav>
     </div>
   </header>
@@ -2056,7 +2056,6 @@ function htmlPage(basePath: string): string {
       <nav class="sub-tab-nav" data-sub-group="infra">
         <button class="sub-tab-button active" data-sub-tab="infra-gateway">Gateway</button>
         <button class="sub-tab-button" data-sub-tab="infra-nodes">Nodes</button>
-        <button class="sub-tab-button" data-sub-tab="infra-minecraft">Minecraft</button>
       </nav>
 
       <div class="sub-tab-panel active" data-sub-tab-panel="infra-gateway">
@@ -2180,7 +2179,7 @@ function htmlPage(basePath: string): string {
             <div id="workerNodesContainer" class="section-list"></div>
           </div>
         </details>
-        <details class="card section-card">
+        <details class="card section-card" id="remoteWorkloadsSection">
           <summary>
             <div class="section-summary-copy">
               <span class="pill">Remote Workloads</span>
@@ -2731,7 +2730,7 @@ function htmlPage(basePath: string): string {
         </div>
       </details>
 
-      <details class="card section-card">
+      <details class="card section-card" id="secretsSection">
         <summary>
           <div class="section-summary-copy">
             <span class="pill">Secrets</span>
@@ -2904,6 +2903,45 @@ function htmlPage(basePath: string): string {
 
       </div><!-- /monitoring tab -->
 
+      <!-- ═══ WORKLOADS TAB (composed page — remote workloads, bedrock, managed apps, workflows, agents, profiles, features) ═══ -->
+      <div class="tab-panel" data-tab-panel="workloads" hidden>
+        <nav class="sub-tab-nav" data-sub-group="workloads">
+          <button class="sub-tab-button active" data-sub-tab="wl-remote">Remote Workloads</button>
+          <button class="sub-tab-button" data-sub-tab="infra-minecraft">Bedrock</button>
+          <button class="sub-tab-button" data-sub-tab="svc-deploys">Managed Apps</button>
+          <button class="sub-tab-button" data-sub-tab="svc-workflows">Workflows &amp; Jobs</button>
+          <button class="sub-tab-button" data-sub-tab="svc-agents">Agents</button>
+          <button class="sub-tab-button" data-sub-tab="svc-profiles">Runtime Profiles</button>
+          <button class="sub-tab-button" data-sub-tab="svc-features">Feature Flags</button>
+        </nav>
+        <div class="sub-tab-panel active" data-sub-tab-panel="wl-remote">
+          <div class="section-list">
+            <div class="card card-quiet">
+              <div>
+                <span class="pill">Workloads</span>
+                <h3>Remote Container Workloads</h3>
+                <p>Generic remote workloads deployed to your worker nodes. Use the Bedrock sub-tab for Minecraft-specific admin and Managed Apps for git-based services handled by the control-plane deploy system.</p>
+              </div>
+            </div>
+            <div id="workloadsRemoteHost" class="section-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ SECRETS TAB (composed page — secret env vars, credentials, secret-bearing runtime fields) ═══ -->
+      <div class="tab-panel" data-tab-panel="secrets" hidden>
+        <div class="section-list">
+          <div class="card card-quiet">
+            <div>
+              <span class="pill">Secrets</span>
+              <h3>Credentials &amp; Secret Runtime Fields</h3>
+              <p>Isolated surface for API keys, bot tokens, passwords, and other sensitive values across all services. Non-secret runtime configuration lives on the Workloads page under Runtime Profiles.</p>
+            </div>
+          </div>
+          <div id="secretsHost" class="section-list"></div>
+        </div>
+      </div>
+
     </section>
 
     <aside class="aside-stack">
@@ -2921,12 +2959,11 @@ function htmlPage(basePath: string): string {
       <details class="panel" open>
         <summary><strong>Definitions</strong></summary>
         <div class="hint-list" style="margin-top: 14px;">
-          <p><strong>Agents</strong> configure AI personalities synced to <code>gateway-chat-platform</code>.</p>
-          <p><strong>Workflows</strong> are scheduled automations executed by <code>gateway-api</code>.</p>
-          <p><strong>Deploys</strong> covers remote container services and managed app deployments.</p>
-          <p><strong>Profiles</strong> contains env files, job channels, TTS, and credentials for each service.</p>
-          <p><strong>Nodes</strong> are remote worker machines and their workloads.</p>
-          <p><strong>Minecraft</strong> is the dedicated Bedrock server admin surface.</p>
+          <p><strong>Workloads</strong> is the composed operational page for remote workloads, bedrock servers, managed apps, workflows and jobs, agents, runtime profiles, and feature flags.</p>
+          <p><strong>Secrets</strong> isolates credentials, secret env vars, and secret-bearing runtime fields.</p>
+          <p><strong>Nodes</strong> are remote worker machines and their host-level setup. Workloads that run on a node are configured under the Workloads page.</p>
+          <p><strong>Bootstrap</strong> covers gateway server, admin UI, and nginx/systemd plumbing.</p>
+          <p><strong>Monitor</strong> holds health, benchmarks, and monitoring settings.</p>
         </div>
       </details>
     </aside>
@@ -3172,6 +3209,7 @@ function htmlPage(basePath: string): string {
         infra: 'infra-gateway',
         services: 'svc-agents',
         monitoring: 'mon-health',
+        workloads: 'wl-remote',
       },
       dataLoaded: {},
       subTabLoading: {}
@@ -3467,32 +3505,82 @@ function htmlPage(basePath: string): string {
 
     // Nav ownership map.  Each top-nav button owns a set of (tab, subTab) pairs
     // so the top-nav stays correctly highlighted when the operator drills into a
-    // legacy sub-tab that this nav item logically contains.
+    // sub-tab that this nav item logically contains.
     //
-    // Transitional mapping — existing sub-tabs remain reachable through their
-    // host legacy tab navigation.  The target IA from the rebuild epic splits
-    // svc-profiles (runtime profiles vs. secret credentials) into Workloads vs.
-    // Secrets; that split is out of scope for this slice, so svc-profiles is
-    // owned by Secrets today and Workloads covers the rest of the Services
-    // legacy sub-tabs alongside remote-workloads/minecraft under Infrastructure.
+    // The Workloads and Secrets top-nav items now own their own composed
+    // tab-panels (data-tab-panel workloads / data-tab-panel secrets) rather
+    // than being transitional remaps onto legacy infra/services sub-tabs.  The
+    // composition pulls together remote workloads, bedrock, managed apps,
+    // workflows/jobs, agents, runtime profiles, and feature flags for Workloads;
+    // and isolates credential/secret-bearing surfaces under Secrets.  The legacy
+    // services tab-panel is no longer reachable from the top nav; its former
+    // sub-panels are reparented into the Workloads page at init.
     const NAV_OWNERSHIP = {
       overview:  [['overview',   null]],
       bootstrap: [['infra',      'infra-gateway']],
       nodes:     [['infra',      'infra-nodes']],
-      workloads: [
-        ['infra',    'infra-minecraft'],
-        ['services', 'svc-agents'],
-        ['services', 'svc-workflows'],
-        ['services', 'svc-deploys'],
-        ['services', 'svc-features']
-      ],
+      workloads: [['workloads',  null]],
       monitor:   [
         ['monitoring', 'mon-health'],
         ['monitoring', 'mon-benchmarks'],
         ['monitoring', 'mon-settings']
       ],
-      secrets:   [['services',   'svc-profiles']]
+      secrets:   [['secrets',    null]]
     };
+
+    // Compose the new Workloads and Secrets top-level pages from the existing
+    // sub-surface DOM.  This keeps all existing element IDs, event handlers,
+    // render functions, and lazy-loading behavior intact — we only relocate
+    // the sub-panels into the composed parent tab-panels so that top-nav
+    // activation no longer depends on the legacy infra/services grouping.
+    (function composeWorkloadsAndSecretsPages() {
+      const workloadsTab = document.querySelector('[data-tab-panel="workloads"]');
+      const secretsTab   = document.querySelector('[data-tab-panel="secrets"]');
+      if (!workloadsTab || !secretsTab) {
+        return;
+      }
+
+      // Move the Remote Workloads details card from the Nodes sub-panel into
+      // the Workloads > Remote Workloads sub-panel so remote workloads are
+      // primarily owned by the Workloads page, not by Nodes.
+      const remoteWorkloadsSection = document.getElementById('remoteWorkloadsSection');
+      const workloadsRemoteHost    = document.getElementById('workloadsRemoteHost');
+      if (remoteWorkloadsSection && workloadsRemoteHost) {
+        workloadsRemoteHost.appendChild(remoteWorkloadsSection);
+        remoteWorkloadsSection.open = true;
+      }
+
+      // Move the Secrets details card out of the svc-profiles sub-panel and
+      // into the dedicated Secrets tab-panel.  This splits svc-profiles into
+      // runtime configuration (which stays on the Workloads > Runtime Profiles
+      // sub-tab) and secrets/credentials (which move here).
+      const secretsSection = document.getElementById('secretsSection');
+      const secretsHost    = document.getElementById('secretsHost');
+      if (secretsSection && secretsHost) {
+        secretsHost.appendChild(secretsSection);
+        secretsSection.open = true;
+      }
+
+      // Reparent each composed sub-tab panel out of its legacy host tab-panel
+      // into the Workloads tab-panel so applySubTabDom (which selects sub-tab
+      // panels under the nav group's parent) finds them here.  The wl-remote
+      // panel already lives under Workloads and renders the relocated Remote
+      // Workloads card above.
+      ['infra-minecraft', 'svc-deploys', 'svc-workflows', 'svc-agents', 'svc-profiles', 'svc-features']
+        .forEach((subTabId) => {
+          const panel = document.querySelector('[data-sub-tab-panel="' + subTabId + '"]');
+          if (panel) {
+            panel.classList.remove('active');
+            workloadsTab.appendChild(panel);
+          }
+        });
+
+      // Ensure the default Workloads sub-tab shows wl-remote on first entry.
+      const wlRemotePanel = workloadsTab.querySelector('[data-sub-tab-panel="wl-remote"]');
+      if (wlRemotePanel) {
+        wlRemotePanel.classList.add('active');
+      }
+    })();
 
     function findActiveNavId() {
       const tab = state.activeTab;
@@ -7090,6 +7178,7 @@ function htmlPage(basePath: string): string {
     async function loadSubTabData(subTab, options = {}) {
       const fetches = [];
       switch (subTab) {
+        case 'wl-remote':
         case 'infra-nodes':
         case 'svc-deploys':
           if (isStale('remoteServiceStatuses')) {
@@ -9740,7 +9829,7 @@ function htmlPage(basePath: string): string {
     }, 15000);
     setInterval(() => {
       const sub = state.activeSubTabs[state.activeTab];
-      if (sub === 'infra-nodes' || sub === 'svc-deploys') {
+      if (sub === 'wl-remote' || sub === 'infra-nodes' || sub === 'svc-deploys') {
         refreshAllRemoteServiceStatuses({ silent: true }).then(() => markLoaded('remoteServiceStatuses')).catch(() => undefined);
       }
     }, 30000);
