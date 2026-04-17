@@ -61,18 +61,42 @@ Navigation is driven by three pieces of shared state:
 
 - `state.activeTab` — currently selected top-level tab.
 - `state.activeSubTabs[tab]` — currently selected sub-tab per top-level tab.
-- `state.dataLoaded` — per-page "we have fetched at least once" flags.
+- `state.dataLoaded` — timestamp map used by `isStale(key)` (stale after 30 s).
 - `state.subTabLoading` — per-sub-tab "fetch in flight" flags that drive
   local spinners.
 
-When a tab or sub-tab becomes active, the shell invokes its
-fetch-on-activation handler only if `dataLoaded` does not yet include that
-page. That handler sets `subTabLoading` while it runs, renders into the
-page's section on success, and calls `markLoaded(key)` to record completion.
-Background refresh intervals (runtime summary, health snapshot, remote
-service / minecraft status, chat provider, TTS, KULRS) are all gated on
-`state.activeTab` / `state.activeSubTabs[state.activeTab]` so inactive pages
-do not issue network requests.
+### `loadTabData(tab)` — called on every tab activation
+
+`loadTabData()` is **not** fully lazy: it calls `fetchRuntime()` unconditionally
+on every tab switch. In addition:
+
+- If the active tab is `overview` **and** `isStale('healthSnapshot')`, it also
+  issues `fetchHealthSnapshot()`.
+- It then delegates to `loadSubTabData(activeSubTab)` for the current sub-tab.
+
+### `loadSubTabData(subTab)` — staleness-gated per-sub-tab fetches
+
+Each sub-tab fetch is individually gated behind `isStale(key)`. A fetch only
+fires if the key has not been loaded yet, or the last load was more than 30 s
+ago. The guarded fetches are:
+
+| Sub-tab | Guarded fetches |
+|---|---|
+| `wl-remote`, `infra-nodes`, `svc-deploys` | `remoteServiceStatuses`; `appSlots` (deploys only) |
+| `infra-minecraft` | `minecraftStatuses` |
+| `infra-gateway` | `piProxyStatus` |
+| `svc-profiles` | `kulrsActivityStatus`, `ttsVoices`, `chatProviders` |
+| `svc-agents` | `ttsVoices`, `chatProviders`, `workflows`, `jobsCatalog` |
+| `svc-workflows` | `workflows`, `jobsCatalog` |
+| `mon-health` | `healthSnapshot` |
+| `mon-benchmarks` | `benchmarkRuns` |
+
+When fetches are in-flight, `state.subTabLoading[subTab]` is `true`; page
+renderers check this to show local spinners. `markLoaded(key)` stores a
+timestamp in `state.dataLoaded` so subsequent `isStale()` checks are accurate.
+
+Background refresh intervals are gated on the active tab and sub-tab so
+inactive pages do not issue network requests.
 
 ## Long-running actions and the output surface
 
@@ -95,10 +119,12 @@ they are discoverable at review time:
 
 1. `state` initialization defaults — do not drop or rename existing keys.
 2. `state.activeTab` and `state.activeSubTabs` — shape and semantics stable.
-3. Page-specific fetch-on-activation — each page still fetches only when it
-   first becomes active.
+3. `fetchRuntime()` is called on every tab activation — it is not lazy.
+   Page-specific staleness-gated fetches in `loadSubTabData()` each fire only
+   when `isStale(key)` is true (key absent or older than 30 s).
 4. `state.dataLoaded` and `state.subTabLoading` — remain the single source
-   of truth for lazy loading and local spinners.
+   of truth for staleness tracking and local spinners. `dataLoaded` stores
+   load timestamps, not booleans; do not collapse them to flags.
 5. Runtime summary, health snapshot, remote service / minecraft status,
    chat provider, TTS, and KULRS status refresh cadences and guards.
 6. Form-to-config and raw JSON editor synchronization must remain
@@ -109,12 +135,25 @@ they are discoverable at review time:
 
 ## Composition invariants
 
-`renderAdminPage()` concatenates the three module outputs with no extra
-separators and appends `</body></html>`. The composed document must remain
-byte-identical to what the previous inline template produced for the same
-inputs. The regression test in `tests/admin-ui.test.ts` enforces that each
-structural tag (`<!doctype html>`, `<html>`, `<head>`, `<body>`, …) appears
-exactly once and that the per-module invariants above hold.
+`renderAdminPage()` concatenates the three module outputs and appends
+`ADMIN_DOCUMENT_FOOTER` (`</body>\n</html>`). The regression suite in
+`tests/admin-ui.test.ts` enforces these guarantees:
+
+1. **Golden-output comparison** — `tests/admin-ui.golden.html` is a
+   committed snapshot of the full document rendered immediately after the
+   modularization (407,325 bytes). The "golden" test compares future renders
+   byte-for-byte against this file. Any change to `head.ts`, `markup.ts`,
+   `script.ts`, or `index.ts` that alters the output will fail the golden
+   test and require a deliberate fixture update (instructions are in the test
+   file).
+2. **Structural-tag uniqueness** — `<!doctype html>`, `<html>`, `<head>`,
+   `</head>`, `<body>`, `</body>`, and `</html>` must each appear exactly once.
+3. **Per-module hooks** — the tests also verify head interpolation, tab-shell
+   presence, and client state invariants independently of the golden so
+   targeted failures point at the right module.
+
+To regenerate the golden after a deliberate content change, run the one-liner
+in the golden test's comment block and commit the updated file.
 
 ## Testing
 
