@@ -143,6 +143,16 @@ export function renderKulrsCredentials(profile: KulrsActivityConfig): string {
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
+export function hasRenderableKulrsCredentials(profile: KulrsActivityConfig): boolean {
+  if (!profile.firebaseApiKey.trim()) {
+    return false;
+  }
+
+  return profile.bots.some(
+    (bot) => bot.id.trim() && bot.email.trim() && bot.password.trim()
+  );
+}
+
 function buildGatewayChatPlatformEnvironment(profile: GatewayChatPlatformServiceProfile): EnvironmentVariableConfig[] {
   return [
     ...profile.environment,

@@ -28,6 +28,7 @@ import {
   renderGatewayApiJobChannels,
   renderGatewayChatAgents,
   renderGatewayChatPlatformEnv,
+  hasRenderableKulrsCredentials,
   renderKulrsActivityEnv,
   renderKulrsCredentials
 } from './service-profiles.ts';
@@ -459,11 +460,17 @@ export async function installServiceProfileFiles(config: GatewayConfig, appId: s
       renderKulrsActivityEnv(config.serviceProfiles.gatewayApi.kulrsActivity),
       context
     );
-    await writeServiceProfileFile(
-      config.serviceProfiles.gatewayApi.kulrsActivity.credentialsFilePath,
-      renderKulrsCredentials(config.serviceProfiles.gatewayApi.kulrsActivity),
-      context
-    );
+    if (hasRenderableKulrsCredentials(config.serviceProfiles.gatewayApi.kulrsActivity)) {
+      await writeServiceProfileFile(
+        config.serviceProfiles.gatewayApi.kulrsActivity.credentialsFilePath,
+        renderKulrsCredentials(config.serviceProfiles.gatewayApi.kulrsActivity),
+        context
+      );
+    } else {
+      context.log(
+        `${context.dryRun ? '[dry-run] ' : ''}preserve ${config.serviceProfiles.gatewayApi.kulrsActivity.credentialsFilePath} (skipping incomplete Kulrs credentials)`
+      );
+    }
   }
 
   if (config.serviceProfiles.gatewayChatPlatform.enabled && config.serviceProfiles.gatewayChatPlatform.appId === appId) {

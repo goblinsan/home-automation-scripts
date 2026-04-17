@@ -10,6 +10,7 @@ import {
   renderGatewayApiJobChannels,
   renderGatewayChatAgents,
   renderGatewayChatPlatformEnv,
+  hasRenderableKulrsCredentials,
   renderKulrsActivityEnv,
   renderKulrsCredentials
 } from './service-profiles.ts';
@@ -96,11 +97,13 @@ export async function buildArtifacts(config: GatewayConfig, outDir: string): Pro
     renderKulrsActivityEnv(config.serviceProfiles.gatewayApi.kulrsActivity),
     'utf8'
   );
-  await writeFile(
-    join(gatewayApiDir, 'kulrs.json'),
-    renderKulrsCredentials(config.serviceProfiles.gatewayApi.kulrsActivity),
-    'utf8'
-  );
+  if (hasRenderableKulrsCredentials(config.serviceProfiles.gatewayApi.kulrsActivity)) {
+    await writeFile(
+      join(gatewayApiDir, 'kulrs.json'),
+      renderKulrsCredentials(config.serviceProfiles.gatewayApi.kulrsActivity),
+      'utf8'
+    );
+  }
 
   if (config.serviceProfiles.gatewayChatPlatform.enabled) {
     await writeFile(
