@@ -14,11 +14,6 @@
  *                        route through the admin server).
  */
 export function renderAdminHead(basePath: string, faviconDataUri: string): string {
-  // The original monolithic admin-ui called `adminFaviconDataUri()` inside
-  // this template. We preserve that exact shape by wrapping the injected
-  // value in a local closure so the block below remains a verbatim copy of
-  // the previous content.
-  const adminFaviconDataUri = (): string => faviconDataUri;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -26,7 +21,7 @@ export function renderAdminHead(basePath: string, faviconDataUri: string): strin
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="gateway-base-path" content="${basePath}" />
   <title>Gateway Control Plane</title>
-  <link rel="icon" type="image/svg+xml" href="${adminFaviconDataUri()}" />
+  <link rel="icon" type="image/svg+xml" href="${faviconDataUri}" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Passion+One:wght@400;700;900&family=Karla:wght@400;500;700&family=Fira+Sans:wght@400;500;600;700&display=swap" />
@@ -1219,5 +1214,6 @@ export function renderAdminHead(basePath: string, faviconDataUri: string): strin
       border-color: var(--p26-accent-strong);
     }
   </style>
+</head>
 `;
 }

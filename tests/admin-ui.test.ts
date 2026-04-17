@@ -19,13 +19,14 @@ test('renderAdminHead interpolates basePath and favicon', () => {
   assert.match(head, /^<!doctype html>/);
   assert.ok(head.includes(`<meta name="gateway-base-path" content="${BASE}" />`));
   assert.ok(head.includes(FAVICON));
-  assert.ok(head.trimEnd().endsWith('</style>'));
+  assert.ok(head.trimEnd().endsWith('</head>'), 'head ends with </head>');
+  assert.ok(head.includes('</style>'), 'head contains the inline stylesheet');
 });
 
 test('ADMIN_MARKUP exposes the tab shell and shared action surface', () => {
   // The shell renderer in script.ts drives navigation off these stable hooks;
   // removing them would silently break lazy-load activation.
-  assert.ok(ADMIN_MARKUP.startsWith('</head>\n<body>'), 'markup starts with </head><body>');
+  assert.ok(ADMIN_MARKUP.startsWith('<body>'), 'markup starts with <body>');
   assert.ok(ADMIN_MARKUP.includes('data-tab="overview"'), 'overview tab button present');
   assert.ok(ADMIN_MARKUP.includes('data-tab="workloads"'), 'workloads tab button present');
   assert.ok(ADMIN_MARKUP.includes('data-tab="secrets"'), 'secrets tab button present');

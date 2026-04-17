@@ -20,8 +20,7 @@
  *     every page and must remain in the document so long-running actions
  *     can stream progress into it.
  */
-export const ADMIN_MARKUP: string = `</head>
-<body>
+export const ADMIN_MARKUP: string = `<body>
   <header>
     <div class="header-shell">
       <div class="header-row">

@@ -24,6 +24,13 @@ import { renderAdminHead } from './head.ts';
 import { ADMIN_MARKUP } from './markup.ts';
 import { renderAdminScript } from './script.ts';
 
+/**
+ * Closing structural tags for the admin SPA document. Kept as a dedicated
+ * constant so ownership of `</body></html>` is visible alongside the other
+ * page/domain modules rather than hidden inside composition logic.
+ */
+const ADMIN_DOCUMENT_FOOTER = '</body>\n</html>';
+
 export interface RenderAdminPageOptions {
   /** Base path the admin UI is mounted under (e.g. `/admin/`). */
   readonly basePath: string;
@@ -45,7 +52,7 @@ export function renderAdminPage(options: RenderAdminPageOptions): string {
   // Each extracted block preserves its original leading/trailing whitespace
   // so the composed document is byte-identical to the previous monolithic
   // template. Do NOT insert additional separators here.
-  return head + ADMIN_MARKUP + script + '</body>\n</html>';
+  return head + ADMIN_MARKUP + script + ADMIN_DOCUMENT_FOOTER;
 }
 
 export { renderAdminHead, ADMIN_MARKUP, renderAdminScript };
