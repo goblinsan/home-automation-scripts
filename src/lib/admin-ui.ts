@@ -963,7 +963,7 @@ function htmlPage(basePath: string): string {
   <meta name="gateway-base-path" content="${basePath}" />
   <title>Gateway Control Plane</title>
   <link rel="icon" type="image/svg+xml" href="${adminFaviconDataUri()}" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Passion+One:wght@400;700;900&family=Karla:wght@400;500;700&family=Fira+Sans:wght@400;500;600;700&display=swap" />
   <style>
@@ -4729,6 +4729,11 @@ function htmlPage(basePath: string): string {
       renderOverview();
     }
 
+    // Default landing tab — kept in sync with state.activeTab initial value.
+    const DEFAULT_TAB = 'overview';
+    // Shared empty-state copy for the Overview surface.
+    const OVERVIEW_NO_HEALTH_DATA = 'No health data yet.';
+
     function renderOverview() {
       // health-first landing: uses live state.healthSnapshot + state.runtime
       const runtimeMetrics = document.getElementById('overviewRuntimeMetrics');
@@ -4768,8 +4773,8 @@ function htmlPage(basePath: string): string {
         if (detailEl) detailEl.textContent = detail;
       }
       if (targets.length === 0) {
-        setCount('healthy', 0, 'No health data yet.');
-        setCount('degraded', 0, 'No health data yet.');
+        setCount('healthy', 0, OVERVIEW_NO_HEALTH_DATA);
+        setCount('degraded', 0, OVERVIEW_NO_HEALTH_DATA);
         setCount('action', 0, 'Run a health check to populate this view.');
       } else {
         setCount('healthy', counts.healthy, counts.healthy === 1 ? '1 target reporting healthy.' : counts.healthy + ' targets reporting healthy.');
@@ -4803,7 +4808,7 @@ function htmlPage(basePath: string): string {
           return t.status === 'degraded' || t.status === 'down' || t.status === 'unknown';
         });
         if (targets.length === 0) {
-          actionList.innerHTML = '<div class="overview-empty">No health data yet. Click <strong>Run Health Check</strong> to collect the first snapshot.</div>';
+          actionList.innerHTML = '<div class="overview-empty">' + OVERVIEW_NO_HEALTH_DATA + ' Click <strong>Run Health Check</strong> to collect the first snapshot.</div>';
         } else if (actionTargets.length === 0) {
           actionList.innerHTML = '<div class="overview-empty">All monitored targets are healthy.</div>';
         } else {
@@ -7627,7 +7632,7 @@ function htmlPage(basePath: string): string {
 
     document.querySelectorAll('.top-tab-nav .tab-button').forEach((button) => {
       button.addEventListener('click', async () => {
-        const tab = button.dataset.tab || 'overview';
+        const tab = button.dataset.tab || DEFAULT_TAB;
         state.activeTab = tab;
         const presetSubTab = button.dataset.subTab;
         if (presetSubTab && state.activeSubTabs[tab] !== undefined) {
