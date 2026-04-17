@@ -133,7 +133,7 @@ Allow providerHints override.
 
 ## Day 12: Add ONE High-Value Feature
 
-Option A: Cost Awareness  
+Option A: Cost Awareness
 Option B: Auto Provider Selection
 
 ---

@@ -961,30 +961,73 @@ function htmlPage(basePath: string): string {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="gateway-base-path" content="${basePath}" />
-  <title>Gateway Config Admin</title>
+  <title>Gateway Control Plane</title>
   <link rel="icon" type="image/svg+xml" href="${adminFaviconDataUri()}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Passion+One:wght@400;700;900&family=Karla:wght@400;500;700&family=Fira+Sans:wght@400;500;600;700&display=swap" />
   <style>
     :root {
       color-scheme: light;
-      --bg: #eef3f1;
-      --panel: #ffffff;
-      --line: #cfdad7;
-      --text: #173336;
-      --muted: #5f7578;
-      --accent: #6c9894;
-      --accent-soft: rgba(108, 152, 148, 0.12);
-      --accent-strong: #103235;
-      --sidebar: #6c9894;
+      /* ── Operations-first palette (explicit hex tones) ────────────────────
+         Structural dark:   #2F3E46, #354F52
+         Primary accent:    #52796F
+         Support accent:    #84A98C
+         Light surface:     #CAD2C5
+         Severity amber/red are outside the palette but kept for semaphore
+         clarity on health status. */
+      --p26-bg-base: #eef2ec;       /* tinted derivative of #CAD2C5 */
+      --p26-surface: #ffffff;
+      --p26-surface-raised: #f6f8f4;
+      --p26-border: #CAD2C5;        /* light surface */
+      --p26-border-strong: #84A98C; /* support accent */
+      --p26-text: #2F3E46;          /* structural dark 1 */
+      --p26-text-muted: #354F52;    /* structural dark 2 */
+      --p26-accent: #52796F;        /* primary accent */
+      --p26-accent-strong: #2F3E46; /* structural dark 1 */
+      --p26-accent-soft: rgba(82, 121, 111, 0.14);
+      --p26-shell: linear-gradient(90deg, #2F3E46 0%, #354F52 55%, #52796F 100%);
+      --p26-healthy: #52796F;       /* primary accent = healthy */
+      --p26-healthy-soft: #84A98C;  /* support accent, used for badges */
+      --p26-degraded: #b8860b;      /* amber (outside named palette, severity) */
+      --p26-down: #a63838;          /* red (outside named palette, severity) */
+      --p26-unknown: #6b7a7d;
+      --p26-info: #354F52;
+      /* spacing scale */
+      --p26-space-1: 4px;
+      --p26-space-2: 8px;
+      --p26-space-3: 12px;
+      --p26-space-4: 16px;
+      --p26-space-5: 20px;
+      --p26-space-6: 24px;
+      --p26-space-8: 32px;
+      /* radii + shadow */
+      --p26-radius: 4px;
+      --p26-shadow: 0 10px 28px rgba(47, 62, 70, 0.10);
+      /* typography */
+      --p26-font-display: "Passion One", "Fira Sans", system-ui, sans-serif;
+      --p26-font-body: "Karla", system-ui, "Helvetica Neue", sans-serif;
+      --p26-font-ui: "Fira Sans", "Karla", system-ui, sans-serif;
+      /* ── legacy aliases (preserved so existing panels keep rendering) ── */
+      --bg: var(--p26-bg-base);
+      --panel: var(--p26-surface);
+      --line: var(--p26-border);
+      --text: var(--p26-text);
+      --muted: var(--p26-text-muted);
+      --accent: var(--p26-accent);
+      --accent-soft: var(--p26-accent-soft);
+      --accent-strong: var(--p26-accent-strong);
+      --sidebar: var(--p26-accent);
       --sidebar-soft: rgba(255, 255, 255, 0.14);
-      --highlight: #6f99a7;
-      --danger: #8f3030;
-      --ok: #2e6961;
-      --shadow: rgba(16, 50, 53, 0.08);
+      --highlight: var(--p26-info);
+      --danger: var(--p26-down);
+      --ok: var(--p26-healthy);
+      --shadow: rgba(47, 62, 70, 0.10);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
+      font-family: var(--p26-font-body);
       background:
         linear-gradient(180deg, #f3f6f5 0%, var(--bg) 100%);
       color: var(--text);
@@ -992,11 +1035,22 @@ function htmlPage(basePath: string): string {
     header {
       padding: 20px 28px 16px;
       border-bottom: 1px solid rgba(16, 50, 53, 0.12);
-      background:
-        linear-gradient(90deg, #6c9894 0%, #6f99a7 56%, #103235 100%);
+      background: var(--p26-shell);
       color: #f5fbfa;
+      font-family: var(--p26-font-ui);
     }
-    h1, h2, h3 { margin: 0 0 10px; font-weight: 600; }
+    h1 {
+      margin: 0 0 10px;
+      font-family: var(--p26-font-display);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      font-size: 2.1rem;
+    }
+    h2, h3 {
+      margin: 0 0 10px;
+      font-family: var(--p26-font-ui);
+      font-weight: 600;
+    }
     p { margin: 0 0 10px; color: var(--muted); }
     .section-note { margin-top: 10px; font-size: 0.92rem; }
     main {
@@ -1271,11 +1325,12 @@ function htmlPage(basePath: string): string {
     }
     .top-tab-nav {
       display: grid;
-      grid-template-columns: repeat(5, minmax(132px, 1fr));
+      grid-template-columns: repeat(6, minmax(110px, 1fr));
       gap: 8px;
       padding-bottom: 2px;
       width: min(1380px, 100%);
       margin: 0 auto;
+      font-family: var(--p26-font-ui);
     }
     .top-tab-nav .tab-button {
       width: 100%;
@@ -1799,6 +1854,125 @@ function htmlPage(basePath: string): string {
       border-color: var(--accent);
       font-weight: 600;
     }
+
+    /* ── Overview (health-first landing) ── */
+    .overview-panel { font-family: var(--p26-font-body); }
+    .overview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: var(--p26-space-4);
+      margin-bottom: var(--p26-space-5);
+    }
+    .overview-header h2 {
+      font-family: var(--p26-font-display);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      font-size: 1.8rem;
+      margin: 0;
+      color: var(--p26-accent-strong);
+    }
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--p26-space-4);
+      margin-bottom: var(--p26-space-6);
+    }
+    .overview-card {
+      border: 1px solid var(--p26-border);
+      background: var(--p26-surface);
+      border-radius: var(--p26-radius);
+      padding: var(--p26-space-5);
+      box-shadow: var(--p26-shadow);
+      border-left: 4px solid var(--p26-unknown);
+    }
+    .overview-card.is-healthy { border-left-color: var(--p26-healthy); }
+    .overview-card.is-degraded { border-left-color: var(--p26-degraded); }
+    .overview-card.is-down { border-left-color: var(--p26-down); }
+    .overview-card.is-action { border-left-color: var(--p26-down); }
+    .overview-card .overview-count {
+      font-family: var(--p26-font-display);
+      font-size: 2.6rem;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--p26-accent-strong);
+    }
+    .overview-card .overview-label {
+      font-family: var(--p26-font-ui);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.82rem;
+      color: var(--p26-text-muted);
+      margin-top: var(--p26-space-2);
+    }
+    .overview-card .overview-detail {
+      margin-top: var(--p26-space-3);
+      font-size: 0.9rem;
+      color: var(--p26-text-muted);
+      line-height: 1.4;
+    }
+    .overview-section-title {
+      font-family: var(--p26-font-ui);
+      font-weight: 600;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--p26-text-muted);
+      margin: var(--p26-space-6) 0 var(--p26-space-3);
+    }
+    .overview-runtime {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: var(--p26-space-3);
+      margin-bottom: var(--p26-space-5);
+    }
+    .overview-runtime .metric {
+      margin-top: 0;
+    }
+    .overview-target-list {
+      display: grid;
+      gap: var(--p26-space-2);
+    }
+    .overview-target {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--p26-space-3);
+      padding: var(--p26-space-3) var(--p26-space-4);
+      border: 1px solid var(--p26-border);
+      background: var(--p26-surface);
+      border-left: 3px solid var(--p26-unknown);
+      border-radius: var(--p26-radius);
+    }
+    .overview-target.is-healthy { border-left-color: var(--p26-healthy); }
+    .overview-target.is-degraded { border-left-color: var(--p26-degraded); }
+    .overview-target.is-down { border-left-color: var(--p26-down); }
+    .overview-target-meta {
+      color: var(--p26-text-muted);
+      font-size: 0.85rem;
+      display: flex;
+      gap: var(--p26-space-3);
+      flex-wrap: wrap;
+    }
+    .overview-empty {
+      padding: var(--p26-space-5);
+      border: 1px dashed var(--p26-border);
+      border-radius: var(--p26-radius);
+      color: var(--p26-text-muted);
+      text-align: center;
+    }
+    .overview-link-btn {
+      background: var(--p26-accent);
+      color: #fff;
+      border-color: var(--p26-accent);
+      font-family: var(--p26-font-ui);
+      font-weight: 600;
+    }
+    .overview-link-btn:hover:not(:disabled) {
+      background: var(--p26-accent-strong);
+      border-color: var(--p26-accent-strong);
+    }
   </style>
 </head>
 <body>
@@ -1806,8 +1980,8 @@ function htmlPage(basePath: string): string {
     <div class="header-shell">
       <div class="header-row">
         <div>
-          <h1>Gateway Config Admin</h1>
-          <p>Configure gateway services, agents, workflows, and deployment state from one control surface.</p>
+          <h1>Gateway Control Plane</h1>
+          <p>Operations-first console for nodes, workloads, monitoring, and secrets.</p>
         </div>
         <div class="header-actions">
           <button id="refreshButton">Refresh</button>
@@ -1817,9 +1991,12 @@ function htmlPage(basePath: string): string {
         </div>
       </div>
       <nav class="top-tab-nav" aria-label="Sections">
-        <button class="tab-button active" data-tab="services">Services</button>
-        <button class="tab-button" data-tab="infra">Infrastructure</button>
-        <button class="tab-button" data-tab="monitoring">Monitoring</button>
+        <button class="tab-button active" data-nav-id="overview" data-tab="overview">Overview</button>
+        <button class="tab-button" data-nav-id="bootstrap" data-tab="infra" data-sub-tab="infra-gateway">Bootstrap</button>
+        <button class="tab-button" data-nav-id="nodes" data-tab="infra" data-sub-tab="infra-nodes">Nodes</button>
+        <button class="tab-button" data-nav-id="workloads" data-tab="infra" data-sub-tab="infra-minecraft">Workloads</button>
+        <button class="tab-button" data-nav-id="monitor" data-tab="monitoring" data-sub-tab="mon-health">Monitor</button>
+        <button class="tab-button" data-nav-id="secrets" data-tab="services" data-sub-tab="svc-profiles">Secrets</button>
       </nav>
     </div>
   </header>
@@ -1829,6 +2006,49 @@ function htmlPage(basePath: string): string {
         <div>
           <h2>Config Workspace</h2>
         </div>
+      </div>
+
+      <!-- ═══ OVERVIEW TAB (health-first landing) ═══ -->
+      <div class="tab-panel overview-panel" data-tab-panel="overview">
+        <div class="overview-header">
+          <div>
+            <h2>Overview</h2>
+            <p>What's healthy, what's degraded, and what needs action — from live runtime and monitoring data.</p>
+          </div>
+          <div class="header-actions">
+            <button id="overviewRefreshButton">Refresh</button>
+            <button id="overviewRunCheckButton" class="overview-link-btn">Run Health Check</button>
+          </div>
+        </div>
+
+        <div class="overview-grid" id="overviewSummaryCards">
+          <div class="overview-card is-healthy">
+            <div class="overview-count" data-overview-count="healthy">—</div>
+            <div class="overview-label">Healthy</div>
+            <div class="overview-detail" data-overview-detail="healthy">Loading health snapshot…</div>
+          </div>
+          <div class="overview-card is-degraded">
+            <div class="overview-count" data-overview-count="degraded">—</div>
+            <div class="overview-label">Degraded</div>
+            <div class="overview-detail" data-overview-detail="degraded">Loading health snapshot…</div>
+          </div>
+          <div class="overview-card is-action">
+            <div class="overview-count" data-overview-count="action">—</div>
+            <div class="overview-label">Needs Action</div>
+            <div class="overview-detail" data-overview-detail="action">Loading health snapshot…</div>
+          </div>
+        </div>
+
+        <div class="overview-section-title">Runtime Snapshot</div>
+        <div class="overview-runtime" id="overviewRuntimeMetrics"></div>
+
+        <div class="overview-section-title">Needs Action</div>
+        <div class="overview-target-list" id="overviewActionList">
+          <div class="overview-empty">No health data yet. Click <strong>Run Health Check</strong> to collect the first snapshot.</div>
+        </div>
+
+        <div class="overview-section-title">All Monitored Targets</div>
+        <div class="overview-target-list" id="overviewTargetList"></div>
       </div>
 
       <!-- ═══ INFRASTRUCTURE TAB ═══ -->
@@ -2947,7 +3167,7 @@ function htmlPage(basePath: string): string {
         workflowSeedPath: '${DEFAULT_WORKFLOW_SEED_PATH}',
         result: null
       },
-      activeTab: 'services',
+      activeTab: 'overview',
       activeSubTabs: {
         infra: 'infra-gateway',
         services: 'svc-agents',
@@ -3245,16 +3465,62 @@ function htmlPage(basePath: string): string {
       document.getElementById('rawJson').value = JSON.stringify(state.config, null, 2);
     }
 
+    // Nav ownership map.  Each top-nav button owns a set of (tab, subTab) pairs
+    // so the top-nav stays correctly highlighted when the operator drills into a
+    // legacy sub-tab that this nav item logically contains.
+    //
+    // Transitional mapping — existing sub-tabs remain reachable through their
+    // host legacy tab navigation.  The target IA from the rebuild epic splits
+    // svc-profiles (runtime profiles vs. secret credentials) into Workloads vs.
+    // Secrets; that split is out of scope for this slice, so svc-profiles is
+    // owned by Secrets today and Workloads covers the rest of the Services
+    // legacy sub-tabs alongside remote-workloads/minecraft under Infrastructure.
+    const NAV_OWNERSHIP = {
+      overview:  [['overview',   null]],
+      bootstrap: [['infra',      'infra-gateway']],
+      nodes:     [['infra',      'infra-nodes']],
+      workloads: [
+        ['infra',    'infra-minecraft'],
+        ['services', 'svc-agents'],
+        ['services', 'svc-workflows'],
+        ['services', 'svc-deploys'],
+        ['services', 'svc-features']
+      ],
+      monitor:   [
+        ['monitoring', 'mon-health'],
+        ['monitoring', 'mon-benchmarks'],
+        ['monitoring', 'mon-settings']
+      ],
+      secrets:   [['services',   'svc-profiles']]
+    };
+
+    function findActiveNavId() {
+      const tab = state.activeTab;
+      const subTab = state.activeSubTabs[tab] || null;
+      for (const [navId, owned] of Object.entries(NAV_OWNERSHIP)) {
+        for (const [ownTab, ownSub] of owned) {
+          if (ownTab === tab && (ownSub === null || ownSub === subTab)) {
+            return navId;
+          }
+        }
+      }
+      return null;
+    }
+
     function renderActiveTab() {
       document.querySelectorAll('[data-tab-panel]').forEach((panel) => {
         panel.hidden = panel.dataset.tabPanel !== state.activeTab;
       });
+      const activeNavId = findActiveNavId();
       document.querySelectorAll('.top-tab-nav .tab-button').forEach((button) => {
-        button.classList.toggle('active', button.dataset.tab === state.activeTab);
+        button.classList.toggle('active', button.dataset.navId === activeNavId);
       });
     }
 
-    function switchSubTab(groupName, subTabId) {
+    // Applies the sub-tab DOM state (panel visibility + tab-button active class)
+    // without triggering a data fetch.  Callers that also need data should run
+    // loadSubTabData separately (or rely on loadTabData to do it once).
+    function applySubTabDom(groupName, subTabId) {
       const group = document.querySelector('[data-sub-group="' + groupName + '"]');
       if (!group) return;
       const parent = group.parentElement;
@@ -3265,6 +3531,14 @@ function htmlPage(basePath: string): string {
         btn.classList.toggle('active', btn.dataset.subTab === subTabId);
       });
       state.activeSubTabs[groupName] = subTabId;
+    }
+
+    function switchSubTab(groupName, subTabId) {
+      applySubTabDom(groupName, subTabId);
+      // Keep the top-nav highlight in sync as the operator moves between
+      // legacy sub-tabs that belong to the same operations-first nav item
+      // (e.g. Workloads stays active across Agents / Workflows / Deploys).
+      renderActiveTab();
       loadSubTabData(subTabId, { silent: true });
     }
 
@@ -4272,9 +4546,11 @@ function htmlPage(basePath: string): string {
         const data = await requestJson('GET', '/api/monitoring/health', null, 15000);
         state.healthSnapshot = data;
         renderHealthTargets();
+        renderOverview();
       } catch (err) {
         state.healthSnapshot = null;
         renderHealthTargets();
+        renderOverview();
       }
     }
 
@@ -4505,6 +4781,104 @@ function htmlPage(basePath: string): string {
         \`<div><strong>nginx Site Generated:</strong> \${runtime.generated.nginxSiteExists ? 'yes' : 'no'}</div>\`,
         \`<div><strong>Control-Plane Unit Generated:</strong> \${runtime.generated.controlPlaneUnitExists ? 'yes' : 'no'}</div>\`
       ].join('');
+      renderOverview();
+    }
+
+    // Default landing tab — kept in sync with state.activeTab initial value.
+    const DEFAULT_TAB = 'overview';
+    // Shared empty-state copy for the Overview surface.
+    const OVERVIEW_NO_HEALTH_DATA = 'No health data yet.';
+
+    function renderOverview() {
+      // health-first landing: uses live state.healthSnapshot + state.runtime
+      const runtimeMetrics = document.getElementById('overviewRuntimeMetrics');
+      if (runtimeMetrics) {
+        if (!state.runtime) {
+          runtimeMetrics.innerHTML = '<div class="overview-empty">Runtime data not loaded.</div>';
+        } else {
+          const runtime = state.runtime;
+          runtimeMetrics.innerHTML = [
+            ['Enabled Apps', \`\${runtime.enabledApps}/\${runtime.totalApps}\`],
+            ['Enabled Jobs', \`\${runtime.enabledJobs}/\${runtime.totalJobs}\`],
+            ['Enabled Features', \`\${runtime.enabledFeatures}/\${runtime.totalFeatures}\`],
+            ['Uptime (s)', String(runtime.uptimeSeconds)]
+          ].map(function(pair) {
+            return '<div class="metric"><strong>' + escapeHtml(pair[1]) + '</strong><span>' + escapeHtml(pair[0]) + '</span></div>';
+          }).join('');
+        }
+      }
+
+      const snapshot = state.healthSnapshot;
+      const targets = snapshot && Array.isArray(snapshot.targets) ? snapshot.targets : [];
+
+      const counts = { healthy: 0, degraded: 0, down: 0, unknown: 0 };
+      targets.forEach(function(t) {
+        const key = t.status === 'healthy' ? 'healthy'
+          : t.status === 'degraded' ? 'degraded'
+          : t.status === 'down' ? 'down'
+          : 'unknown';
+        counts[key] += 1;
+      });
+      const actionCount = counts.degraded + counts.down + counts.unknown;
+
+      function setCount(kind, value, detail) {
+        const countEl = document.querySelector('[data-overview-count="' + kind + '"]');
+        const detailEl = document.querySelector('[data-overview-detail="' + kind + '"]');
+        if (countEl) countEl.textContent = String(value);
+        if (detailEl) detailEl.textContent = detail;
+      }
+      if (targets.length === 0) {
+        setCount('healthy', 0, OVERVIEW_NO_HEALTH_DATA);
+        setCount('degraded', 0, OVERVIEW_NO_HEALTH_DATA);
+        setCount('action', 0, 'Run a health check to populate this view.');
+      } else {
+        setCount('healthy', counts.healthy, counts.healthy === 1 ? '1 target reporting healthy.' : counts.healthy + ' targets reporting healthy.');
+        setCount('degraded', counts.degraded, counts.degraded === 0 ? 'Nothing degraded.' : counts.degraded + ' target' + (counts.degraded === 1 ? '' : 's') + ' running in degraded mode.');
+        const actionDetail = actionCount === 0
+          ? 'All clear — nothing requires attention.'
+          : (counts.down + ' down, ' + counts.degraded + ' degraded, ' + counts.unknown + ' unknown.');
+        setCount('action', actionCount, actionDetail);
+      }
+
+      function targetRow(t) {
+        const uptime = t.uptimePercent24h !== null && t.uptimePercent24h !== undefined ? t.uptimePercent24h.toFixed(1) + '%' : '—';
+        const latency = t.responseTimeMs !== null && t.responseTimeMs !== undefined ? t.responseTimeMs + 'ms' : '—';
+        const statusClass = t.status === 'healthy' ? 'is-healthy' : t.status === 'degraded' ? 'is-degraded' : t.status === 'down' ? 'is-down' : '';
+        return '<div class="overview-target ' + statusClass + '">' +
+          '<div>' +
+            statusBadge(t.status) +
+            '<strong>' + escapeHtml(t.label || t.id || '') + '</strong>' +
+            ' <span class="pill">' + escapeHtml(t.kind || '') + '</span>' +
+          '</div>' +
+          '<div class="overview-target-meta">' +
+            '<span title="24h uptime">⬆ ' + uptime + '</span>' +
+            '<span title="Response time">⏱ ' + latency + '</span>' +
+          '</div>' +
+        '</div>';
+      }
+
+      const actionList = document.getElementById('overviewActionList');
+      if (actionList) {
+        const actionTargets = targets.filter(function(t) {
+          return t.status === 'degraded' || t.status === 'down' || t.status === 'unknown';
+        });
+        if (targets.length === 0) {
+          actionList.innerHTML = '<div class="overview-empty">' + OVERVIEW_NO_HEALTH_DATA + ' Click <strong>Run Health Check</strong> to collect the first snapshot.</div>';
+        } else if (actionTargets.length === 0) {
+          actionList.innerHTML = '<div class="overview-empty">All monitored targets are healthy.</div>';
+        } else {
+          actionList.innerHTML = actionTargets.map(targetRow).join('');
+        }
+      }
+
+      const targetList = document.getElementById('overviewTargetList');
+      if (targetList) {
+        if (targets.length === 0) {
+          targetList.innerHTML = '<div class="overview-empty">No monitored targets configured, or monitoring is disabled.</div>';
+        } else {
+          targetList.innerHTML = targets.map(targetRow).join('');
+        }
+      }
     }
 
     function renderApps() {
@@ -6687,7 +7061,15 @@ function htmlPage(basePath: string): string {
     }
 
     async function loadTabData(tab, options = {}) {
-      const settled = await Promise.allSettled([fetchRuntime()]);
+      const extraFetches = [fetchRuntime()];
+      if (tab === 'overview' && isStale('healthSnapshot')) {
+        extraFetches.push(fetchHealthSnapshot().then(() => markLoaded('healthSnapshot')));
+      }
+      const settled = await Promise.allSettled(extraFetches);
+
+      if (tab === 'overview') {
+        renderOverview();
+      }
 
       const subTab = state.activeSubTabs[tab];
       if (subTab) {
@@ -7305,7 +7687,16 @@ function htmlPage(basePath: string): string {
 
     document.querySelectorAll('.top-tab-nav .tab-button').forEach((button) => {
       button.addEventListener('click', async () => {
-        state.activeTab = button.dataset.tab || 'services';
+        const tab = button.dataset.tab || DEFAULT_TAB;
+        state.activeTab = tab;
+        const presetSubTab = button.dataset.subTab;
+        if (presetSubTab && state.activeSubTabs[tab] !== undefined) {
+          // Apply the preset's sub-tab DOM state directly. Do NOT call
+          // switchSubTab here — it calls loadSubTabData, and loadTabData below
+          // already dispatches a single load for the active sub-tab. Calling
+          // both would double-fetch (e.g. remoteServiceStatuses for Nodes).
+          applySubTabDom(tab, presetSubTab);
+        }
         render();
         await loadTabData(state.activeTab);
       });
@@ -7657,6 +8048,52 @@ function htmlPage(basePath: string): string {
         setStatus('Health snapshot refreshed');
       });
     });
+    // ── Overview button handlers ──
+    const overviewRefreshBtn = document.getElementById('overviewRefreshButton');
+    if (overviewRefreshBtn) {
+      overviewRefreshBtn.addEventListener('click', async () => {
+        await withBusyButton(overviewRefreshBtn, 'Refreshing…', async () => {
+          state.dataLoaded.healthSnapshot = 0;
+          const settled = await Promise.allSettled([fetchRuntime(), fetchHealthSnapshot()]);
+          const failures = settled.filter((result) => result.status === 'rejected');
+          if (failures.length === 0) {
+            // Only mark the snapshot fresh when both required fetches actually
+            // succeeded — otherwise the 30s stale guard would suppress the
+            // next retry and operators would keep looking at partial data.
+            markLoaded('healthSnapshot');
+            setStatus('Overview refreshed');
+          } else {
+            const reason = failures[0].reason;
+            let message;
+            if (reason && typeof reason.message === 'string' && reason.message) {
+              message = reason.message;
+            } else if (typeof reason === 'string' && reason) {
+              message = reason;
+            } else {
+              message = 'Overview refresh failed: unknown error';
+            }
+            setStatus(message, 'error');
+          }
+        });
+      });
+    }
+    const overviewRunCheckBtn = document.getElementById('overviewRunCheckButton');
+    if (overviewRunCheckBtn) {
+      overviewRunCheckBtn.addEventListener('click', async () => {
+        await withBusyButton(overviewRunCheckBtn, 'Checking…', async () => {
+          try {
+            const snapshot = await requestJson('POST', '/api/monitoring/health/check', {}, 30000);
+            state.healthSnapshot = snapshot;
+            state.dataLoaded.healthSnapshot = Date.now();
+            renderHealthTargets();
+            renderOverview();
+            setStatus('Health check completed');
+          } catch (err) {
+            setStatus(err.message, 'error');
+          }
+        });
+      });
+    }
     document.getElementById('runHealthCheckButton').addEventListener('click', async () => {
       const btn = document.getElementById('runHealthCheckButton');
       await withBusyButton(btn, 'Checking…', async () => {
@@ -7665,6 +8102,7 @@ function htmlPage(basePath: string): string {
           state.healthSnapshot = snapshot;
           state.dataLoaded.healthSnapshot = Date.now();
           renderHealthTargets();
+          renderOverview();
           setStatus('Health check completed');
         } catch (err) { setStatus(err.message, 'error'); }
       });
@@ -9294,6 +9732,7 @@ function htmlPage(basePath: string): string {
 
     fetchConfig()
       .then(() => fetchRuntime())
+      .then(() => loadTabData(state.activeTab, { silent: true }))
       .catch((error) => setStatus(error.message, 'error'));
     applyActionFeedVisibility();
     setInterval(() => {
