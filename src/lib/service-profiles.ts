@@ -6,14 +6,15 @@ import type {
   KulrsActivityConfig
 } from './config.ts';
 
-function escapeEnvValue(value: string): string {
-  if (value.length === 0) {
+function escapeEnvValue(value: string | undefined | null): string {
+  const normalized = value ?? '';
+  if (normalized.length === 0) {
     return '""';
   }
-  if (/^[A-Za-z0-9_./:@-]+$/.test(value)) {
-    return value;
+  if (/^[A-Za-z0-9_./:@-]+$/.test(normalized)) {
+    return normalized;
   }
-  return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\n', '\\n')}"`;
+  return `"${normalized.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\n', '\\n')}"`;
 }
 
 export function renderEnvFile(environment: EnvironmentVariableConfig[]): string {
