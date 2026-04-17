@@ -969,23 +969,30 @@ function htmlPage(basePath: string): string {
   <style>
     :root {
       color-scheme: light;
-      /* ── palette-2026-04-17 (operations-first tokens) ── */
-      --p26-bg-base: #f1f5f4;
+      /* ── Operations-first palette (explicit hex tones) ────────────────────
+         Structural dark:   #2F3E46, #354F52
+         Primary accent:    #52796F
+         Support accent:    #84A98C
+         Light surface:     #CAD2C5
+         Severity amber/red are outside the palette but kept for semaphore
+         clarity on health status. */
+      --p26-bg-base: #eef2ec;       /* tinted derivative of #CAD2C5 */
       --p26-surface: #ffffff;
-      --p26-surface-raised: #f7faf9;
-      --p26-border: #cfdad7;
-      --p26-border-strong: #a9bab6;
-      --p26-text: #0f2426;
-      --p26-text-muted: #5f7578;
-      --p26-accent: #2e6961;
-      --p26-accent-strong: #103235;
-      --p26-accent-soft: rgba(46, 105, 97, 0.12);
-      --p26-shell: linear-gradient(90deg, #103235 0%, #1a4a4e 58%, #2e6961 100%);
-      --p26-healthy: #2e8f5f;
-      --p26-degraded: #b8860b;
-      --p26-down: #a63838;
+      --p26-surface-raised: #f6f8f4;
+      --p26-border: #CAD2C5;        /* light surface */
+      --p26-border-strong: #84A98C; /* support accent */
+      --p26-text: #2F3E46;          /* structural dark 1 */
+      --p26-text-muted: #354F52;    /* structural dark 2 */
+      --p26-accent: #52796F;        /* primary accent */
+      --p26-accent-strong: #2F3E46; /* structural dark 1 */
+      --p26-accent-soft: rgba(82, 121, 111, 0.14);
+      --p26-shell: linear-gradient(90deg, #2F3E46 0%, #354F52 55%, #52796F 100%);
+      --p26-healthy: #52796F;       /* primary accent = healthy */
+      --p26-healthy-soft: #84A98C;  /* support accent, used for badges */
+      --p26-degraded: #b8860b;      /* amber (outside named palette, severity) */
+      --p26-down: #a63838;          /* red (outside named palette, severity) */
       --p26-unknown: #6b7a7d;
-      --p26-info: #2f6f8f;
+      --p26-info: #354F52;
       /* spacing scale */
       --p26-space-1: 4px;
       --p26-space-2: 8px;
@@ -996,7 +1003,7 @@ function htmlPage(basePath: string): string {
       --p26-space-8: 32px;
       /* radii + shadow */
       --p26-radius: 4px;
-      --p26-shadow: 0 10px 28px rgba(16, 50, 53, 0.08);
+      --p26-shadow: 0 10px 28px rgba(47, 62, 70, 0.10);
       /* typography */
       --p26-font-display: "Passion One", "Fira Sans", system-ui, sans-serif;
       --p26-font-body: "Karla", system-ui, "Helvetica Neue", sans-serif;
@@ -1015,7 +1022,7 @@ function htmlPage(basePath: string): string {
       --highlight: var(--p26-info);
       --danger: var(--p26-down);
       --ok: var(--p26-healthy);
-      --shadow: rgba(16, 50, 53, 0.08);
+      --shadow: rgba(47, 62, 70, 0.10);
     }
     * { box-sizing: border-box; }
     body {
@@ -1984,12 +1991,12 @@ function htmlPage(basePath: string): string {
         </div>
       </div>
       <nav class="top-tab-nav" aria-label="Sections">
-        <button class="tab-button active" data-tab="overview">Overview</button>
-        <button class="tab-button" data-tab="infra" data-sub-tab="infra-gateway">Bootstrap</button>
-        <button class="tab-button" data-tab="infra" data-sub-tab="infra-nodes">Nodes</button>
-        <button class="tab-button" data-tab="infra" data-sub-tab="infra-minecraft">Workloads</button>
-        <button class="tab-button" data-tab="monitoring" data-sub-tab="mon-health">Monitor</button>
-        <button class="tab-button" data-tab="services" data-sub-tab="svc-profiles">Secrets</button>
+        <button class="tab-button active" data-nav-id="overview" data-tab="overview">Overview</button>
+        <button class="tab-button" data-nav-id="bootstrap" data-tab="infra" data-sub-tab="infra-gateway">Bootstrap</button>
+        <button class="tab-button" data-nav-id="nodes" data-tab="infra" data-sub-tab="infra-nodes">Nodes</button>
+        <button class="tab-button" data-nav-id="workloads" data-tab="infra" data-sub-tab="infra-minecraft">Workloads</button>
+        <button class="tab-button" data-nav-id="monitor" data-tab="monitoring" data-sub-tab="mon-health">Monitor</button>
+        <button class="tab-button" data-nav-id="secrets" data-tab="services" data-sub-tab="svc-profiles">Secrets</button>
       </nav>
     </div>
   </header>
@@ -3458,22 +3465,62 @@ function htmlPage(basePath: string): string {
       document.getElementById('rawJson').value = JSON.stringify(state.config, null, 2);
     }
 
+    // Nav ownership map.  Each top-nav button owns a set of (tab, subTab) pairs
+    // so the top-nav stays correctly highlighted when the operator drills into a
+    // legacy sub-tab that this nav item logically contains.
+    //
+    // Transitional mapping — existing sub-tabs remain reachable through their
+    // host legacy tab navigation.  The target IA from the rebuild epic splits
+    // svc-profiles (runtime profiles vs. secret credentials) into Workloads vs.
+    // Secrets; that split is out of scope for this slice, so svc-profiles is
+    // owned by Secrets today and Workloads covers the rest of the Services
+    // legacy sub-tabs alongside remote-workloads/minecraft under Infrastructure.
+    const NAV_OWNERSHIP = {
+      overview:  [['overview',   null]],
+      bootstrap: [['infra',      'infra-gateway']],
+      nodes:     [['infra',      'infra-nodes']],
+      workloads: [
+        ['infra',    'infra-minecraft'],
+        ['services', 'svc-agents'],
+        ['services', 'svc-workflows'],
+        ['services', 'svc-deploys'],
+        ['services', 'svc-features']
+      ],
+      monitor:   [
+        ['monitoring', 'mon-health'],
+        ['monitoring', 'mon-benchmarks'],
+        ['monitoring', 'mon-settings']
+      ],
+      secrets:   [['services',   'svc-profiles']]
+    };
+
+    function findActiveNavId() {
+      const tab = state.activeTab;
+      const subTab = state.activeSubTabs[tab] || null;
+      for (const [navId, owned] of Object.entries(NAV_OWNERSHIP)) {
+        for (const [ownTab, ownSub] of owned) {
+          if (ownTab === tab && (ownSub === null || ownSub === subTab)) {
+            return navId;
+          }
+        }
+      }
+      return null;
+    }
+
     function renderActiveTab() {
       document.querySelectorAll('[data-tab-panel]').forEach((panel) => {
         panel.hidden = panel.dataset.tabPanel !== state.activeTab;
       });
-      const currentSub = state.activeSubTabs[state.activeTab];
+      const activeNavId = findActiveNavId();
       document.querySelectorAll('.top-tab-nav .tab-button').forEach((button) => {
-        const tabMatches = button.dataset.tab === state.activeTab;
-        const subAttr = button.dataset.subTab;
-        // When multiple nav buttons share a data-tab (e.g. Bootstrap/Nodes/Workloads all
-        // map to 'infra'), disambiguate by matching on the preset data-sub-tab too.
-        const isActive = tabMatches && (!subAttr || subAttr === currentSub);
-        button.classList.toggle('active', isActive);
+        button.classList.toggle('active', button.dataset.navId === activeNavId);
       });
     }
 
-    function switchSubTab(groupName, subTabId) {
+    // Applies the sub-tab DOM state (panel visibility + tab-button active class)
+    // without triggering a data fetch.  Callers that also need data should run
+    // loadSubTabData separately (or rely on loadTabData to do it once).
+    function applySubTabDom(groupName, subTabId) {
       const group = document.querySelector('[data-sub-group="' + groupName + '"]');
       if (!group) return;
       const parent = group.parentElement;
@@ -3484,6 +3531,14 @@ function htmlPage(basePath: string): string {
         btn.classList.toggle('active', btn.dataset.subTab === subTabId);
       });
       state.activeSubTabs[groupName] = subTabId;
+    }
+
+    function switchSubTab(groupName, subTabId) {
+      applySubTabDom(groupName, subTabId);
+      // Keep the top-nav highlight in sync as the operator moves between
+      // legacy sub-tabs that belong to the same operations-first nav item
+      // (e.g. Workloads stays active across Agents / Workflows / Deploys).
+      renderActiveTab();
       loadSubTabData(subTabId, { silent: true });
     }
 
@@ -7636,13 +7691,13 @@ function htmlPage(basePath: string): string {
         state.activeTab = tab;
         const presetSubTab = button.dataset.subTab;
         if (presetSubTab && state.activeSubTabs[tab] !== undefined) {
-          state.activeSubTabs[tab] = presetSubTab;
+          // Apply the preset's sub-tab DOM state directly. Do NOT call
+          // switchSubTab here — it calls loadSubTabData, and loadTabData below
+          // already dispatches a single load for the active sub-tab. Calling
+          // both would double-fetch (e.g. remoteServiceStatuses for Nodes).
+          applySubTabDom(tab, presetSubTab);
         }
         render();
-        if (presetSubTab) {
-          // ensure the target sub-panel's DOM state matches the preset
-          switchSubTab(tab, presetSubTab);
-        }
         await loadTabData(state.activeTab);
       });
     });
@@ -7998,13 +8053,19 @@ function htmlPage(basePath: string): string {
     if (overviewRefreshBtn) {
       overviewRefreshBtn.addEventListener('click', async () => {
         await withBusyButton(overviewRefreshBtn, 'Refreshing…', async () => {
-          try {
-            state.dataLoaded.healthSnapshot = 0;
-            await Promise.allSettled([fetchRuntime(), fetchHealthSnapshot()]);
+          state.dataLoaded.healthSnapshot = 0;
+          const settled = await Promise.allSettled([fetchRuntime(), fetchHealthSnapshot()]);
+          const failures = settled.filter((result) => result.status === 'rejected');
+          if (failures.length === 0) {
+            // Only mark the snapshot fresh when both required fetches actually
+            // succeeded — otherwise the 30s stale guard would suppress the
+            // next retry and operators would keep looking at partial data.
             markLoaded('healthSnapshot');
             setStatus('Overview refreshed');
-          } catch (error) {
-            setStatus(error.message, 'error');
+          } else {
+            const reason = failures[0].reason;
+            const message = reason && reason.message ? reason.message : String(reason || 'Overview refresh failed');
+            setStatus(message, 'error');
           }
         });
       });
