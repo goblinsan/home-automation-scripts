@@ -3572,7 +3572,10 @@ function htmlPage(basePath: string): string {
       if (kind === 'idle') {
         time.textContent = '';
       } else {
-        time.textContent = (kind === 'progress' ? 'Started ' : 'Completed ') + new Date().toLocaleTimeString();
+        const prefix = kind === 'progress' ? 'Started '
+          : kind === 'error' ? 'Failed '
+          : 'Completed ';
+        time.textContent = prefix + new Date().toLocaleTimeString();
       }
     }
 
@@ -3581,7 +3584,9 @@ function htmlPage(basePath: string): string {
       status.textContent = message;
       status.title = message;
       status.className = kind === 'error' ? 'status-error' : kind === 'progress' ? 'status-progress' : 'status-ok';
-      setCurrentAction(message, kind);
+      if (message !== 'Current') {
+        setCurrentAction(message, kind);
+      }
       if (kind === 'progress' || kind === 'error') {
         if (actionFeedCollapseTimer) {
           clearTimeout(actionFeedCollapseTimer);
