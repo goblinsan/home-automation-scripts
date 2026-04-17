@@ -8064,7 +8064,14 @@ function htmlPage(basePath: string): string {
             setStatus('Overview refreshed');
           } else {
             const reason = failures[0].reason;
-            const message = reason && reason.message ? reason.message : String(reason || 'Overview refresh failed');
+            let message;
+            if (reason && typeof reason.message === 'string' && reason.message) {
+              message = reason.message;
+            } else if (typeof reason === 'string' && reason) {
+              message = reason;
+            } else {
+              message = 'Overview refresh failed: unknown error';
+            }
             setStatus(message, 'error');
           }
         });
