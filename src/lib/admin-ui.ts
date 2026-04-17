@@ -1279,6 +1279,187 @@ function htmlPage(basePath: string): string {
       display: block;
       margin-bottom: 6px;
     }
+    .action-dock-title {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-right: auto;
+      padding-left: 4px;
+    }
+    .current-action {
+      border: 1px solid rgba(16, 50, 53, 0.18);
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 12px 28px rgba(17, 30, 38, 0.16);
+      padding: 12px 14px;
+      border-left: 4px solid rgba(16, 50, 53, 0.28);
+      display: grid;
+      gap: 4px;
+    }
+    .current-action.is-progress {
+      border-left-color: rgba(183, 128, 0, 0.75);
+      background: rgba(255, 246, 220, 0.98);
+    }
+    .current-action.is-ok {
+      border-left-color: rgba(32, 120, 80, 0.75);
+    }
+    .current-action.is-error {
+      border-left-color: rgba(143, 48, 48, 0.75);
+      background: rgba(255, 235, 235, 0.96);
+    }
+    .current-action-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .current-action-message {
+      font-size: 13px;
+      font-weight: 600;
+      color: #163336;
+      line-height: 1.35;
+    }
+    .current-action.is-error .current-action-message {
+      color: #7c1f1f;
+    }
+    .current-action.is-progress .current-action-message {
+      color: #8b5d00;
+    }
+    .current-action-time {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .bootstrap-task-list {
+      list-style: none;
+      margin: 12px 0 0;
+      padding: 0;
+      display: grid;
+      gap: 8px;
+    }
+    .bootstrap-task-list li {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 4px;
+    }
+    .bootstrap-task-list li > div {
+      display: grid;
+      gap: 2px;
+    }
+    .bootstrap-task-list li strong {
+      font-size: 14px;
+    }
+    .bootstrap-task-list li span:not(.bootstrap-task-num) {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .bootstrap-task-num {
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: var(--accent-strong);
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .nodes-inventory-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .nodes-inventory-card {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 4px;
+      padding: 12px 14px;
+      border-left: 3px solid var(--accent-strong);
+    }
+    .nodes-inventory-count {
+      font-size: 1.8rem;
+      font-weight: 700;
+      line-height: 1.1;
+      color: #163336;
+    }
+    .nodes-inventory-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .nodes-inventory-detail {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .monitor-dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .monitor-dashboard-card {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 4px;
+      padding: 12px 14px;
+      border-left: 3px solid var(--muted);
+    }
+    .monitor-dashboard-card.is-healthy { border-left-color: var(--color-success, #2ecc71); }
+    .monitor-dashboard-card.is-degraded { border-left-color: var(--color-warning, #e6a419); }
+    .monitor-dashboard-card.is-action { border-left-color: var(--color-error, #c0392b); }
+    .monitor-dashboard-count {
+      font-size: 1.8rem;
+      font-weight: 700;
+      line-height: 1.1;
+      color: #163336;
+    }
+    .monitor-dashboard-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .monitor-dashboard-detail {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .secrets-intro {
+      border-left: 4px solid rgba(183, 128, 0, 0.6);
+    }
+    .secrets-guard-note {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #6c4a00;
+    }
+    .secrets-guard-actions {
+      display: flex;
+      align-items: flex-start;
+    }
+    .secrets-reveal-btn[aria-pressed="true"] {
+      background: rgba(183, 128, 0, 0.12);
+      border-color: rgba(183, 128, 0, 0.65);
+      color: #6c4a00;
+    }
+    body.is-secrets-revealed .secrets-reveal-btn::before {
+      content: "👁 ";
+    }
     .log-output {
       margin: 12px 0 0;
       padding: 12px;
@@ -2059,10 +2240,23 @@ function htmlPage(basePath: string): string {
       </nav>
 
       <div class="sub-tab-panel active" data-sub-tab-panel="infra-gateway">
-      <details class="card section-card" open>
+      <div class="section-list">
+        <div class="card card-quiet">
+          <div>
+            <span class="pill">Bootstrap</span>
+            <h3>Gateway and Control-Plane Bring-Up</h3>
+            <p>Bring a fresh gateway host online by walking these setup tasks in order. Most fields only need to be set once per environment.</p>
+          </div>
+          <ul class="bootstrap-task-list" id="bootstrapTaskList">
+            <li data-task="gateway"><span class="bootstrap-task-num">1</span><div><strong>Configure gateway host</strong><span>Server names, nginx paths, and the reload commands the control plane calls on deploy.</span></div></li>
+            <li data-task="adminUi"><span class="bootstrap-task-num">2</span><div><strong>Bind the admin UI service</strong><span>Host, port, and systemd details for the control-plane web app itself.</span></div></li>
+          </ul>
+        </div>
+      </div>
+      <details class="card section-card" id="bootstrapTaskGateway" open>
         <summary>
           <div class="section-summary-copy">
-            <span class="pill">Gateway</span>
+            <span class="pill">Task 1 · Gateway</span>
             <h3>Gateway Server Settings</h3>
             <p>Core host-level control-plane paths and reload commands.</p>
           </div>
@@ -2094,10 +2288,10 @@ function htmlPage(basePath: string): string {
         </div>
       </details>
 
-      <details class="card section-card">
+      <details class="card section-card" id="bootstrapTaskAdminUi">
         <summary>
           <div class="section-summary-copy">
-            <span class="pill">Admin UI</span>
+            <span class="pill">Task 2 · Admin UI</span>
             <h3>Control-Plane Web App</h3>
             <p>Bind settings and service details for the admin interface itself.</p>
           </div>
@@ -2145,8 +2339,13 @@ function htmlPage(basePath: string): string {
         <div class="card card-quiet">
           <div>
             <span class="pill">Nodes</span>
-            <h3>Worker Nodes and Remote Container Jobs</h3>
-            <p>Use this tab to define remote nodes like your core-node and generic container workloads. Minecraft has its own dedicated tab.</p>
+            <h3>Worker Node Inventory</h3>
+            <p>Machine inventory, provisioning actions, and SSH/docker reachability for everything the control plane deploys to. Use this tab to define remote nodes like your core-node and the container workloads hosted on them. Minecraft has its own dedicated tab.</p>
+          </div>
+          <div class="nodes-inventory-grid" id="nodesInventoryGrid">
+            <div class="nodes-inventory-card"><div class="nodes-inventory-count" data-nodes-inventory="total">—</div><div class="nodes-inventory-label">Nodes</div><div class="nodes-inventory-detail" data-nodes-inventory-detail="total">No nodes configured.</div></div>
+            <div class="nodes-inventory-card"><div class="nodes-inventory-count" data-nodes-inventory="enabled">—</div><div class="nodes-inventory-label">Enabled</div><div class="nodes-inventory-detail" data-nodes-inventory-detail="enabled">Enabled nodes accept deploys.</div></div>
+            <div class="nodes-inventory-card"><div class="nodes-inventory-count" data-nodes-inventory="workloads">—</div><div class="nodes-inventory-label">Workloads</div><div class="nodes-inventory-detail" data-nodes-inventory-detail="workloads">Remote workloads targeting a node.</div></div>
           </div>
         </div>
         <details class="card section-card" open>
@@ -2823,6 +3022,12 @@ function htmlPage(basePath: string): string {
               <button id="runHealthCheckButton" class="primary">Run Check Now</button>
             </div>
           </div>
+          <div class="monitor-dashboard-grid" id="monitorDashboardGrid">
+            <div class="monitor-dashboard-card is-healthy"><div class="monitor-dashboard-count" data-monitor-count="healthy">—</div><div class="monitor-dashboard-label">Healthy</div><div class="monitor-dashboard-detail" data-monitor-detail="healthy">Loading snapshot…</div></div>
+            <div class="monitor-dashboard-card is-degraded"><div class="monitor-dashboard-count" data-monitor-count="degraded">—</div><div class="monitor-dashboard-label">Degraded</div><div class="monitor-dashboard-detail" data-monitor-detail="degraded">Loading snapshot…</div></div>
+            <div class="monitor-dashboard-card is-action"><div class="monitor-dashboard-count" data-monitor-count="action">—</div><div class="monitor-dashboard-label">Needs Action</div><div class="monitor-dashboard-detail" data-monitor-detail="action">Loading snapshot…</div></div>
+            <div class="monitor-dashboard-card"><div class="monitor-dashboard-count" data-monitor-count="lastChecked">—</div><div class="monitor-dashboard-label">Last Check</div><div class="monitor-dashboard-detail" data-monitor-detail="lastChecked">No snapshot yet.</div></div>
+          </div>
         </div>
         <div id="monitoringDisabledBanner" class="card" style="border-left:3px solid var(--color-warning);display:none">
           <p><strong>Monitoring is not enabled.</strong> Configure Postgres and Redis in the Monitoring Settings sub-tab, then enable monitoring to start collecting health data.</p>
@@ -2931,11 +3136,17 @@ function htmlPage(basePath: string): string {
       <!-- ═══ SECRETS TAB (composed page — secret env vars, credentials, secret-bearing runtime fields) ═══ -->
       <div class="tab-panel" data-tab-panel="secrets" hidden>
         <div class="section-list">
-          <div class="card card-quiet">
-            <div>
-              <span class="pill">Secrets</span>
-              <h3>Credentials &amp; Secret Runtime Fields</h3>
-              <p>Isolated surface for API keys, bot tokens, passwords, and other sensitive values across all services. Non-secret runtime configuration lives on the Workloads page under Runtime Profiles.</p>
+          <div class="card card-quiet secrets-intro" data-secrets-guard>
+            <div class="split-actions">
+              <div>
+                <span class="pill">Secrets</span>
+                <h3>🔒 Credentials &amp; Secret Runtime Fields</h3>
+                <p>Isolated surface for API keys, bot tokens, passwords, and other sensitive values across all services. Non-secret runtime configuration lives on the Workloads page under Runtime Profiles.</p>
+                <p class="secrets-guard-note">Values are masked by default. Use <strong>Reveal values</strong> only when you need to read or edit a secret, and hide them again as soon as you are done.</p>
+              </div>
+              <div class="secrets-guard-actions">
+                <button id="secretsRevealToggle" class="secrets-reveal-btn" type="button" aria-pressed="false">Reveal values</button>
+              </div>
             </div>
           </div>
           <div id="secretsHost" class="section-list"></div>
@@ -3169,9 +3380,15 @@ function htmlPage(basePath: string): string {
 
   <div class="action-dock">
     <div class="action-dock-header">
+      <span class="action-dock-title">Actions</span>
       <button id="toggleActionFeedButton" class="action-dock-toggle">Hide History</button>
     </div>
     <div id="status" class="status-ok">Current</div>
+    <div id="currentAction" class="current-action is-idle" aria-live="polite">
+      <div class="current-action-label">Current Action</div>
+      <div class="current-action-message" id="currentActionMessage">Nothing running. Triggered actions appear here.</div>
+      <div class="current-action-time" id="currentActionTime"></div>
+    </div>
     <div id="actionFeed" class="action-feed">
       <p class="action-feed-empty">No recent actions.</p>
     </div>
@@ -3338,11 +3555,38 @@ function htmlPage(basePath: string): string {
       }
     }
 
+    function setCurrentAction(message, kind = 'ok') {
+      const host = document.getElementById('currentAction');
+      const msg = document.getElementById('currentActionMessage');
+      const time = document.getElementById('currentActionTime');
+      if (!host || !msg || !time) {
+        return;
+      }
+      host.classList.remove('is-idle', 'is-progress', 'is-ok', 'is-error');
+      const stateClass = kind === 'error' ? 'is-error'
+        : kind === 'progress' ? 'is-progress'
+        : kind === 'idle' ? 'is-idle'
+        : 'is-ok';
+      host.classList.add(stateClass);
+      msg.textContent = message;
+      if (kind === 'idle') {
+        time.textContent = '';
+      } else {
+        const prefix = kind === 'progress' ? 'Started '
+          : kind === 'error' ? 'Failed '
+          : 'Completed ';
+        time.textContent = prefix + new Date().toLocaleTimeString();
+      }
+    }
+
     function setStatus(message, kind = 'ok', options = {}) {
       const status = document.getElementById('status');
       status.textContent = message;
       status.title = message;
       status.className = kind === 'error' ? 'status-error' : kind === 'progress' ? 'status-progress' : 'status-ok';
+      if (message !== 'Current') {
+        setCurrentAction(message, kind);
+      }
       if (kind === 'progress' || kind === 'error') {
         if (actionFeedCollapseTimer) {
           clearTimeout(actionFeedCollapseTimer);
@@ -4701,7 +4945,54 @@ function htmlPage(basePath: string): string {
       return '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';margin-right:6px" title="' + escapeHtml(status) + '"></span>';
     }
 
+    function renderMonitorDashboard() {
+      const grid = document.getElementById('monitorDashboardGrid');
+      if (!grid) return;
+      const snapshot = state.healthSnapshot;
+      const targets = snapshot && Array.isArray(snapshot.targets) ? snapshot.targets : [];
+      const counts = { healthy: 0, degraded: 0, down: 0, unknown: 0 };
+      let latestChecked = null;
+      targets.forEach(function(t) {
+        const key = t.status === 'healthy' ? 'healthy' : t.status === 'degraded' ? 'degraded' : t.status === 'down' ? 'down' : 'unknown';
+        counts[key] += 1;
+        if (t.lastChecked) {
+          const ts = new Date(t.lastChecked).getTime();
+          if (!latestChecked || ts > latestChecked) latestChecked = ts;
+        }
+      });
+      const actionCount = counts.degraded + counts.down + counts.unknown;
+
+      function set(kind, value, detail) {
+        const c = grid.querySelector('[data-monitor-count="' + kind + '"]');
+        const d = grid.querySelector('[data-monitor-detail="' + kind + '"]');
+        if (c) c.textContent = String(value);
+        if (d) d.textContent = detail;
+      }
+      if (targets.length === 0) {
+        set('healthy', 0, 'No snapshot yet — run a check.');
+        set('degraded', 0, 'No snapshot yet — run a check.');
+        set('action', 0, 'No targets reporting.');
+        set('lastChecked', '—', 'No snapshot yet.');
+        return;
+      }
+      set('healthy', counts.healthy, counts.healthy === 1 ? '1 target healthy.' : counts.healthy + ' targets healthy.');
+      set('degraded', counts.degraded, counts.degraded === 0 ? 'Nothing degraded.' : counts.degraded + ' running degraded.');
+      set('action', actionCount, actionCount === 0
+        ? 'All clear.'
+        : counts.down + ' down, ' + counts.degraded + ' degraded, ' + counts.unknown + ' unknown.');
+      if (latestChecked) {
+        const date = new Date(latestChecked);
+        const ageMs = Date.now() - latestChecked;
+        const ageMin = Math.floor(ageMs / 60000);
+        const ageLabel = ageMin <= 0 ? 'just now' : ageMin + ' min ago';
+        set('lastChecked', date.toLocaleTimeString(), 'Most recent target check · ' + ageLabel);
+      } else {
+        set('lastChecked', '—', 'Awaiting first snapshot.');
+      }
+    }
+
     function renderHealthTargets() {
+      renderMonitorDashboard();
       const container = document.getElementById('healthTargetsContainer');
       const banner = document.getElementById('monitoringDisabledBanner');
       if (!container) return;
@@ -5249,6 +5540,23 @@ function htmlPage(basePath: string): string {
         () => undefined,
         renderGatewayChatPlatformProfile
       );
+      applySecretsRevealState();
+    }
+
+    function applySecretsRevealState() {
+      const secretsPanel = document.querySelector('[data-tab-panel="secrets"]');
+      if (!secretsPanel) return;
+      const revealed = document.body.classList.contains('is-secrets-revealed');
+      secretsPanel.querySelectorAll('input[type="password"], input[data-secret-input="1"]').forEach((input) => {
+        if (revealed) {
+          if (input.type === 'password') {
+            input.dataset.secretInput = '1';
+            input.type = 'text';
+          }
+        } else if (input.dataset.secretInput === '1') {
+          input.type = 'password';
+        }
+      });
     }
 
     function renderGatewayApiSecretsChannels() {
@@ -5767,9 +6075,40 @@ function htmlPage(basePath: string): string {
       }
     }
 
+    function renderNodesInventorySummary() {
+      const grid = document.getElementById('nodesInventoryGrid');
+      if (!grid) {
+        return;
+      }
+      const nodes = (state.config && Array.isArray(state.config.workerNodes)) ? state.config.workerNodes : [];
+      const workloads = (state.config && Array.isArray(state.config.remoteWorkloads)) ? state.config.remoteWorkloads : [];
+      const enabled = nodes.filter(function(n) { return n.enabled; }).length;
+      const disabled = nodes.length - enabled;
+      const hostsSeen = new Set();
+      nodes.forEach(function(n) { if (n.host) hostsSeen.add(n.host); });
+      const workloadsEnabled = workloads.filter(function(w) { return w.enabled; }).length;
+
+      function set(kind, value, detail) {
+        const c = grid.querySelector('[data-nodes-inventory="' + kind + '"]');
+        const d = grid.querySelector('[data-nodes-inventory-detail="' + kind + '"]');
+        if (c) c.textContent = String(value);
+        if (d) d.textContent = detail;
+      }
+      set('total', nodes.length, nodes.length === 0
+        ? 'No worker nodes configured yet.'
+        : hostsSeen.size + ' distinct host' + (hostsSeen.size === 1 ? '' : 's') + ' · SSH targets registered.');
+      set('enabled', enabled, disabled === 0
+        ? (enabled === 0 ? 'No nodes enabled.' : 'All configured nodes accept deploys.')
+        : disabled + ' disabled, ' + enabled + ' accept deploys.');
+      set('workloads', workloads.length, workloads.length === 0
+        ? 'No remote workloads bound to a node.'
+        : workloadsEnabled + ' enabled of ' + workloads.length + ' defined.');
+    }
+
     function renderWorkerNodes() {
       const container = document.getElementById('workerNodesContainer');
       container.innerHTML = '';
+      renderNodesInventorySummary();
       if (state.config.workerNodes.length === 0) {
         container.innerHTML = '<p>No worker nodes configured yet.</p>';
         return;
@@ -7815,6 +8154,17 @@ function htmlPage(basePath: string): string {
       }
       applyActionFeedVisibility();
     });
+
+    const secretsRevealToggle = document.getElementById('secretsRevealToggle');
+    if (secretsRevealToggle) {
+      secretsRevealToggle.addEventListener('click', () => {
+        const revealed = document.body.classList.toggle('is-secrets-revealed');
+        secretsRevealToggle.setAttribute('aria-pressed', revealed ? 'true' : 'false');
+        secretsRevealToggle.textContent = revealed ? 'Hide values' : 'Reveal values';
+        applySecretsRevealState();
+        setStatus(revealed ? 'Secret values revealed' : 'Secret values masked', 'ok');
+      });
+    }
 
     document.querySelectorAll('[data-open-tab]').forEach((button) => {
       button.addEventListener('click', async () => {
