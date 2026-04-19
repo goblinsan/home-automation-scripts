@@ -84,6 +84,48 @@ export function renderAdminHead(basePath: string, faviconDataUri: string): strin
       --shadow: rgba(47, 62, 70, 0.10);
     }
     * { box-sizing: border-box; }
+    /* ── Accessibility: visible focus on all interactive controls ──
+       Browser default focus rings on rectangular ("border-radius: 0") buttons
+       can be hard to see against the operator palette, so we render an
+       explicit, high-contrast 2px ring whenever a control receives focus
+       from the keyboard. Pointer focus stays clean via :focus-visible. */
+    :focus { outline: none; }
+    a:focus-visible,
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    summary:focus-visible,
+    [tabindex]:focus-visible {
+      outline: 2px solid var(--p26-accent-strong);
+      outline-offset: 2px;
+      box-shadow: 0 0 0 4px rgba(82, 121, 111, 0.25);
+    }
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      z-index: 1000;
+    }
+    .skip-link:focus {
+      position: fixed;
+      left: 12px;
+      top: 12px;
+      width: auto;
+      height: auto;
+      padding: 10px 14px;
+      background: #fff;
+      color: var(--p26-accent-strong);
+      border: 2px solid var(--p26-accent-strong);
+      border-radius: 4px;
+      font-family: var(--p26-font-ui);
+      font-weight: 600;
+      text-decoration: none;
+      box-shadow: 0 8px 20px rgba(16, 50, 53, 0.25);
+    }
     body {
       margin: 0;
       font-family: var(--p26-font-body);
@@ -151,7 +193,9 @@ export function renderAdminHead(basePath: string, faviconDataUri: string): strin
       opacity: 0.82;
     }
     button:disabled,
-    button.is-busy {
+    button.is-busy,
+    button[aria-busy="true"],
+    button[aria-disabled="true"] {
       cursor: progress;
       opacity: 0.52;
       filter: grayscale(0.3);
@@ -584,13 +628,15 @@ export function renderAdminHead(basePath: string, faviconDataUri: string): strin
       white-space: nowrap;
     }
     .top-tab-nav .tab-button:hover,
-    .top-tab-nav .tab-button.active {
+    .top-tab-nav .tab-button.active,
+    .top-tab-nav .tab-button[aria-current="page"] {
       background: #ffffff;
       color: var(--accent-strong);
       border-color: #ffffff;
     }
     .sub-tab-nav {
       display: flex;
+      flex-wrap: wrap;
       gap: 6px;
       margin-bottom: 18px;
       border-bottom: 2px solid var(--border);
@@ -611,7 +657,8 @@ export function renderAdminHead(basePath: string, faviconDataUri: string): strin
     .sub-tab-nav .sub-tab-button:hover {
       color: var(--fg);
     }
-    .sub-tab-nav .sub-tab-button.active {
+    .sub-tab-nav .sub-tab-button.active,
+    .sub-tab-nav .sub-tab-button[aria-current="page"] {
       color: var(--accent-strong);
       border-bottom-color: var(--accent-strong);
     }
@@ -838,6 +885,39 @@ export function renderAdminHead(basePath: string, faviconDataUri: string): strin
       .overview-grid {
         grid-template-columns: 1fr;
       }
+    }
+
+    /* ── Narrower laptop / tablet viewports ──
+       Tighten chrome, allow tabs to wrap, and collapse multi-column grids
+       so the rebuilt operational pages remain readable on narrower
+       operator viewports. */
+    @media (max-width: 640px) {
+      header { padding: 14px 16px 12px; }
+      h1 { font-size: 1.6rem; }
+      main { padding: 16px; gap: 14px; }
+      .panel { padding: 16px; }
+      .header-actions { width: 100%; justify-content: flex-start; }
+      .header-row { gap: 10px; }
+      .header-row p { font-size: 0.92rem; }
+      .top-tab-nav .tab-button { padding: 10px 12px; font-size: 14px; }
+      .sub-tab-nav { overflow-x: auto; flex-wrap: nowrap; }
+      /* On narrow viewports we prefer horizontal scrolling over wrapping
+         the sub-tab strip into a multi-line stack — keeps the operator's
+         eye on a single navigational row even when several sub-tabs are
+         present. The default flex-wrap: wrap (above) still applies on
+         wider viewports so unusually long sub-tab labels can flow. */
+      .sub-tab-nav .sub-tab-button { padding: 8px 12px; font-size: 13px; }
+      .split-actions { flex-direction: column; align-items: stretch; }
+      .toolbar { gap: 8px; }
+      .toolbar > button,
+      .header-actions > button { flex: 1 1 auto; min-width: 0; }
+      .row { grid-template-columns: 1fr; }
+      .metric-grid { grid-template-columns: 1fr; }
+      .overview-header { flex-direction: column; align-items: stretch; }
+      .overview-target { flex-direction: column; align-items: flex-start; gap: 6px; }
+      .wizard-form-grid { grid-template-columns: 1fr; }
+      .wizard-preset-grid { grid-template-columns: 1fr; }
+      .action-dock { width: auto; }
     }
 
     .wizard-dialog {

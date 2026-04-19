@@ -68,6 +68,48 @@
       --shadow: rgba(47, 62, 70, 0.10);
     }
     * { box-sizing: border-box; }
+    /* ── Accessibility: visible focus on all interactive controls ──
+       Browser default focus rings on rectangular ("border-radius: 0") buttons
+       can be hard to see against the operator palette, so we render an
+       explicit, high-contrast 2px ring whenever a control receives focus
+       from the keyboard. Pointer focus stays clean via :focus-visible. */
+    :focus { outline: none; }
+    a:focus-visible,
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    summary:focus-visible,
+    [tabindex]:focus-visible {
+      outline: 2px solid var(--p26-accent-strong);
+      outline-offset: 2px;
+      box-shadow: 0 0 0 4px rgba(82, 121, 111, 0.25);
+    }
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      z-index: 1000;
+    }
+    .skip-link:focus {
+      position: fixed;
+      left: 12px;
+      top: 12px;
+      width: auto;
+      height: auto;
+      padding: 10px 14px;
+      background: #fff;
+      color: var(--p26-accent-strong);
+      border: 2px solid var(--p26-accent-strong);
+      border-radius: 4px;
+      font-family: var(--p26-font-ui);
+      font-weight: 600;
+      text-decoration: none;
+      box-shadow: 0 8px 20px rgba(16, 50, 53, 0.25);
+    }
     body {
       margin: 0;
       font-family: var(--p26-font-body);
@@ -135,7 +177,9 @@
       opacity: 0.82;
     }
     button:disabled,
-    button.is-busy {
+    button.is-busy,
+    button[aria-busy="true"],
+    button[aria-disabled="true"] {
       cursor: progress;
       opacity: 0.52;
       filter: grayscale(0.3);
@@ -568,13 +612,15 @@
       white-space: nowrap;
     }
     .top-tab-nav .tab-button:hover,
-    .top-tab-nav .tab-button.active {
+    .top-tab-nav .tab-button.active,
+    .top-tab-nav .tab-button[aria-current="page"] {
       background: #ffffff;
       color: var(--accent-strong);
       border-color: #ffffff;
     }
     .sub-tab-nav {
       display: flex;
+      flex-wrap: wrap;
       gap: 6px;
       margin-bottom: 18px;
       border-bottom: 2px solid var(--border);
@@ -595,7 +641,8 @@
     .sub-tab-nav .sub-tab-button:hover {
       color: var(--fg);
     }
-    .sub-tab-nav .sub-tab-button.active {
+    .sub-tab-nav .sub-tab-button.active,
+    .sub-tab-nav .sub-tab-button[aria-current="page"] {
       color: var(--accent-strong);
       border-bottom-color: var(--accent-strong);
     }
@@ -822,6 +869,39 @@
       .overview-grid {
         grid-template-columns: 1fr;
       }
+    }
+
+    /* ── Narrower laptop / tablet viewports ──
+       Tighten chrome, allow tabs to wrap, and collapse multi-column grids
+       so the rebuilt operational pages remain readable on narrower
+       operator viewports. */
+    @media (max-width: 640px) {
+      header { padding: 14px 16px 12px; }
+      h1 { font-size: 1.6rem; }
+      main { padding: 16px; gap: 14px; }
+      .panel { padding: 16px; }
+      .header-actions { width: 100%; justify-content: flex-start; }
+      .header-row { gap: 10px; }
+      .header-row p { font-size: 0.92rem; }
+      .top-tab-nav .tab-button { padding: 10px 12px; font-size: 14px; }
+      .sub-tab-nav { overflow-x: auto; flex-wrap: nowrap; }
+      /* On narrow viewports we prefer horizontal scrolling over wrapping
+         the sub-tab strip into a multi-line stack — keeps the operator's
+         eye on a single navigational row even when several sub-tabs are
+         present. The default flex-wrap: wrap (above) still applies on
+         wider viewports so unusually long sub-tab labels can flow. */
+      .sub-tab-nav .sub-tab-button { padding: 8px 12px; font-size: 13px; }
+      .split-actions { flex-direction: column; align-items: stretch; }
+      .toolbar { gap: 8px; }
+      .toolbar > button,
+      .header-actions > button { flex: 1 1 auto; min-width: 0; }
+      .row { grid-template-columns: 1fr; }
+      .metric-grid { grid-template-columns: 1fr; }
+      .overview-header { flex-direction: column; align-items: stretch; }
+      .overview-target { flex-direction: column; align-items: flex-start; gap: 6px; }
+      .wizard-form-grid { grid-template-columns: 1fr; }
+      .wizard-preset-grid { grid-template-columns: 1fr; }
+      .action-dock { width: auto; }
     }
 
     .wizard-dialog {
@@ -1200,6 +1280,7 @@
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header>
     <div class="header-shell">
       <div class="header-row">
@@ -1207,15 +1288,15 @@
           <h1>Gateway Control Plane</h1>
           <p>Operations-first console — Workloads, Secrets, Nodes, and Monitoring as composed pages.</p>
         </div>
-        <div class="header-actions">
+        <div class="header-actions" role="toolbar" aria-label="Global actions">
           <button id="refreshButton">Refresh</button>
-          <button id="restartButton" title="Restart control-plane container">⟳ Restart</button>
-          <button id="rawJsonButton" title="Edit raw config JSON">⚙</button>
+          <button id="restartButton" title="Restart control-plane container" aria-label="Restart control-plane container">⟳ Restart</button>
+          <button id="rawJsonButton" title="Edit raw config JSON" aria-label="Edit raw config JSON">⚙</button>
           <button id="saveButton" class="primary">Save</button>
         </div>
       </div>
       <nav class="top-tab-nav" aria-label="Sections">
-        <button class="tab-button active" data-nav-id="overview" data-tab="overview">Overview</button>
+        <button class="tab-button active" aria-current="page" data-nav-id="overview" data-tab="overview">Overview</button>
         <button class="tab-button" data-nav-id="bootstrap" data-tab="infra" data-sub-tab="infra-gateway">Bootstrap</button>
         <button class="tab-button" data-nav-id="nodes" data-tab="infra" data-sub-tab="infra-nodes">Nodes</button>
         <button class="tab-button" data-nav-id="workloads" data-tab="workloads" data-sub-tab="wl-remote">Workloads</button>
@@ -1224,7 +1305,7 @@
       </nav>
     </div>
   </header>
-  <main>
+  <main id="main-content" tabindex="-1">
     <section class="panel editor-panel">
       <div class="split-actions">
         <div>
@@ -1239,7 +1320,7 @@
             <h2>Overview</h2>
             <p>What's healthy, what's degraded, and what needs action — from live runtime and monitoring data.</p>
           </div>
-          <div class="header-actions">
+          <div class="header-actions" role="toolbar" aria-label="Overview actions">
             <button id="overviewRefreshButton">Refresh</button>
             <button id="overviewRunCheckButton" class="overview-link-btn">Run Health Check</button>
           </div>
@@ -1277,8 +1358,8 @@
 
       <!-- ═══ INFRASTRUCTURE TAB ═══ -->
       <div class="tab-panel" data-tab-panel="infra" hidden>
-      <nav class="sub-tab-nav" data-sub-group="infra">
-        <button class="sub-tab-button active" data-sub-tab="infra-gateway">Gateway</button>
+      <nav class="sub-tab-nav" data-sub-group="infra" aria-label="Infrastructure sub-sections">
+        <button class="sub-tab-button active" aria-current="page" data-sub-tab="infra-gateway">Gateway</button>
         <button class="sub-tab-button" data-sub-tab="infra-nodes">Nodes</button>
       </nav>
 
@@ -1472,8 +1553,8 @@
 
       <!-- ═══ SERVICES TAB ═══ -->
       <div class="tab-panel" data-tab-panel="services" hidden>
-      <nav class="sub-tab-nav" data-sub-group="services">
-        <button class="sub-tab-button active" data-sub-tab="svc-agents">Agents</button>
+      <nav class="sub-tab-nav" data-sub-group="services" aria-label="Services sub-sections">
+        <button class="sub-tab-button active" aria-current="page" data-sub-tab="svc-agents">Agents</button>
         <button class="sub-tab-button" data-sub-tab="svc-workflows">Workflows</button>
         <button class="sub-tab-button" data-sub-tab="svc-deploys">Deploys</button>
         <button class="sub-tab-button" data-sub-tab="svc-profiles">Profiles</button>
@@ -2044,8 +2125,8 @@
 
       <!-- ═══ MONITORING TAB ═══ -->
       <div class="tab-panel" data-tab-panel="monitoring" hidden>
-      <nav class="sub-tab-nav" data-sub-group="monitoring">
-        <button class="sub-tab-button active" data-sub-tab="mon-health">Health</button>
+      <nav class="sub-tab-nav" data-sub-group="monitoring" aria-label="Monitoring sub-sections">
+        <button class="sub-tab-button active" aria-current="page" data-sub-tab="mon-health">Health</button>
         <button class="sub-tab-button" data-sub-tab="mon-benchmarks">Benchmarks</button>
         <button class="sub-tab-button" data-sub-tab="mon-settings">Monitoring Settings</button>
       </nav>
@@ -2153,8 +2234,8 @@
 
       <!-- ═══ WORKLOADS TAB (composed page — remote workloads, bedrock, managed apps, workflows, agents, profiles, features) ═══ -->
       <div class="tab-panel" data-tab-panel="workloads" hidden>
-        <nav class="sub-tab-nav" data-sub-group="workloads">
-          <button class="sub-tab-button active" data-sub-tab="wl-remote">Remote Workloads</button>
+        <nav class="sub-tab-nav" data-sub-group="workloads" aria-label="Workloads sub-sections">
+          <button class="sub-tab-button active" aria-current="page" data-sub-tab="wl-remote">Remote Workloads</button>
           <button class="sub-tab-button" data-sub-tab="infra-minecraft">Bedrock</button>
           <button class="sub-tab-button" data-sub-tab="svc-deploys">Managed Apps</button>
           <button class="sub-tab-button" data-sub-tab="svc-workflows">Workflows &amp; Jobs</button>
@@ -2888,7 +2969,13 @@
       });
       const activeNavId = findActiveNavId();
       document.querySelectorAll('.top-tab-nav .tab-button').forEach((button) => {
-        button.classList.toggle('active', button.dataset.navId === activeNavId);
+        const isActive = button.dataset.navId === activeNavId;
+        button.classList.toggle('active', isActive);
+        if (isActive) {
+          button.setAttribute('aria-current', 'page');
+        } else {
+          button.removeAttribute('aria-current');
+        }
       });
     }
 
@@ -2903,7 +2990,13 @@
         panel.classList.toggle('active', panel.dataset.subTabPanel === subTabId);
       });
       group.querySelectorAll('.sub-tab-button').forEach((btn) => {
-        btn.classList.toggle('active', btn.dataset.subTab === subTabId);
+        const isActive = btn.dataset.subTab === subTabId;
+        btn.classList.toggle('active', isActive);
+        if (isActive) {
+          btn.setAttribute('aria-current', 'page');
+        } else {
+          btn.removeAttribute('aria-current');
+        }
       });
       state.activeSubTabs[groupName] = subTabId;
     }
@@ -7172,6 +7265,34 @@
         await loadTabData(state.activeTab);
       });
     });
+
+    // Keyboard nav across top-tab and sub-tab buttons: ArrowLeft/ArrowRight
+    // move focus, Home/End jump to ends. Activation is left to Enter/Space
+    // (the buttons' native behavior).
+    function wireRovingTablistKeys(selector) {
+      document.querySelectorAll(selector).forEach((nav) => {
+        nav.addEventListener('keydown', (event) => {
+          const key = event.key;
+          if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Home' && key !== 'End') {
+            return;
+          }
+          const buttons = Array.from(nav.querySelectorAll('button')).filter((b) => !b.disabled);
+          if (buttons.length === 0) return;
+          const currentIndex = buttons.indexOf(document.activeElement);
+          let nextIndex = currentIndex;
+          if (key === 'ArrowLeft') nextIndex = currentIndex <= 0 ? buttons.length - 1 : currentIndex - 1;
+          else if (key === 'ArrowRight') nextIndex = currentIndex === -1 || currentIndex === buttons.length - 1 ? 0 : currentIndex + 1;
+          else if (key === 'Home') nextIndex = 0;
+          else if (key === 'End') nextIndex = buttons.length - 1;
+          if (nextIndex !== currentIndex) {
+            event.preventDefault();
+            buttons[nextIndex].focus();
+          }
+        });
+      });
+    }
+    wireRovingTablistKeys('.top-tab-nav');
+    wireRovingTablistKeys('.sub-tab-nav');
 
     document.querySelectorAll('.sub-tab-nav .sub-tab-button').forEach((button) => {
       button.addEventListener('click', () => {

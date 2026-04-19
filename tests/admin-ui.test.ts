@@ -46,6 +46,42 @@ test('ADMIN_MARKUP exposes the tab shell and shared action surface', () => {
   assert.ok(ADMIN_MARKUP.includes('id="currentAction"'), 'current action surface present');
 });
 
+test('ADMIN_MARKUP exposes accessibility hooks for keyboard + screen reader operators', () => {
+  // Skip-link target main-content, with focusable main landmark.
+  assert.ok(ADMIN_MARKUP.includes('class="skip-link" href="#main-content"'), 'skip-link present');
+  assert.ok(ADMIN_MARKUP.includes('id="main-content"'), 'main landmark id present');
+  // Initially-active top-tab and sub-tab buttons advertise current state.
+  assert.ok(
+    ADMIN_MARKUP.includes('class="tab-button active" aria-current="page" data-nav-id="overview"'),
+    'initial top-tab marks aria-current=page',
+  );
+  assert.ok(
+    ADMIN_MARKUP.includes('aria-current="page" data-sub-tab="infra-gateway"'),
+    'initial infra sub-tab marks aria-current=page',
+  );
+  // Icon-only header buttons get accessible names.
+  assert.ok(ADMIN_MARKUP.includes('aria-label="Edit raw config JSON"'), 'gear button has aria-label');
+  assert.ok(ADMIN_MARKUP.includes('aria-label="Restart control-plane container"'), 'restart button has aria-label');
+  // Sub-tab nav landmarks are individually labeled.
+  for (const label of ['Infrastructure sub-sections', 'Services sub-sections', 'Monitoring sub-sections', 'Workloads sub-sections']) {
+    assert.ok(ADMIN_MARKUP.includes('aria-label="' + label + '"'), 'sub-tab nav labeled: ' + label);
+  }
+  // Header action toolbars carry role + label.
+  assert.ok(ADMIN_MARKUP.includes('role="toolbar" aria-label="Global actions"'), 'global toolbar labeled');
+});
+
+test('renderAdminHead provides visible focus + responsive narrow-viewport rules', () => {
+  const head = renderAdminHead(BASE, FAVICON);
+  // Visible focus ring on interactive controls.
+  assert.ok(head.includes(':focus-visible'), 'focus-visible rule present');
+  assert.ok(head.includes('.skip-link'), 'skip-link styles present');
+  // Active state alias for aria-current.
+  assert.ok(head.includes('.top-tab-nav .tab-button[aria-current="page"]'), 'top-tab aria-current style');
+  assert.ok(head.includes('.sub-tab-nav .sub-tab-button[aria-current="page"]'), 'sub-tab aria-current style');
+  // Narrow-viewport responsive rules exist beyond the existing 980px breakpoint.
+  assert.ok(head.includes('@media (max-width: 640px)'), 'narrow-viewport media query present');
+});
+
 test('renderAdminScript preserves critical state invariants', () => {
   const script = renderAdminScript({ defaultWorkflowSeedPath: SEED_PATH });
   assert.ok(script.trimStart().startsWith('<script>'));
