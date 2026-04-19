@@ -191,3 +191,65 @@ Future contributors should prefer extending the module structure over
 growing any one file. If you find yourself tempted to add a large block of
 HTML or JS back into `admin-ui.ts`, stop and add a module under
 `src/lib/admin-ui/` instead.
+
+## Accessibility & responsive conventions
+
+The rebuilt operator console is audited against keyboard-only navigation,
+visible focus, and narrower (laptop / tablet) viewports. New page surfaces
+must keep these conventions intact:
+
+- **Visible focus.** All interactive controls — buttons, inputs, selects,
+  textareas, `<summary>`, and any element with `[tabindex]` — render an
+  explicit `:focus-visible` outline (`head.ts`). Do not suppress focus
+  rings on new controls.
+- **Skip link.** The body opens with a `class="skip-link"` anchor that
+  jumps to `#main-content`. The `<main>` element carries
+  `tabindex="-1"` so the skip target is focusable.
+- **Tab + sub-tab landmarks.** The top-level `<nav class="top-tab-nav">`
+  is labeled `aria-label="Sections"`; each `.sub-tab-nav` carries its own
+  `aria-label` ("Infrastructure sub-sections", etc.). The active top-tab
+  and active sub-tab buttons advertise selection via `aria-current="page"`,
+  toggled by `renderActiveTab()` and `applySubTabDom()` in `script.ts`.
+- **Roving keyboard nav.** `wireRovingTablistKeys()` in `script.ts` adds
+  Left/Right/Home/End focus movement across both `.top-tab-nav` and
+  `.sub-tab-nav` button groups. Activation remains the native button
+  behavior (Enter / Space).
+- **Busy / disabled semantics.** Long-running buttons set `disabled`,
+  `class="is-busy"`, and `aria-busy="true"` for the duration of the task
+  (see `runWithBusy` in `script.ts`). The CSS busy/disabled style applies
+  to both `:disabled` and `[aria-busy="true"]` / `[aria-disabled="true"]`
+  so any control announcing busy state via ARIA renders consistently.
+- **Icon-only buttons.** Header buttons whose label is just an icon
+  (`⚙`, `⟳ Restart`) carry an `aria-label` that matches the existing
+  `title`. New icon-only buttons must do the same.
+- **Action toolbars.** Groups of related action buttons (header actions,
+  overview actions) are wrapped with `role="toolbar"` and an
+  `aria-label`.
+- **Responsive layout.** `head.ts` ships two breakpoints:
+  - `@media (max-width: 980px)` — collapses the editor / aside split,
+    converts the top tabs to a horizontally scrollable strip, and
+    collapses the overview cards to a single column.
+  - `@media (max-width: 640px)` — tightens header chrome and panel
+    padding, allows action toolbars to wrap full-width, collapses the
+    `.row` / `.metric-grid` / wizard grids to one column, and lets the
+    sub-tab nav scroll horizontally rather than wrap mid-label.
+
+### Known accessibility limitations (deferred)
+
+- The top-tab and sub-tab nav use `<button>` elements with
+  `aria-current="page"` rather than the full ARIA `tablist` /
+  `tab` / `tabpanel` pattern. The roving keyboard handler covers
+  Left/Right/Home/End movement but does not implement automatic
+  activation on focus, and there are no `aria-controls` /
+  `aria-labelledby` cross-links between buttons and panels. Operators
+  who need this pattern can still reach every panel via Tab + Enter.
+- The action dock at the bottom-right uses `aria-live="polite"` for the
+  current-action announcement but does not yet expose a focus trap or
+  dismiss affordance for screen-reader users on small viewports.
+- The wizard `<dialog>` surfaces rely on the native `<dialog>` element
+  for focus management; explicit focus-trap fallbacks for browsers
+  without `<dialog>` support are not provided.
+
+These are intentionally deferred — the surfaces remain operable with the
+current treatment, but a follow-up pass can layer the full `tablist` ARIA
+semantics on top of the current shell without further structural change.

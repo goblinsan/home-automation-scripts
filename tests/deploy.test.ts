@@ -238,7 +238,7 @@ test('smokeTestWithRetry tolerates startup delays', async (t) => {
   });
 
   const listenResult = await new Promise<'ok' | NodeJS.ErrnoException>((resolve) => {
-    server.listen(0, '127.0.0.1', () => resolve());
+    server.listen(0, '127.0.0.1', () => resolve('ok'));
     server.on('error', (error) => resolve(error));
   });
 

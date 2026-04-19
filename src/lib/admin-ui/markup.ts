@@ -21,6 +21,7 @@
  *     can stream progress into it.
  */
 export const ADMIN_MARKUP: string = `<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header>
     <div class="header-shell">
       <div class="header-row">
@@ -28,15 +29,15 @@ export const ADMIN_MARKUP: string = `<body>
           <h1>Gateway Control Plane</h1>
           <p>Operations-first console — Workloads, Secrets, Nodes, and Monitoring as composed pages.</p>
         </div>
-        <div class="header-actions">
+        <div class="header-actions" role="toolbar" aria-label="Global actions">
           <button id="refreshButton">Refresh</button>
-          <button id="restartButton" title="Restart control-plane container">⟳ Restart</button>
-          <button id="rawJsonButton" title="Edit raw config JSON">⚙</button>
+          <button id="restartButton" title="Restart control-plane container" aria-label="Restart control-plane container">⟳ Restart</button>
+          <button id="rawJsonButton" title="Edit raw config JSON" aria-label="Edit raw config JSON">⚙</button>
           <button id="saveButton" class="primary">Save</button>
         </div>
       </div>
       <nav class="top-tab-nav" aria-label="Sections">
-        <button class="tab-button active" data-nav-id="overview" data-tab="overview">Overview</button>
+        <button class="tab-button active" aria-current="page" data-nav-id="overview" data-tab="overview">Overview</button>
         <button class="tab-button" data-nav-id="bootstrap" data-tab="infra" data-sub-tab="infra-gateway">Bootstrap</button>
         <button class="tab-button" data-nav-id="nodes" data-tab="infra" data-sub-tab="infra-nodes">Nodes</button>
         <button class="tab-button" data-nav-id="workloads" data-tab="workloads" data-sub-tab="wl-remote">Workloads</button>
@@ -45,7 +46,7 @@ export const ADMIN_MARKUP: string = `<body>
       </nav>
     </div>
   </header>
-  <main>
+  <main id="main-content" tabindex="-1">
     <section class="panel editor-panel">
       <div class="split-actions">
         <div>
@@ -60,7 +61,7 @@ export const ADMIN_MARKUP: string = `<body>
             <h2>Overview</h2>
             <p>What's healthy, what's degraded, and what needs action — from live runtime and monitoring data.</p>
           </div>
-          <div class="header-actions">
+          <div class="header-actions" role="toolbar" aria-label="Overview actions">
             <button id="overviewRefreshButton">Refresh</button>
             <button id="overviewRunCheckButton" class="overview-link-btn">Run Health Check</button>
           </div>
@@ -98,8 +99,8 @@ export const ADMIN_MARKUP: string = `<body>
 
       <!-- ═══ INFRASTRUCTURE TAB ═══ -->
       <div class="tab-panel" data-tab-panel="infra" hidden>
-      <nav class="sub-tab-nav" data-sub-group="infra">
-        <button class="sub-tab-button active" data-sub-tab="infra-gateway">Gateway</button>
+      <nav class="sub-tab-nav" data-sub-group="infra" aria-label="Infrastructure sub-sections">
+        <button class="sub-tab-button active" aria-current="page" data-sub-tab="infra-gateway">Gateway</button>
         <button class="sub-tab-button" data-sub-tab="infra-nodes">Nodes</button>
       </nav>
 
@@ -293,8 +294,8 @@ export const ADMIN_MARKUP: string = `<body>
 
       <!-- ═══ SERVICES TAB ═══ -->
       <div class="tab-panel" data-tab-panel="services" hidden>
-      <nav class="sub-tab-nav" data-sub-group="services">
-        <button class="sub-tab-button active" data-sub-tab="svc-agents">Agents</button>
+      <nav class="sub-tab-nav" data-sub-group="services" aria-label="Services sub-sections">
+        <button class="sub-tab-button active" aria-current="page" data-sub-tab="svc-agents">Agents</button>
         <button class="sub-tab-button" data-sub-tab="svc-workflows">Workflows</button>
         <button class="sub-tab-button" data-sub-tab="svc-deploys">Deploys</button>
         <button class="sub-tab-button" data-sub-tab="svc-profiles">Profiles</button>
@@ -865,8 +866,8 @@ export const ADMIN_MARKUP: string = `<body>
 
       <!-- ═══ MONITORING TAB ═══ -->
       <div class="tab-panel" data-tab-panel="monitoring" hidden>
-      <nav class="sub-tab-nav" data-sub-group="monitoring">
-        <button class="sub-tab-button active" data-sub-tab="mon-health">Health</button>
+      <nav class="sub-tab-nav" data-sub-group="monitoring" aria-label="Monitoring sub-sections">
+        <button class="sub-tab-button active" aria-current="page" data-sub-tab="mon-health">Health</button>
         <button class="sub-tab-button" data-sub-tab="mon-benchmarks">Benchmarks</button>
         <button class="sub-tab-button" data-sub-tab="mon-settings">Monitoring Settings</button>
       </nav>
@@ -974,8 +975,8 @@ export const ADMIN_MARKUP: string = `<body>
 
       <!-- ═══ WORKLOADS TAB (composed page — remote workloads, bedrock, managed apps, workflows, agents, profiles, features) ═══ -->
       <div class="tab-panel" data-tab-panel="workloads" hidden>
-        <nav class="sub-tab-nav" data-sub-group="workloads">
-          <button class="sub-tab-button active" data-sub-tab="wl-remote">Remote Workloads</button>
+        <nav class="sub-tab-nav" data-sub-group="workloads" aria-label="Workloads sub-sections">
+          <button class="sub-tab-button active" aria-current="page" data-sub-tab="wl-remote">Remote Workloads</button>
           <button class="sub-tab-button" data-sub-tab="infra-minecraft">Bedrock</button>
           <button class="sub-tab-button" data-sub-tab="svc-deploys">Managed Apps</button>
           <button class="sub-tab-button" data-sub-tab="svc-workflows">Workflows &amp; Jobs</button>

@@ -484,7 +484,13 @@ export function renderAdminScript(options: AdminScriptOptions): string {
       });
       const activeNavId = findActiveNavId();
       document.querySelectorAll('.top-tab-nav .tab-button').forEach((button) => {
-        button.classList.toggle('active', button.dataset.navId === activeNavId);
+        const isActive = button.dataset.navId === activeNavId;
+        button.classList.toggle('active', isActive);
+        if (isActive) {
+          button.setAttribute('aria-current', 'page');
+        } else {
+          button.removeAttribute('aria-current');
+        }
       });
     }
 
@@ -499,7 +505,13 @@ export function renderAdminScript(options: AdminScriptOptions): string {
         panel.classList.toggle('active', panel.dataset.subTabPanel === subTabId);
       });
       group.querySelectorAll('.sub-tab-button').forEach((btn) => {
-        btn.classList.toggle('active', btn.dataset.subTab === subTabId);
+        const isActive = btn.dataset.subTab === subTabId;
+        btn.classList.toggle('active', isActive);
+        if (isActive) {
+          btn.setAttribute('aria-current', 'page');
+        } else {
+          btn.removeAttribute('aria-current');
+        }
       });
       state.activeSubTabs[groupName] = subTabId;
     }
@@ -4768,6 +4780,34 @@ export function renderAdminScript(options: AdminScriptOptions): string {
         await loadTabData(state.activeTab);
       });
     });
+
+    // Keyboard nav across top-tab and sub-tab buttons: ArrowLeft/ArrowRight
+    // move focus, Home/End jump to ends. Activation is left to Enter/Space
+    // (the buttons' native behavior).
+    function wireRovingTablistKeys(selector) {
+      document.querySelectorAll(selector).forEach((nav) => {
+        nav.addEventListener('keydown', (event) => {
+          const key = event.key;
+          if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Home' && key !== 'End') {
+            return;
+          }
+          const buttons = Array.from(nav.querySelectorAll('button')).filter((b) => !b.disabled);
+          if (buttons.length === 0) return;
+          const currentIndex = buttons.indexOf(document.activeElement);
+          let nextIndex = currentIndex;
+          if (key === 'ArrowLeft') nextIndex = currentIndex <= 0 ? buttons.length - 1 : currentIndex - 1;
+          else if (key === 'ArrowRight') nextIndex = currentIndex === -1 || currentIndex === buttons.length - 1 ? 0 : currentIndex + 1;
+          else if (key === 'Home') nextIndex = 0;
+          else if (key === 'End') nextIndex = buttons.length - 1;
+          if (nextIndex !== currentIndex) {
+            event.preventDefault();
+            buttons[nextIndex].focus();
+          }
+        });
+      });
+    }
+    wireRovingTablistKeys('.top-tab-nav');
+    wireRovingTablistKeys('.sub-tab-nav');
 
     document.querySelectorAll('.sub-tab-nav .sub-tab-button').forEach((button) => {
       button.addEventListener('click', () => {
