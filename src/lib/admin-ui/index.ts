@@ -7,16 +7,31 @@
  *
  * Module boundary map:
  *
- *   ./head.ts    — `<!doctype html>` + `<head>` + stylesheet
- *   ./markup.ts  — static `<body>` scaffolding (tabs, page containers,
- *                  action-output surface)
- *   ./script.ts  — client-side `<script>` block (state, navigation,
- *                  lazy loading, page/domain renderers)
+ *   ./head.ts       — `<!doctype html>` + `<head>` + stylesheet
+ *   ./markup.ts     — static `<body>` scaffolding (tabs, page containers,
+ *                     action-output surface)
+ *   ./script.ts     — thin compositor: assembles the sub-modules below into
+ *                     the inline `<script>` block
+ *   ./script/
+ *     state.ts      — state initialization + localStorage helpers
+ *     helpers.ts    — shared utilities (isStale, action feed, telemetry, …)
+ *     shell.ts      — navigation shell (tab activation, sub-tab logic)
+ *     config-form.ts— config form ↔ state sync helpers
+ *     services.ts   — services/profiles renderers
+ *     monitoring.ts — monitoring fetch + render
+ *     overview.ts   — overview, apps, jobs renderers
+ *     secrets.ts    — secrets, pi proxy, features renderers
+ *     workloads.ts  — nodes, workloads, bedrock renderers
+ *     bootstrap.ts  — gateway renderer, global render(), fetchConfig()
+ *     data.ts       — data fetch/load orchestration + utility helpers
+ *     init.ts       — keyboard nav wiring, event listeners, initialization
  *
  * Adding a new page should follow this pattern: extend `markup.ts` with the
- * page container, extend `script.ts` with the page renderer and its lazy-load
- * entry in `state.dataLoaded`, and keep this file untouched. Contributors
- * **must not** reintroduce page-specific HTML or JavaScript into the parent
+ * page container, add the page renderer to the appropriate `script/` module
+ * (or create a new sibling), wire its lazy-load key and fetch-on-activation
+ * in `script/data.ts`, and add the module export to the compositor in
+ * `script.ts`. Keep this file untouched. Contributors **must not**
+ * reintroduce page-specific HTML or JavaScript into the parent
  * `admin-ui.ts` server module — that module is reserved for HTTP handlers
  * and server-side orchestration.
  */
