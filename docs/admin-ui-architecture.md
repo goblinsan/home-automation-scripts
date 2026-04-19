@@ -15,7 +15,20 @@ src/lib/
     index.ts               # renderAdminPage() — composes the SPA document
     head.ts                # <!doctype html>, <head>, inline stylesheet
     markup.ts              # static <body> scaffolding (tabs, page containers)
-    script.ts              # inline <script> block (state + renderers)
+    script.ts              # thin compositor — assembles sub-modules into <script>
+    script/
+      state.ts             # state initialization + localStorage helpers
+      helpers.ts           # shared utilities (isStale, basePath, action feed, etc.)
+      shell.ts             # navigation shell (tab activation, sub-tab logic)
+      config-form.ts       # config form ↔ state sync helpers
+      services.ts          # services/profiles renderers
+      monitoring.ts        # monitoring fetch + render
+      overview.ts          # overview, apps, jobs renderers
+      secrets.ts           # secrets, pi proxy, features renderers
+      workloads.ts         # nodes, workloads, bedrock renderers
+      bootstrap.ts         # gateway renderer, global render(), fetchConfig()
+      data.ts              # data fetch/load orchestration + utility helpers
+      init.ts              # keyboard nav wiring, event listeners, initialization
 ```
 
 - **`admin-ui.ts`** owns the Node HTTP server, admin API endpoints, config
@@ -35,22 +48,44 @@ src/lib/
   page. The markup is a plain string constant with zero template
   interpolation — dynamic content is injected at runtime by the script
   module.
-- **`admin-ui/script.ts`** owns the client-side runtime: the shared `state`
-  object, the navigation/lazy-loading shell, and all page/domain renderers
-  (Overview, Bootstrap, Nodes, Workloads, Monitoring, Secrets, chat/TTS/KULRS
-  status, Minecraft status, action feed, etc.). The only value injected from
-  the server is `defaultWorkflowSeedPath`.
+- **`admin-ui/script.ts`** is now a thin 59-line compositor. It imports the
+  twelve `script/` sub-modules and concatenates their string outputs into the
+  final `<script>` block. The only value injected from the server is
+  `defaultWorkflowSeedPath`, which flows through `renderScriptState()`.
+- **`admin-ui/script/` sub-modules** each own a page- or domain-scoped slice
+  of the browser runtime. See the table below for each module's
+  responsibilities.
 
 ## Ownership of each page/domain renderer
 
-Every page container in `markup.ts` has a corresponding renderer in
-`script.ts` that hydrates it from `state`. New pages should:
+Every page container in `markup.ts` has a corresponding renderer in one of
+the `script/` sub-modules. The table below maps each sub-module to its
+browser-runtime responsibilities:
+
+| Module | Owner of |
+|--------|----------|
+| `script/state.ts` | `state` initialization defaults, localStorage helpers |
+| `script/helpers.ts` | `isStale`, `markLoaded`, base path, action feed, `setStatus`, busy button, deploy telemetry, `joinBase`, `syncRawJson` |
+| `script/shell.ts` | `NAV_OWNERSHIP`, Workloads/Secrets page composition, `renderActiveTab`, `applySubTabDom`, `switchSubTab` |
+| `script/config-form.ts` | `updateGatewayField`, environment list renderers, workflow/agent/provider helpers, form↔config sync utilities |
+| `script/services.ts` | `renderGatewayApiProfile`, `renderGatewayApiJobRuntimeProfile`, `renderKulrsActivityProfile`, `renderGatewayChatPlatformProfile`, `renderWorkflows`, `renderJobCatalog`, `renderAutomation` |
+| `script/monitoring.ts` | `fetchHealthSnapshot`, `fetchBenchmarkRuns`, `renderMonitorDashboard`, `renderHealthTargets`, `renderBenchmarkRuns`, `renderRuntime` |
+| `script/overview.ts` | `renderOverview`, `renderApps`, `renderJobs` |
+| `script/secrets.ts` | `renderPiProxyProfile`, `renderSecrets`, `renderGatewayApiSecretsChannels`, `renderKulrsSecrets`, `renderFeatures` |
+| `script/workloads.ts` | Worker node helpers, workload factory helpers, `renderWorkerNodes`, `renderRemoteWorkloads`, `renderRemoteServicesOverview`, `renderBedrockServers` |
+| `script/bootstrap.ts` | `renderGateway`, `render()` (global render pass), `fetchConfig()` |
+| `script/data.ts` | `loadTabData`, `loadSubTabData`, all `fetch*` functions, `requestJson`, container/service status helpers, `persistConfigState`, `syncConfiguredAgents` |
+| `script/init.ts` | `wireRovingTablistKeys`, `showNewBenchmarkModal`, all DOM event listeners, initial `fetchConfig()` call, background `setInterval` refresh loops |
+
+New pages should:
 
 1. Add a tab button (with `data-tab="…"`) and a `<section>` container in
    `markup.ts`.
-2. Add the page renderer, its lazy-load key in `state.dataLoaded`, and its
-   fetch-on-activation entry in `script.ts`.
-3. Add the backend endpoint and proxy (if any) in `admin-ui.ts`.
+2. Add the page renderer to the appropriate existing `script/` module (or
+   create a new one), its lazy-load key in `state.dataLoaded`, and its
+   fetch-on-activation entry in `script/data.ts`.
+3. Add the module's string export to the compositor in `script.ts`.
+4. Add the backend endpoint and proxy (if any) in `admin-ui.ts`.
 
 Contributors **must not** reintroduce page-specific HTML or JS into
 `admin-ui.ts` — that would undo the seam this refactor established.
@@ -176,21 +211,26 @@ composition, and the "no duplicate structural tags" assertion.
 
 ## Why this split, and what's next
 
-The first modularization pass establishes stable seams — head, markup, and
-script — without changing behavior. Follow-up passes can safely:
+The first modularization pass established stable seams — head, markup, and
+script — without changing behavior. The second pass completed the split of
+the client runtime into twelve focused modules organized by page and domain.
 
-- Split `markup.ts` into per-page fragments (overview, bootstrap, nodes,
-  workloads, monitoring, secrets, …) that are concatenated by `index.ts`.
-- Split `script.ts` by page/domain module using the same pattern, with
-  shared helpers (action surface, data loading, form/state sync) extracted
-  first and the page renderers layered on top.
+Future contributors can safely:
+
+- Split large modules further if they grow beyond a manageable size (the
+  current largest is `init.ts` at ~2000 lines covering event wiring; it
+  could be split into per-page event modules).
 - Replace broad global render passes with page-scoped renderers that read
-  only their slice of `state`.
+  only their slice of `state`, updating `script/bootstrap.ts`'s `render()`
+  call-list as each renderer becomes self-sufficient.
+- Introduce a barrel `script/index.ts` if you need to re-export sub-module
+  symbols for testing, but keep the compositor in `script.ts`.
 
 Future contributors should prefer extending the module structure over
 growing any one file. If you find yourself tempted to add a large block of
 HTML or JS back into `admin-ui.ts`, stop and add a module under
-`src/lib/admin-ui/` instead.
+`src/lib/admin-ui/` instead. If a `script/` sub-module grows large, extract
+a sibling rather than appending.
 
 ## Accessibility & responsive conventions
 
