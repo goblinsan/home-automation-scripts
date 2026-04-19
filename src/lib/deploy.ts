@@ -331,7 +331,11 @@ function httpGet(url: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const requestImpl = url.startsWith('https://') ? httpsRequest : httpRequest;
     const request = requestImpl(url, { method: 'GET', timeout: 5_000 }, (response) => {
-      resolve(response.statusCode ?? 0);
+      const statusCode = response.statusCode ?? 0;
+      response.on('error', reject);
+      // Drain the response so the underlying socket can close cleanly.
+      response.resume();
+      response.on('end', () => resolve(statusCode));
     });
     request.on('error', reject);
     request.on('timeout', () => request.destroy(new Error(`Timed out: ${url}`)));
