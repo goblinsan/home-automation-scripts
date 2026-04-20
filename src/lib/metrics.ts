@@ -49,6 +49,71 @@ export interface BenchmarkResult {
   unit: string;
 }
 
+export interface ProjectTrackingMilestoneInput {
+  id?: string;
+  title: string;
+  status?: string;
+  targetDate?: string | null;
+  sortOrder?: number;
+  notes?: string;
+}
+
+export interface ProjectTrackingUpdateInput {
+  source?: string;
+  kind?: string;
+  summary: string;
+  details?: Record<string, unknown> | null;
+  createdAt?: string | null;
+}
+
+export interface ProjectTrackingProjectUpsert {
+  projectId: string;
+  name: string;
+  status?: string;
+  priority?: string;
+  summary?: string;
+  nextAction?: string;
+  notesRepoPath?: string;
+  planFilePath?: string;
+  metadata?: Record<string, unknown> | null;
+  lastCheckInAt?: string | null;
+  milestones?: ProjectTrackingMilestoneInput[];
+  update?: ProjectTrackingUpdateInput;
+}
+
+export interface ProjectTrackingProjectOverview {
+  projectId: string;
+  name: string;
+  status: string;
+  priority: string;
+  summary: string;
+  nextAction: string;
+  notesRepoPath: string | null;
+  planFilePath: string | null;
+  metadata: Record<string, unknown> | null;
+  lastCheckInAt: string | null;
+  updatedAt: string;
+  latestUpdateSummary: string | null;
+  latestUpdateAt: string | null;
+  totalMilestones: number;
+  completedMilestones: number;
+  overdueMilestones: number;
+  dueSoonMilestones: number;
+  isStale: boolean;
+}
+
+export interface ProjectTrackingOverview {
+  projects: ProjectTrackingProjectOverview[];
+  generatedAt: string;
+  totals: {
+    activeProjects: number;
+    atRiskProjects: number;
+    staleProjects: number;
+    dueSoonMilestones: number;
+  };
+  clipboardSummary: string;
+}
+
 export interface HealthSnapshot {
   targets: HealthTarget[];
   collectedAt: string;
@@ -72,6 +137,93 @@ let redis: Redis | null = null;
 let collectorTimer: ReturnType<typeof setInterval> | null = null;
 
 const REDIS_HEALTH_KEY = 'gw:health:snapshot';
+
+function normalizeProjectToken(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'item';
+}
+
+function priorityWeight(priority: string): number {
+  switch (priority) {
+    case 'critical': return 4;
+    case 'high': return 3;
+    case 'medium': return 2;
+    case 'low': return 1;
+    default: return 0;
+  }
+}
+
+function isDoneProjectStatus(status: string): boolean {
+  return ['done', 'completed', 'archived', 'cancelled'].includes(status);
+}
+
+function isDoneMilestoneStatus(status: string): boolean {
+  return ['done', 'complete', 'completed'].includes(status);
+}
+
+function isAtRiskProject(project: Pick<ProjectTrackingProjectOverview, 'status' | 'overdueMilestones'>): boolean {
+  return ['at-risk', 'blocked'].includes(project.status) || project.overdueMilestones > 0;
+}
+
+export function createEmptyProjectTrackingOverview(): ProjectTrackingOverview {
+  return {
+    projects: [],
+    generatedAt: new Date().toISOString(),
+    totals: {
+      activeProjects: 0,
+      atRiskProjects: 0,
+      staleProjects: 0,
+      dueSoonMilestones: 0,
+    },
+    clipboardSummary: 'No tracked projects yet.',
+  };
+}
+
+function buildProjectTrackingClipboardSummary(overview: ProjectTrackingOverview): string {
+  if (overview.projects.length === 0) {
+    return 'No tracked projects yet.';
+  }
+
+  const lines = [
+    `Generated: ${overview.generatedAt}`,
+    `Active projects: ${overview.totals.activeProjects}`,
+    `At risk: ${overview.totals.atRiskProjects}`,
+    `Stale: ${overview.totals.staleProjects}`,
+    `Milestones due soon: ${overview.totals.dueSoonMilestones}`,
+    '',
+  ];
+
+  for (const project of overview.projects) {
+    lines.push(`## ${project.name} [${project.status} / ${project.priority}]`);
+    if (project.summary) {
+      lines.push(`Summary: ${project.summary}`);
+    }
+    if (project.nextAction) {
+      lines.push(`Next action: ${project.nextAction}`);
+    }
+    lines.push(
+      `Milestones: ${project.completedMilestones}/${project.totalMilestones} complete; ${project.overdueMilestones} overdue; ${project.dueSoonMilestones} due soon`
+    );
+    if (project.latestUpdateSummary) {
+      lines.push(`Latest update: ${project.latestUpdateSummary}`);
+    }
+    if (project.lastCheckInAt) {
+      lines.push(`Last check-in: ${project.lastCheckInAt}`);
+    }
+    if (project.notesRepoPath) {
+      lines.push(`Notes repo: ${project.notesRepoPath}`);
+    }
+    if (project.planFilePath) {
+      lines.push(`Plan file: ${project.planFilePath}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n').trim();
+}
 
 export function getPool(): pg.Pool {
   if (!pool) throw new Error('Metrics Postgres pool not initialized');
@@ -124,7 +276,7 @@ export async function shutdownMetrics(): Promise<void> {
 
 // ── Migration runner ───────────────────────────────────────────────────────
 
-const MIGRATIONS_DIR = resolve(import.meta.dirname ?? '.', '../../migration/metrics');
+const MIGRATIONS_DIR = resolve(import.meta.dirname ?? '.', '../../db/migrations');
 
 export async function runMigrations(): Promise<void> {
   const db = getPool();
@@ -394,6 +546,200 @@ export async function getBenchmarkRuns(suiteId?: string, limit: number = 50): Pr
 export async function deleteBenchmarkRun(runId: number): Promise<void> {
   const db = getPool();
   await db.query(`DELETE FROM benchmark_runs WHERE id = $1`, [runId]);
+}
+
+export async function upsertProjectTrackingProject(input: ProjectTrackingProjectUpsert): Promise<void> {
+  const db = getPool();
+  const client = await db.connect();
+  const milestones = Array.isArray(input.milestones) ? input.milestones : [];
+
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO tracked_projects (
+         project_id, name, status, priority, summary, next_action,
+         notes_repo_path, plan_file_path, metadata, last_check_in_at, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+       ON CONFLICT (project_id) DO UPDATE
+       SET name = EXCLUDED.name,
+           status = EXCLUDED.status,
+           priority = EXCLUDED.priority,
+           summary = EXCLUDED.summary,
+           next_action = EXCLUDED.next_action,
+           notes_repo_path = EXCLUDED.notes_repo_path,
+           plan_file_path = EXCLUDED.plan_file_path,
+           metadata = EXCLUDED.metadata,
+           last_check_in_at = EXCLUDED.last_check_in_at,
+           updated_at = now()`,
+      [
+        input.projectId,
+        input.name,
+        input.status ?? 'on-track',
+        input.priority ?? 'medium',
+        input.summary ?? '',
+        input.nextAction ?? '',
+        input.notesRepoPath ?? null,
+        input.planFilePath ?? null,
+        input.metadata ? JSON.stringify(input.metadata) : null,
+        input.lastCheckInAt ?? null,
+      ]
+    );
+
+    if (input.milestones !== undefined) {
+      await client.query('DELETE FROM project_milestones WHERE project_id = $1', [input.projectId]);
+      for (let index = 0; index < milestones.length; index += 1) {
+        const milestone = milestones[index];
+        const milestoneId = (milestone.id?.trim() || `${normalizeProjectToken(milestone.title)}-${index + 1}`);
+        await client.query(
+          `INSERT INTO project_milestones (
+             project_id, milestone_id, title, status, target_date, sort_order, notes, updated_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
+          [
+            input.projectId,
+            milestoneId,
+            milestone.title,
+            milestone.status ?? 'pending',
+            milestone.targetDate ?? null,
+            milestone.sortOrder ?? index,
+            milestone.notes ?? '',
+          ]
+        );
+      }
+    }
+
+    if (input.update?.summary) {
+      await client.query(
+        `INSERT INTO project_updates (project_id, source, kind, summary, details, created_at)
+         VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, now()))`,
+        [
+          input.projectId,
+          input.update.source ?? 'manual',
+          input.update.kind ?? 'status-update',
+          input.update.summary,
+          input.update.details ? JSON.stringify(input.update.details) : null,
+          input.update.createdAt ?? null,
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getProjectTrackingOverview(limit: number = 12, staleAfterHours: number = 72): Promise<ProjectTrackingOverview> {
+  const db = getPool();
+  const { rows } = await db.query(
+    `SELECT
+       p.project_id,
+       p.name,
+       p.status,
+       p.priority,
+       p.summary,
+       p.next_action,
+       p.notes_repo_path,
+       p.plan_file_path,
+       p.metadata::text,
+       p.last_check_in_at::text,
+       p.updated_at::text,
+       COALESCE(m.total_milestones, 0) AS total_milestones,
+       COALESCE(m.completed_milestones, 0) AS completed_milestones,
+       COALESCE(m.overdue_milestones, 0) AS overdue_milestones,
+       COALESCE(m.due_soon_milestones, 0) AS due_soon_milestones,
+       u.summary AS latest_update_summary,
+       u.created_at::text AS latest_update_at
+     FROM tracked_projects p
+     LEFT JOIN (
+       SELECT
+         project_id,
+         count(*) AS total_milestones,
+         count(*) FILTER (WHERE lower(status) IN ('done', 'complete', 'completed')) AS completed_milestones,
+         count(*) FILTER (
+           WHERE target_date IS NOT NULL
+             AND target_date < CURRENT_DATE
+             AND lower(status) NOT IN ('done', 'complete', 'completed')
+         ) AS overdue_milestones,
+         count(*) FILTER (
+           WHERE target_date IS NOT NULL
+             AND target_date >= CURRENT_DATE
+             AND target_date <= CURRENT_DATE + 7
+             AND lower(status) NOT IN ('done', 'complete', 'completed')
+         ) AS due_soon_milestones
+       FROM project_milestones
+       GROUP BY project_id
+     ) m ON m.project_id = p.project_id
+     LEFT JOIN LATERAL (
+       SELECT summary, created_at
+       FROM project_updates u
+       WHERE u.project_id = p.project_id
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1
+     ) u ON true
+     ORDER BY
+       CASE lower(p.priority)
+         WHEN 'critical' THEN 4
+         WHEN 'high' THEN 3
+         WHEN 'medium' THEN 2
+         WHEN 'low' THEN 1
+         ELSE 0
+       END DESC,
+       p.updated_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+
+  const cutoffMs = Date.now() - (staleAfterHours * 60 * 60 * 1000);
+  const projects = rows.map((row) => {
+    const lastActivity = row.last_check_in_at || row.latest_update_at || row.updated_at;
+    const lastActivityMs = lastActivity ? Date.parse(lastActivity) : Number.NaN;
+    const project: ProjectTrackingProjectOverview = {
+      projectId: row.project_id,
+      name: row.name,
+      status: String(row.status || 'unknown').toLowerCase(),
+      priority: String(row.priority || 'medium').toLowerCase(),
+      summary: row.summary || '',
+      nextAction: row.next_action || '',
+      notesRepoPath: row.notes_repo_path || null,
+      planFilePath: row.plan_file_path || null,
+      metadata: row.metadata ? JSON.parse(row.metadata) : null,
+      lastCheckInAt: row.last_check_in_at || null,
+      updatedAt: row.updated_at,
+      latestUpdateSummary: row.latest_update_summary || null,
+      latestUpdateAt: row.latest_update_at || null,
+      totalMilestones: Number(row.total_milestones || 0),
+      completedMilestones: Number(row.completed_milestones || 0),
+      overdueMilestones: Number(row.overdue_milestones || 0),
+      dueSoonMilestones: Number(row.due_soon_milestones || 0),
+      isStale: Number.isNaN(lastActivityMs) ? false : lastActivityMs < cutoffMs,
+    };
+    return project;
+  }).sort((a, b) => {
+    const priorityDelta = priorityWeight(b.priority) - priorityWeight(a.priority);
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
+    return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+  });
+
+  const overview: ProjectTrackingOverview = {
+    projects,
+    generatedAt: new Date().toISOString(),
+    totals: {
+      activeProjects: projects.filter((project) => !isDoneProjectStatus(project.status)).length,
+      atRiskProjects: projects.filter(isAtRiskProject).length,
+      staleProjects: projects.filter((project) => project.isStale).length,
+      dueSoonMilestones: projects.reduce((sum, project) => sum + project.dueSoonMilestones, 0),
+    },
+    clipboardSummary: '',
+  };
+  overview.clipboardSummary = buildProjectTrackingClipboardSummary(overview);
+  return overview;
 }
 
 export async function compareBenchmarkRuns(runIds: number[]): Promise<{

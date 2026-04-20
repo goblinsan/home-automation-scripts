@@ -44,6 +44,8 @@ test('ADMIN_MARKUP exposes the tab shell and shared action surface', () => {
   assert.ok(ADMIN_MARKUP.includes('data-tab="monitoring"'), 'monitoring tab button present');
   assert.ok(ADMIN_MARKUP.includes('id="actionFeed"'), 'shared action feed surface present');
   assert.ok(ADMIN_MARKUP.includes('id="currentAction"'), 'current action surface present');
+  assert.ok(ADMIN_MARKUP.includes('id="overviewProjectList"'), 'overview project tracking list present');
+  assert.ok(ADMIN_MARKUP.includes('id="overviewProjectSummaryText"'), 'overview project summary surface present');
 });
 
 test('ADMIN_MARKUP exposes accessibility hooks for keyboard + screen reader operators', () => {
@@ -93,6 +95,7 @@ test('renderAdminScript preserves critical state invariants', () => {
   assert.ok(script.includes('activeSubTabs'), 'activeSubTabs key present');
   assert.ok(script.includes('dataLoaded'), 'dataLoaded key present');
   assert.ok(script.includes('subTabLoading'), 'subTabLoading key present');
+  assert.ok(script.includes('projectTrackingOverview'), 'project tracking overview state key present');
 
   // Server-side seed path is injected rather than hard-coded.
   assert.ok(
@@ -104,6 +107,7 @@ test('renderAdminScript preserves critical state invariants', () => {
   // guards apply only to health snapshot (via overview) and per-sub-tab data.
   assert.ok(script.includes('fetchRuntime()'), 'fetchRuntime unconditional call present');
   assert.ok(script.includes('isStale('), 'isStale staleness guard present for sub-tab data');
+  assert.ok(script.includes('/api/project-tracking/overview'), 'project tracking overview fetch present');
 });
 
 test('renderAdminPage composes head + markup + script into a full document', () => {

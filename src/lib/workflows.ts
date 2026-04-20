@@ -41,7 +41,7 @@ export interface WorkflowImportResult {
   operations: WorkflowImportOperation[];
 }
 
-export const DEFAULT_WORKFLOW_SEED_PATH = 'migration/openclaw/gateway-api-workflows.json';
+export const DEFAULT_WORKFLOW_SEED_PATH = 'examples/workflows/empty-workflows.json';
 
 function normalizeBaseUrl(url: string): string {
   return url.endsWith('/') ? url.slice(0, -1) : url;

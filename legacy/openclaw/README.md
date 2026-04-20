@@ -1,7 +1,9 @@
-# OpenClaw Migration
+# Legacy OpenClaw Reference
 
-This directory captures the first migration pass from the old OpenClaw setup
-into the `gateway-control-plane` model.
+This directory is retained as historical reference only.
+
+It is not a supported source of truth for the current `gateway-control-plane`
+implementation, and nothing in the active runtime should depend on it.
 
 ## Bruvie-D
 
@@ -52,7 +54,7 @@ Once `gateway-api` is running and reachable:
 ```bash
 deploy/bin/import-workflow-seed.sh \
   --base-url http://127.0.0.1:3000 \
-  --file migration/openclaw/gateway-api-workflows.json
+  --file legacy/openclaw/gateway-api-workflows.json
 ```
 
 The import is idempotent by workflow name:

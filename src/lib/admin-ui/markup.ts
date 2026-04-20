@@ -88,6 +88,42 @@ export const ADMIN_MARKUP: string = `<body>
         <div class="overview-section-title">Runtime Snapshot</div>
         <div class="overview-runtime" id="overviewRuntimeMetrics"></div>
 
+        <div class="overview-section-title">Project Tracking</div>
+        <div class="overview-grid" id="overviewProjectSummaryCards">
+          <div class="overview-card is-healthy">
+            <div class="overview-count" data-project-overview-count="active">—</div>
+            <div class="overview-label">Active Projects</div>
+            <div class="overview-detail" data-project-overview-detail="active">Loading project snapshot…</div>
+          </div>
+          <div class="overview-card is-degraded">
+            <div class="overview-count" data-project-overview-count="risk">—</div>
+            <div class="overview-label">At Risk</div>
+            <div class="overview-detail" data-project-overview-detail="risk">Loading project snapshot…</div>
+          </div>
+          <div class="overview-card is-action">
+            <div class="overview-count" data-project-overview-count="stale">—</div>
+            <div class="overview-label">Needs Update</div>
+            <div class="overview-detail" data-project-overview-detail="stale">Loading project snapshot…</div>
+          </div>
+        </div>
+
+        <div class="overview-target-list" id="overviewProjectList">
+          <div class="overview-empty">No tracked projects yet.</div>
+        </div>
+
+        <div class="overview-project-summary-card">
+          <div class="split-actions" style="margin:0 0 .75rem">
+            <div>
+              <strong>Shareable Summary</strong>
+              <p class="section-note">Copy a compact project digest for external planning help.</p>
+            </div>
+            <div class="toolbar" style="margin-top:0">
+              <button id="overviewCopyProjectSummaryButton" type="button">Copy Summary</button>
+            </div>
+          </div>
+          <pre id="overviewProjectSummaryText" class="overview-project-summary-text">No tracked projects yet.</pre>
+        </div>
+
         <div class="overview-section-title">Needs Action</div>
         <div class="overview-target-list" id="overviewActionList">
           <div class="overview-empty">No health data yet. Click <strong>Run Health Check</strong> to collect the first snapshot.</div>

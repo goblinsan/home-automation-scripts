@@ -1268,12 +1268,68 @@ export function renderAdminHead(basePath: string, faviconDataUri: string): strin
     .overview-target.is-healthy { border-left-color: var(--p26-healthy); }
     .overview-target.is-degraded { border-left-color: var(--p26-degraded); }
     .overview-target.is-down { border-left-color: var(--p26-down); }
+    .overview-target.is-stale { border-left-color: var(--p26-info); }
     .overview-target-meta {
       color: var(--p26-text-muted);
       font-size: 0.85rem;
       display: flex;
       gap: var(--p26-space-3);
       flex-wrap: wrap;
+    }
+    .overview-project-summary-card {
+      margin-top: var(--p26-space-4);
+      border: 1px solid var(--p26-border);
+      background: linear-gradient(180deg, var(--p26-surface) 0%, var(--p26-surface-raised) 100%);
+      border-radius: var(--p26-radius);
+      padding: var(--p26-space-4);
+      box-shadow: var(--p26-shadow);
+    }
+    .overview-project-summary-text {
+      margin: 0;
+      padding: var(--p26-space-4);
+      border-radius: var(--p26-radius);
+      background: #f3f6f3;
+      border: 1px solid var(--p26-border);
+      color: var(--p26-text);
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      max-height: 20rem;
+      overflow-y: auto;
+    }
+    .overview-project-name {
+      display: flex;
+      align-items: center;
+      gap: var(--p26-space-2);
+      flex-wrap: wrap;
+    }
+    .overview-priority-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-family: var(--p26-font-ui);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(82, 121, 111, 0.12);
+      color: var(--p26-accent-strong);
+    }
+    .overview-priority-pill.is-critical {
+      background: rgba(166, 56, 56, 0.14);
+      color: var(--p26-down);
+    }
+    .overview-priority-pill.is-high {
+      background: rgba(184, 134, 11, 0.16);
+      color: #7d5f08;
+    }
+    .overview-project-copy {
+      color: var(--p26-text-muted);
+      font-size: 0.87rem;
+      line-height: 1.45;
+      margin-top: var(--p26-space-2);
     }
     .overview-empty {
       padding: var(--p26-space-5);

@@ -31,9 +31,10 @@ The current first-class managed apps are:
 - `gateway-api`
 - `gateway-chat-platform`
 
-OpenClaw migration assets live in:
+Current examples and legacy references live in:
 
-- `migration/openclaw/`
+- `examples/`
+- `legacy/openclaw/`
 
 The intended stable checkout path on the gateway host is:
 

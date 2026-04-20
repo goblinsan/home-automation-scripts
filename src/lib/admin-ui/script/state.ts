@@ -21,6 +21,7 @@ export function renderScriptState(defaultWorkflowSeedPath: string): string {
       piProxyStatus: null,
       kulrsActivityStatus: null,
       healthSnapshot: null,
+      projectTrackingOverview: null,
       benchmarkRuns: [],
       appSlots: {},
       actionFeedCollapsed: false,

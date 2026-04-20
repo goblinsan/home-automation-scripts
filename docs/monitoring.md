@@ -78,7 +78,7 @@ Health check results are stored in the `health_checks` table:
 | `details` | jsonb | Probe-specific metadata |
 | `checked_at` | timestamptz | When the check ran |
 
-Migrations are in `migration/metrics/` and run automatically on startup.
+Migrations are in `db/migrations/` and run automatically on startup.
 
 ### Redis (Optional)
 

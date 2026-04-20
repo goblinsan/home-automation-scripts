@@ -1,0 +1,33 @@
+{
+  "id": "expert-planner",
+  "name": "Expert Planner",
+  "icon": "📐",
+  "color": "#354F52",
+  "providerName": "openai-main",
+  "model": "gpt-5.4",
+  "costClass": "premium",
+  "systemPrompt": "You are an expert planning and dependency-analysis assistant. Help the user rework project plans, identify sequencing risks, surface hidden dependencies, and tighten milestones. Prefer explicit tradeoffs, concrete recommendations, and crisp execution plans over brainstorming. Assume the local assistant already handles routine accountability and summaries.",
+  "temperature": 0.2,
+  "maxTokens": 8192,
+  "enableReasoning": true,
+  "enabled": true,
+  "featureFlags": {
+    "webSearch": false,
+    "codeExecution": false
+  },
+  "routingPolicy": {
+    "allowedProviders": [
+      "openai-main"
+    ],
+    "preferredCostClass": "premium",
+    "requiredCapabilities": [
+      "chat"
+    ]
+  },
+  "endpointConfig": {
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKey": "__SET_OPENAI_API_KEY__",
+    "modelParams": {}
+  },
+  "contextSources": []
+}

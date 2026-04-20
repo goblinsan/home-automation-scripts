@@ -8,6 +8,24 @@ export const OVERVIEW_SCRIPT = `    // Default landing tab — kept in sync with
     // Shared empty-state copy for the Overview surface.
     const OVERVIEW_NO_HEALTH_DATA = 'No health data yet.';
 
+    function projectStatusBadge(status) {
+      const colors = {
+        'on-track': 'var(--color-success)',
+        'at-risk': 'var(--color-warning)',
+        blocked: 'var(--color-error)',
+        done: 'var(--color-success)',
+        idea: 'var(--color-muted)',
+      };
+      const color = colors[status] || 'var(--color-muted)';
+      return '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';margin-right:6px" title="' + escapeHtml(status || 'unknown') + '"></span>';
+    }
+
+    function projectPriorityPill(priority) {
+      const normalized = (priority || 'medium').toLowerCase();
+      const className = normalized === 'critical' ? ' is-critical' : normalized === 'high' ? ' is-high' : '';
+      return '<span class="overview-priority-pill' + className + '">' + escapeHtml(normalized) + '</span>';
+    }
+
     function renderOverview() {
       // health-first landing: uses live state.healthSnapshot + state.runtime
       const runtimeMetrics = document.getElementById('overviewRuntimeMetrics');
@@ -29,6 +47,8 @@ export const OVERVIEW_SCRIPT = `    // Default landing tab — kept in sync with
 
       const snapshot = state.healthSnapshot;
       const targets = snapshot && Array.isArray(snapshot.targets) ? snapshot.targets : [];
+      const projectOverview = state.projectTrackingOverview;
+      const projects = projectOverview && Array.isArray(projectOverview.projects) ? projectOverview.projects : [];
 
       const counts = { healthy: 0, degraded: 0, down: 0, unknown: 0 };
       targets.forEach(function(t) {
@@ -97,6 +117,91 @@ export const OVERVIEW_SCRIPT = `    // Default landing tab — kept in sync with
         } else {
           targetList.innerHTML = targets.map(targetRow).join('');
         }
+      }
+
+      function setProjectCount(kind, value, detail) {
+        const countEl = document.querySelector('[data-project-overview-count="' + kind + '"]');
+        const detailEl = document.querySelector('[data-project-overview-detail="' + kind + '"]');
+        if (countEl) countEl.textContent = String(value);
+        if (detailEl) detailEl.textContent = detail;
+      }
+
+      if (!projectOverview) {
+        setProjectCount('active', 0, 'Loading tracked projects…');
+        setProjectCount('risk', 0, 'Loading tracked projects…');
+        setProjectCount('stale', 0, 'Loading tracked projects…');
+      } else {
+        setProjectCount(
+          'active',
+          projectOverview.totals.activeProjects || 0,
+          (projectOverview.totals.dueSoonMilestones || 0) > 0
+            ? String(projectOverview.totals.dueSoonMilestones) + ' milestone' + (projectOverview.totals.dueSoonMilestones === 1 ? '' : 's') + ' due soon.'
+            : 'No near-term milestone pressure.'
+        );
+        setProjectCount(
+          'risk',
+          projectOverview.totals.atRiskProjects || 0,
+          (projectOverview.totals.atRiskProjects || 0) === 0
+            ? 'Nothing flagged at risk.'
+            : 'Blocked, at-risk, or overdue work.'
+        );
+        setProjectCount(
+          'stale',
+          projectOverview.totals.staleProjects || 0,
+          (projectOverview.totals.staleProjects || 0) === 0
+            ? 'Recent updates are flowing.'
+            : 'Projects that need a fresh check-in.'
+        );
+      }
+
+      const projectList = document.getElementById('overviewProjectList');
+      if (projectList) {
+        if (!projectOverview) {
+          projectList.innerHTML = '<div class="overview-empty">Loading tracked projects…</div>';
+        } else if (projects.length === 0) {
+          projectList.innerHTML = '<div class="overview-empty">No tracked projects yet. POST updates to <code>/api/project-tracking/projects</code> to populate this view.</div>';
+        } else {
+          projectList.innerHTML = projects.map(function(project) {
+            const statusClass = project.status === 'blocked'
+              ? 'is-down'
+              : project.status === 'at-risk' || project.overdueMilestones > 0
+                ? 'is-degraded'
+                : project.isStale
+                  ? 'is-stale'
+                  : 'is-healthy';
+            const milestoneCopy = project.totalMilestones > 0
+              ? project.completedMilestones + '/' + project.totalMilestones + ' milestones complete'
+              : 'No milestones recorded';
+            const riskBits = [];
+            if (project.overdueMilestones > 0) riskBits.push(project.overdueMilestones + ' overdue');
+            if (project.dueSoonMilestones > 0) riskBits.push(project.dueSoonMilestones + ' due soon');
+            if (project.isStale) riskBits.push('needs check-in');
+            return '<div class="overview-target ' + statusClass + '">' +
+              '<div>' +
+                '<div class="overview-project-name">' +
+                  projectStatusBadge(project.status) +
+                  '<strong>' + escapeHtml(project.name || project.projectId || '') + '</strong>' +
+                  projectPriorityPill(project.priority) +
+                  '<span class="pill">' + escapeHtml(project.status || 'unknown') + '</span>' +
+                '</div>' +
+                (project.summary ? '<div class="overview-project-copy">' + escapeHtml(project.summary) + '</div>' : '') +
+                (project.nextAction ? '<div class="overview-project-copy"><strong>Next:</strong> ' + escapeHtml(project.nextAction) + '</div>' : '') +
+              '</div>' +
+              '<div class="overview-target-meta">' +
+                '<span title="Milestone progress">' + escapeHtml(milestoneCopy) + '</span>' +
+                (riskBits.length > 0 ? '<span title="Attention">' + escapeHtml(riskBits.join(' · ')) + '</span>' : '') +
+                '<span title="Last update">' + escapeHtml(project.latestUpdateAt || project.lastCheckInAt || project.updatedAt || '—') + '</span>' +
+              '</div>' +
+            '</div>';
+          }).join('');
+        }
+      }
+
+      const projectSummary = document.getElementById('overviewProjectSummaryText');
+      if (projectSummary) {
+        projectSummary.textContent = projectOverview && projectOverview.clipboardSummary
+          ? projectOverview.clipboardSummary
+          : 'No tracked projects yet.';
       }
     }
 

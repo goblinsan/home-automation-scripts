@@ -57,7 +57,7 @@ That gives `gateway-chat` a durable inbox for scheduled prompts.
 ## 3. Create The Coach Agent In Gateway Chat
 
 Reference config:
-- [migration/ancr/ancr-coach-agent.json](/Users/jamescoghlan/code/gateway-control-plane/migration/ancr/ancr-coach-agent.json)
+- [examples/ancr/ancr-coach-agent.json](/Users/jamescoghlan/code/gateway-control-plane/examples/ancr/ancr-coach-agent.json)
 
 Use the `AI Agents` tab in the control-plane admin UI and create an agent based on that file.
 
@@ -74,20 +74,20 @@ If you prefer to reuse `bruvie-d` instead of a dedicated coach agent, copy the s
 ## 4. Import The Workflow Seed
 
 Seed file:
-- [migration/ancr/ancr-coach-workflows.json](/Users/jamescoghlan/code/gateway-control-plane/migration/ancr/ancr-coach-workflows.json)
+- [examples/ancr/ancr-coach-workflows.json](/Users/jamescoghlan/code/gateway-control-plane/examples/ancr/ancr-coach-workflows.json)
 
 CLI example:
 
 ```bash
 node src/cli.ts import-workflow-seed \
   --base-url http://127.0.0.1:3200 \
-  --file migration/ancr/ancr-coach-workflows.json
+  --file examples/ancr/ancr-coach-workflows.json
 ```
 
 Or use the admin UI workflow-seed import and point it at:
 
 ```text
-migration/ancr/ancr-coach-workflows.json
+examples/ancr/ancr-coach-workflows.json
 ```
 
 ## 5. Confirm The Scope

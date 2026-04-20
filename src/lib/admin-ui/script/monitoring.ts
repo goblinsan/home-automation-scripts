@@ -18,6 +18,27 @@ export const MONITORING_SCRIPT = `    // ── Monitoring: fetch + render ─�
       }
     }
 
+    async function fetchProjectTrackingOverview() {
+      try {
+        const data = await requestJson('GET', '/api/project-tracking/overview', null, 15000);
+        state.projectTrackingOverview = data;
+        renderOverview();
+      } catch (err) {
+        state.projectTrackingOverview = {
+          projects: [],
+          generatedAt: new Date().toISOString(),
+          totals: {
+            activeProjects: 0,
+            atRiskProjects: 0,
+            staleProjects: 0,
+            dueSoonMilestones: 0,
+          },
+          clipboardSummary: 'Project tracking summary unavailable.',
+        };
+        renderOverview();
+      }
+    }
+
     async function fetchBenchmarkRuns() {
       try {
         const data = await requestJson('GET', '/api/monitoring/benchmarks', null, 15000);

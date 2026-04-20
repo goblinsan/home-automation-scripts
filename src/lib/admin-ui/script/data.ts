@@ -8,6 +8,9 @@ export const DATA_SCRIPT = `    async function loadTabData(tab, options = {}) {
       if (tab === 'overview' && isStale('healthSnapshot')) {
         extraFetches.push(fetchHealthSnapshot().then(() => markLoaded('healthSnapshot')));
       }
+      if (tab === 'overview' && isStale('projectTrackingOverview')) {
+        extraFetches.push(fetchProjectTrackingOverview().then(() => markLoaded('projectTrackingOverview')));
+      }
       const settled = await Promise.allSettled(extraFetches);
 
       if (tab === 'overview') {

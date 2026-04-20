@@ -394,13 +394,15 @@ export const INIT_SCRIPT = `    // Keyboard nav across top-tab and sub-tab butto
       overviewRefreshBtn.addEventListener('click', async () => {
         await withBusyButton(overviewRefreshBtn, 'Refreshing…', async () => {
           state.dataLoaded.healthSnapshot = 0;
-          const settled = await Promise.allSettled([fetchRuntime(), fetchHealthSnapshot()]);
+          state.dataLoaded.projectTrackingOverview = 0;
+          const settled = await Promise.allSettled([fetchRuntime(), fetchHealthSnapshot(), fetchProjectTrackingOverview()]);
           const failures = settled.filter((result) => result.status === 'rejected');
           if (failures.length === 0) {
             // Only mark the snapshot fresh when both required fetches actually
             // succeeded — otherwise the 30s stale guard would suppress the
             // next retry and operators would keep looking at partial data.
             markLoaded('healthSnapshot');
+            markLoaded('projectTrackingOverview');
             setStatus('Overview refreshed');
           } else {
             const reason = failures[0].reason;
@@ -415,6 +417,22 @@ export const INIT_SCRIPT = `    // Keyboard nav across top-tab and sub-tab butto
             setStatus(message, 'error');
           }
         });
+      });
+    }
+    const overviewCopyProjectSummaryButton = document.getElementById('overviewCopyProjectSummaryButton');
+    if (overviewCopyProjectSummaryButton) {
+      overviewCopyProjectSummaryButton.addEventListener('click', async () => {
+        const summary = state.projectTrackingOverview && state.projectTrackingOverview.clipboardSummary
+          ? state.projectTrackingOverview.clipboardSummary
+          : 'No tracked projects yet.';
+        try {
+          await navigator.clipboard.writeText(summary);
+          overviewCopyProjectSummaryButton.textContent = 'Copied!';
+          setStatus('Project summary copied');
+          setTimeout(() => { overviewCopyProjectSummaryButton.textContent = 'Copy Summary'; }, 2000);
+        } catch (error) {
+          setStatus('Clipboard copy failed', 'error');
+        }
       });
     }
     const overviewRunCheckBtn = document.getElementById('overviewRunCheckButton');
