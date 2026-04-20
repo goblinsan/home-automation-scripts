@@ -19,6 +19,54 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
       return normalized || fallback;
     }
 
+    function defaultAssistantAgentId(assistantName) {
+      return assistantSlugify(assistantName || 'personal-assistant', 'personal-assistant');
+    }
+
+    function defaultAssistantThreadId(assistantName, userId) {
+      return defaultAssistantAgentId(assistantName) + '-' + (userId || 'me');
+    }
+
+    function defaultAssistantPlanFilePath(notesRepoPath, assistantName) {
+      const base = String(notesRepoPath || '/srv/notes').replace(/\\/+$/, '') || '/srv/notes';
+      return base + '/projects/' + defaultAssistantAgentId(assistantName) + '-plan.md';
+    }
+
+    function applyAssistantProfileDefaults(profile) {
+      const chatProfile = state.config?.serviceProfiles?.gatewayChatPlatform;
+      const environment = Array.isArray(chatProfile?.environment) ? chatProfile.environment : [];
+      const defaultUserId = getEnvironmentValue(environment, 'CHAT_DEFAULT_USER_ID', 'me');
+      const defaultChannelId = getEnvironmentValue(environment, 'CHAT_DEFAULT_CHANNEL_ID', 'coach');
+      if (!profile.ownerName) profile.ownerName = 'Jim';
+      if (!profile.assistantName) profile.assistantName = 'Personal Assistant';
+      if (!profile.timezone) profile.timezone = 'America/New_York';
+      if (!profile.notesRepoPath) profile.notesRepoPath = '/srv/notes';
+      if (!Array.isArray(profile.notesSearchDirs) || profile.notesSearchDirs.length === 0) {
+        profile.notesSearchDirs = ['daily', 'projects', 'inbox'];
+      }
+      if (!profile.recentNotesLimit) profile.recentNotesLimit = 10;
+      if (!profile.chatUserId) profile.chatUserId = defaultUserId;
+      if (!profile.chatChannelId) profile.chatChannelId = defaultChannelId;
+      if (!profile.chatThreadTitle) profile.chatThreadTitle = profile.assistantName;
+      if (!profile.chatThreadId) profile.chatThreadId = defaultAssistantThreadId(profile.assistantName, profile.chatUserId);
+      if (!profile.localAgentId) profile.localAgentId = defaultAssistantAgentId(profile.assistantName);
+      if (!profile.planFilePath) profile.planFilePath = defaultAssistantPlanFilePath(profile.notesRepoPath, profile.assistantName);
+      if (!profile.localProviderName) profile.localProviderName = firstAvailableProviderName() || 'local-llm';
+      if (!profile.localModel) profile.localModel = firstAvailableModelId(profile.localProviderName) || 'qwen/qwen3-32b';
+      if (!profile.localBaseUrl) profile.localBaseUrl = 'http://127.0.0.1:5301';
+      if (!profile.expertAgentId) profile.expertAgentId = 'expert-planner';
+      if (!profile.expertProviderName) profile.expertProviderName = 'openai-main';
+      if (!profile.expertModel) profile.expertModel = 'gpt-5.4';
+      if (!profile.expertBaseUrl) profile.expertBaseUrl = 'https://api.openai.com/v1';
+      if (!profile.expertApiKey) profile.expertApiKey = '__SET_OPENAI_API_KEY__';
+      if (!profile.focusStrategy) {
+        profile.focusStrategy = 'Prioritize the few items that move important projects and personal commitments forward without overloading the day.';
+      }
+      if (!profile.weeklyOutcome) {
+        profile.weeklyOutcome = 'End each week with the highest-leverage work advanced, obligations covered, and the next week already staged.';
+      }
+    }
+
     function ensurePersonalAssistantConfig() {
       if (!state.config.personalAssistant) {
         state.config.personalAssistant = {
@@ -61,6 +109,7 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
           }
         };
       }
+      applyAssistantProfileDefaults(state.config.personalAssistant);
       return state.config.personalAssistant;
     }
 
@@ -402,6 +451,7 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
             '<div><strong>Managed workflows:</strong> ' + escapeHtml(generatedWorkflows.join(', ')) + '</div>' +
             '<div><strong>Last applied:</strong> ' + escapeHtml(profile.lastAppliedAt || 'never') + '</div>' +
           '</div>' +
+          '<p class="assistant-builder-note" style="margin-top:.75rem">You do not need to create this plan file yourself. Apply writes and refreshes it automatically.</p>' +
         '</div>' +
         '<div class="assistant-builder-review-card">' +
           '<h3>Generated Plan Preview</h3>' +
@@ -431,14 +481,33 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
       applyButton.hidden = assistantBuilderState.step !== assistantBuilderSteps.length - 1;
 
       if (assistantBuilderState.step === 0) {
+        const defaultUserId = getEnvironmentValue(state.config.serviceProfiles.gatewayChatPlatform.environment || [], 'CHAT_DEFAULT_USER_ID', 'me');
+        const defaultChannelId = getEnvironmentValue(state.config.serviceProfiles.gatewayChatPlatform.environment || [], 'CHAT_DEFAULT_CHANNEL_ID', 'coach');
         body.innerHTML = '<div class="assistant-builder-review">' +
           '<div class="assistant-builder-review-card">' +
             '<h3>Assistant Basics</h3>' +
+            '<p class="assistant-builder-note">Start with your goals and active work. The builder will generate the coach plan and scheduled workflows for you. Notes and chat paths are auto-filled from the control-plane defaults and only need attention if your setup is unusual.</p>' +
             '<div class="assistant-builder-grid">' +
               '<label class="wizard-field"><span class="wizard-label">Enabled</span><select data-assistant-field="enabled">' + assistantOptionList([{ value: 'true', label: 'yes' }, { value: 'false', label: 'no' }], String(profile.enabled)) + '</select></label>' +
               assistantInput('Owner Name', 'ownerName', profile.ownerName) +
               assistantInput('Assistant Name', 'assistantName', profile.assistantName) +
               assistantInput('Time Zone', 'timezone', profile.timezone) +
+              assistantTextarea('Notes Search Dirs (one per line)', 'notesSearchDirs', assistantArrayText(profile.notesSearchDirs), { full: true, rows: 3, arrayField: true }) +
+              assistantTextarea('Focus Strategy', 'focusStrategy', profile.focusStrategy, { full: true, rows: 4 }) +
+              assistantTextarea('Weekly Outcome', 'weeklyOutcome', profile.weeklyOutcome, { full: true, rows: 4 }) +
+              assistantTextarea('Priority Stack (one per line)', 'priorities', assistantArrayText(profile.priorities), { full: true, rows: 4, arrayField: true }) +
+              assistantTextarea('Weekly Themes (one per line)', 'weeklyThemes', assistantArrayText(profile.weeklyThemes), { full: true, rows: 4, arrayField: true }) +
+            '</div>' +
+            '<div class="assistant-builder-meta" style="margin-top:1rem">' +
+              '<div><strong>Default notes repo:</strong> ' + escapeHtml(profile.notesRepoPath) + '</div>' +
+              '<div><strong>Generated plan file:</strong> ' + escapeHtml(profile.planFilePath) + '</div>' +
+              '<div><strong>Default chat delivery:</strong> user ' + escapeHtml(profile.chatUserId || defaultUserId) + ', channel ' + escapeHtml(profile.chatChannelId || defaultChannelId) + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<details class="assistant-builder-review-card">' +
+            '<summary><strong>Advanced Settings</strong></summary>' +
+            '<p class="assistant-builder-note" style="margin-top:.75rem">Only change these if your gateway paths, chat defaults, or model providers are not the normal setup.</p>' +
+            '<div class="assistant-builder-grid" style="margin-top:.85rem">' +
               assistantInput('Notes Repo Path', 'notesRepoPath', profile.notesRepoPath, { full: true }) +
               assistantInput('Plan File Path', 'planFilePath', profile.planFilePath, { full: true }) +
               assistantInput('Chat User Id', 'chatUserId', profile.chatUserId) +
@@ -454,15 +523,11 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
               assistantInput('Expert Model', 'expertModel', profile.expertModel) +
               assistantInput('Expert Base URL', 'expertBaseUrl', profile.expertBaseUrl, { full: true }) +
               assistantInput('Recent Notes Limit', 'recentNotesLimit', String(profile.recentNotesLimit)) +
-              assistantTextarea('Notes Search Dirs (one per line)', 'notesSearchDirs', assistantArrayText(profile.notesSearchDirs), { full: true, rows: 3, arrayField: true }) +
-              assistantTextarea('Focus Strategy', 'focusStrategy', profile.focusStrategy, { full: true, rows: 4 }) +
-              assistantTextarea('Weekly Outcome', 'weeklyOutcome', profile.weeklyOutcome, { full: true, rows: 4 }) +
-              assistantTextarea('Priority Stack (one per line)', 'priorities', assistantArrayText(profile.priorities), { full: true, rows: 4, arrayField: true }) +
-              assistantTextarea('Weekly Themes (one per line)', 'weeklyThemes', assistantArrayText(profile.weeklyThemes), { full: true, rows: 4, arrayField: true }) +
             '</div>' +
           '</div>' +
           '<div class="assistant-builder-review-card">' +
             '<h3>Cadence</h3>' +
+            '<p class="assistant-builder-note">These control recurring coach check-ins. Upcoming events already feed into those check-ins. Dedicated reminder-only workflows are not wired yet.</p>' +
             '<div class="assistant-builder-grid">' +
               assistantInput('Morning Check-In Cron', 'schedules.morningCheckInCron', profile.schedules.morningCheckInCron) +
               assistantInput('Midday Check-In Cron', 'schedules.middayCheckInCron', profile.schedules.middayCheckInCron) +
@@ -539,6 +604,13 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
 
     function mutateAssistantField(field, value) {
       const profile = ensurePersonalAssistantConfig();
+      const previousAssistantName = profile.assistantName;
+      const previousNotesRepoPath = profile.notesRepoPath;
+      const previousChatUserId = profile.chatUserId;
+      const previousDefaultPlanFilePath = defaultAssistantPlanFilePath(previousNotesRepoPath, previousAssistantName);
+      const previousDefaultThreadId = defaultAssistantThreadId(previousAssistantName, previousChatUserId);
+      const previousDefaultAgentId = defaultAssistantAgentId(previousAssistantName);
+      const previousDefaultThreadTitle = previousAssistantName;
       if (field.startsWith('schedules.')) {
         profile.schedules[field.slice('schedules.'.length)] = value;
       } else if (field === 'enabled') {
@@ -548,6 +620,19 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
       } else {
         profile[field] = value;
       }
+      if ((field === 'assistantName' || field === 'notesRepoPath') && profile.planFilePath === previousDefaultPlanFilePath) {
+        profile.planFilePath = defaultAssistantPlanFilePath(profile.notesRepoPath, profile.assistantName);
+      }
+      if ((field === 'assistantName' || field === 'chatUserId') && profile.chatThreadId === previousDefaultThreadId) {
+        profile.chatThreadId = defaultAssistantThreadId(profile.assistantName, profile.chatUserId);
+      }
+      if (field === 'assistantName' && profile.localAgentId === previousDefaultAgentId) {
+        profile.localAgentId = defaultAssistantAgentId(profile.assistantName);
+      }
+      if (field === 'assistantName' && profile.chatThreadTitle === previousDefaultThreadTitle) {
+        profile.chatThreadTitle = profile.assistantName;
+      }
+      applyAssistantProfileDefaults(profile);
     }
 
     function updateAssistantInput(target) {
