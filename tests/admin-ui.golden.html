@@ -3609,6 +3609,7 @@
     }
 
     const assistantBuilderState = { step: 0 };
+    const MAX_UPLOADED_PROJECT_PLAN_CHARS = 128 * 1024;
     const assistantBuilderSteps = [
       { title: 'Basics', description: 'Set your assistant defaults, personality, and delivery settings.' },
       { title: 'Items', description: 'Add projects, obligations, events, workout goals, and nutrition goals your assistant should coach you through.' },
@@ -3758,6 +3759,7 @@
         nextAction: 'Write the next concrete step.',
         repoSlug: '',
         planFilePath: '',
+        planContent: '',
         deadline: '',
         reminder: 'none',
         notes: ''
@@ -3864,6 +3866,13 @@
       '</label>';
     }
 
+    function assistantProjectPlanUpload(section, index) {
+      return '<label class="wizard-field full">' +
+        '<span class="wizard-label">Upload Project Plan (from your local machine)</span>' +
+        '<input type="file" accept=".md,.markdown,.txt,.yaml,.yml,.json" data-assistant-upload="project-plan" data-assistant-section="' + escapeHtml(section) + '" data-assistant-index="' + String(index) + '" />' +
+      '</label>';
+    }
+
     function generatedAssistantWorkflowNames(profile) {
       const prefix = profile.localAgentId;
       return [
@@ -3907,12 +3916,14 @@
         '',
         '## Active Projects',
         itemList(profile.projects, function(project) {
+          const hasUploadedPlan = Boolean(project.planContent && String(project.planContent).trim());
           return [
             '- ' + project.name + ' [' + project.status + ', ' + project.priority + ']',
             '  Summary: ' + project.summary,
             '  Next: ' + project.nextAction,
             project.repoSlug ? '  Repo: ' + project.repoSlug : '',
             project.planFilePath ? '  Project plan: ' + project.planFilePath : '',
+            hasUploadedPlan ? '  Project plan content: (uploaded inline)' : '',
             project.deadline ? '  Deadline: ' + project.deadline : '',
             project.reminder ? '  Reminder: ' + project.reminder : '',
             project.notes ? '  Notes: ' + project.notes : ''
@@ -3992,7 +4003,14 @@
                   '<label class="wizard-field full"><span class="wizard-label">Repo Preview</span><small>' +
                     escapeHtml((project.repoSlug || '').trim() ? (githubOwner + '/' + project.repoSlug.trim().replace(/^\/+|\/+$/g, '')) : (githubOwner + '/<repo-slug>')) +
                   '</small></label>' +
-                  assistantItemField('projects', index, 'Project Plan File Path (optional, read on Apply)', 'planFilePath', project.planFilePath || '', { full: true }) +
+                  assistantItemField('projects', index, 'Project Plan Path On Gateway (optional fallback)', 'planFilePath', project.planFilePath || '', { full: true }) +
+                  assistantProjectPlanUpload('projects', index) +
+                  '<label class="wizard-field full"><span class="wizard-label">Uploaded Plan Status</span><small>' +
+                    escapeHtml(project.planContent && String(project.planContent).trim()
+                      ? ('Attached (' + String(project.planContent.length) + ' chars)')
+                      : 'No uploaded plan attached') +
+                  '</small></label>' +
+                  '<div class="toolbar"><button type="button" data-assistant-action="clear-project-plan" data-assistant-section="projects" data-assistant-index="' + String(index) + '">Clear Uploaded Plan</button></div>' +
                   assistantItemField('projects', index, 'Next Action', 'nextAction', project.nextAction) +
                   assistantItemTextarea('projects', index, 'Summary', 'summary', project.summary, { full: true, rows: 3 }) +
                   assistantItemTextarea('projects', index, 'Notes', 'notes', project.notes || '', { full: true, rows: 3 }) +
@@ -4314,6 +4332,11 @@
         return;
       }
 
+      if (target instanceof HTMLInputElement && target.dataset.assistantUpload === 'project-plan') {
+        void handleAssistantProjectPlanUpload(target);
+        return;
+      }
+
       const arrayField = target.dataset.assistantArrayField;
       const topLevelField = target.dataset.assistantField;
       const section = target.dataset.assistantSection;
@@ -4365,6 +4388,48 @@
       }
     }
 
+    async function handleAssistantProjectPlanUpload(input) {
+      const section = input.dataset.assistantSection;
+      const index = Number(input.dataset.assistantIndex || '-1');
+      const profile = ensurePersonalAssistantConfig();
+      if (section !== 'projects' || !Number.isFinite(index) || !Array.isArray(profile.projects) || !profile.projects[index]) {
+        return;
+      }
+
+      const file = input.files && input.files[0];
+      if (!file) {
+        return;
+      }
+
+      try {
+        let content = await file.text();
+        let truncated = false;
+        if (content.length > MAX_UPLOADED_PROJECT_PLAN_CHARS) {
+          content = content.slice(0, MAX_UPLOADED_PROJECT_PLAN_CHARS) + '\n...(truncated)...';
+          truncated = true;
+        }
+
+        const project = profile.projects[index];
+        project.planContent = content;
+        if (!project.planFilePath || !project.planFilePath.trim()) {
+          project.planFilePath = file.name;
+        }
+
+        syncRawJson();
+        renderAssistantBuilderSummary();
+        renderAssistantBuilderStep();
+        setStatus(
+          truncated
+            ? 'Uploaded ' + file.name + ' (truncated to ' + String(MAX_UPLOADED_PROJECT_PLAN_CHARS) + ' characters)'
+            : 'Uploaded ' + file.name + ' for ' + (project.name || project.id),
+        );
+      } catch (error) {
+        setStatus('Failed to read uploaded plan file: ' + describeClientError(error), 'error');
+      } finally {
+        input.value = '';
+      }
+    }
+
     function handleAssistantBuilderAction(button) {
       const action = button.dataset.assistantAction;
       if (!action) {
@@ -4396,6 +4461,17 @@
           syncRawJson();
           renderAssistantBuilderSummary();
           renderAssistantBuilderStep();
+        }
+        return;
+      }
+      if (action === 'clear-project-plan') {
+        const index = Number(button.dataset.assistantIndex || '-1');
+        if (index >= 0 && profile.projects[index]) {
+          profile.projects[index].planContent = '';
+          syncRawJson();
+          renderAssistantBuilderSummary();
+          renderAssistantBuilderStep();
+          setStatus('Cleared uploaded plan for ' + (profile.projects[index].name || profile.projects[index].id));
         }
       }
     }

@@ -56,12 +56,24 @@ function summarizeProject(
 
 const MAX_PROJECT_PLAN_BYTES = 64 * 1024;
 
+function truncateProjectPlanContent(content: string): string {
+  return content.length > MAX_PROJECT_PLAN_BYTES
+    ? `${content.slice(0, MAX_PROJECT_PLAN_BYTES)}\n...(truncated)...`
+    : content;
+}
+
 async function loadProjectPlanContents(
   projects: PersonalAssistantProjectConfig[],
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
   await Promise.all(
     projects.map(async (project) => {
+      const inlineContent = project.planContent?.trim();
+      if (inlineContent) {
+        results.set(project.id, truncateProjectPlanContent(inlineContent));
+        return;
+      }
+
       const path = project.planFilePath?.trim();
       if (!path) {
         return;
@@ -69,9 +81,7 @@ async function loadProjectPlanContents(
       try {
         const absolutePath = resolve(path);
         const content = await readFile(absolutePath, 'utf8');
-        const truncated = content.length > MAX_PROJECT_PLAN_BYTES
-          ? `${content.slice(0, MAX_PROJECT_PLAN_BYTES)}\n…(truncated)…`
-          : content;
+        const truncated = truncateProjectPlanContent(content);
         results.set(project.id, truncated);
       } catch {
         // Leave entry unset; summarizeProject will note that the file could not be read.

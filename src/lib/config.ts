@@ -324,6 +324,7 @@ export interface PersonalAssistantProjectConfig {
   nextAction: string;
   repoSlug?: string;
   planFilePath?: string;
+  planContent?: string;
   deadline?: string;
   reminder?: 'none' | 'at-time' | '1-hour-before' | '1-day-before' | '1-week-before';
   notes?: string;
@@ -1212,6 +1213,7 @@ function parsePersonalAssistantProjectConfig(value: unknown, field: string): Per
     nextAction: assertString(value.nextAction, `${field}.nextAction`),
     repoSlug: typeof value.repoSlug === 'string' ? value.repoSlug : undefined,
     planFilePath: typeof value.planFilePath === 'string' ? value.planFilePath : undefined,
+    planContent: typeof value.planContent === 'string' ? value.planContent : undefined,
     deadline: typeof value.deadline === 'string' ? value.deadline : undefined,
     reminder: parseAssistantReminder(value.reminder, `${field}.reminder`),
     notes: typeof value.notes === 'string' ? value.notes : undefined
