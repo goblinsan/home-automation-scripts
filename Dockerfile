@@ -10,7 +10,9 @@ COPY src ./src
 COPY configs ./configs
 COPY deploy ./deploy
 COPY docs ./docs
-COPY migration ./migration
+COPY db ./db
+COPY examples ./examples
+COPY legacy ./legacy
 
 EXPOSE 4173
 
