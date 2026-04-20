@@ -4,10 +4,8 @@
 
 export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { step: 0 };
     const assistantBuilderSteps = [
-      { title: 'Basics', description: 'Who this assistant helps, where notes live, and where chat check-ins should land.' },
-      { title: 'Projects', description: 'Current and future work the coach should track and push forward.' },
-      { title: 'Commitments', description: 'Obligations, trips, events, and important dates that compete for attention.' },
-      { title: 'Health Goals', description: 'Workout and nutrition goals the assistant should keep in view.' },
+      { title: 'Basics', description: 'Set your assistant defaults, personality, and delivery settings.' },
+      { title: 'Items', description: 'Add the work and commitments your assistant should coach you through.' },
       { title: 'Review', description: 'Preview the generated plan, managed agents, and recurring workflows before applying.' }
     ];
 
@@ -32,18 +30,32 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
       return base + '/projects/' + defaultAssistantAgentId(assistantName) + '-plan.md';
     }
 
+    function inferDefaultGitHubOwner() {
+      const apps = Array.isArray(state.config && state.config.apps) ? state.config.apps : [];
+      for (let i = 0; i < apps.length; i += 1) {
+        const repoUrl = String(apps[i] && apps[i].repoUrl || '');
+        const match = repoUrl.match(/github\\.com[:/]([^/]+)\//i);
+        if (match && match[1]) {
+          return match[1];
+        }
+      }
+      return 'me';
+    }
+
     function applyAssistantProfileDefaults(profile) {
       const chatProfile = state.config?.serviceProfiles?.gatewayChatPlatform;
       const environment = Array.isArray(chatProfile?.environment) ? chatProfile.environment : [];
       const defaultUserId = getEnvironmentValue(environment, 'CHAT_DEFAULT_USER_ID', 'me');
       const defaultChannelId = getEnvironmentValue(environment, 'CHAT_DEFAULT_CHANNEL_ID', 'coach');
       if (!profile.ownerName) profile.ownerName = 'Jim';
+      if (!profile.githubOwner) profile.githubOwner = inferDefaultGitHubOwner();
       if (!profile.assistantName) profile.assistantName = 'Personal Assistant';
+      if (!profile.personality) {
+        profile.personality = 'You are a life coach who motivates me to succeed with clear, practical, high-accountability guidance.';
+      }
       if (!profile.timezone) profile.timezone = 'America/New_York';
       if (!profile.notesRepoPath) profile.notesRepoPath = '/srv/notes';
-      if (!Array.isArray(profile.notesSearchDirs) || profile.notesSearchDirs.length === 0) {
-        profile.notesSearchDirs = ['daily', 'projects', 'inbox'];
-      }
+      if (!Array.isArray(profile.notesSearchDirs)) profile.notesSearchDirs = [];
       if (!profile.recentNotesLimit) profile.recentNotesLimit = 10;
       if (!profile.chatUserId) profile.chatUserId = defaultUserId;
       if (!profile.chatChannelId) profile.chatChannelId = defaultChannelId;
@@ -65,6 +77,19 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
       if (!profile.weeklyOutcome) {
         profile.weeklyOutcome = 'End each week with the highest-leverage work advanced, obligations covered, and the next week already staged.';
       }
+      const collections = [profile.projects, profile.obligations, profile.fitnessGoals, profile.nutritionGoals, profile.events];
+      collections.forEach(function(items) {
+        if (!Array.isArray(items)) {
+          return;
+        }
+        items.forEach(function(item) {
+          if (!item || typeof item !== 'object') {
+            return;
+          }
+          if (item.priority === 'critical') item.priority = 'urgent';
+          if (item.priority === 'medium') item.priority = 'med';
+        });
+      });
     }
 
     function ensurePersonalAssistantConfig() {
@@ -72,11 +97,13 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
         state.config.personalAssistant = {
           enabled: false,
           ownerName: 'Jim',
+          githubOwner: inferDefaultGitHubOwner(),
           assistantName: 'Personal Assistant',
+          personality: 'You are a life coach who motivates me to succeed with clear, practical, high-accountability guidance.',
           timezone: 'America/New_York',
           notesRepoPath: '/srv/notes',
           planFilePath: '/srv/notes/projects/personal-assistant-plan.md',
-          notesSearchDirs: ['daily', 'projects', 'inbox'],
+          notesSearchDirs: [],
           recentNotesLimit: 10,
           chatUserId: 'me',
           chatChannelId: 'coach',
@@ -118,12 +145,15 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
       const index = profile.projects.length + 1;
       return {
         id: 'project-' + index,
-        name: 'New Project ' + index,
+        name: 'New Item ' + index,
         status: 'on-track',
         priority: 'high',
         summary: 'Define the actual outcome this project needs to reach.',
         nextAction: 'Write the next concrete step.',
+        repoSlug: '',
+        planFilePath: '',
         deadline: '',
+        reminder: 'none',
         notes: ''
       };
     }
@@ -257,6 +287,9 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
         '## Coaching Intent',
         profile.focusStrategy,
         '',
+        '## Coach Personality',
+        profile.personality,
+        '',
         '## Weekly Outcome',
         profile.weeklyOutcome,
         '',
@@ -272,7 +305,10 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
             '- ' + project.name + ' [' + project.status + ', ' + project.priority + ']',
             '  Summary: ' + project.summary,
             '  Next: ' + project.nextAction,
+            project.repoSlug ? '  Repo: ' + project.repoSlug : '',
+            project.planFilePath ? '  Project plan: ' + project.planFilePath : '',
             project.deadline ? '  Deadline: ' + project.deadline : '',
+            project.reminder ? '  Reminder: ' + project.reminder : '',
             project.notes ? '  Notes: ' + project.notes : ''
           ].filter(Boolean).join('\\n');
         }),
@@ -321,9 +357,10 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
     }
 
     function renderAssistantProjectStep(profile) {
+      const githubOwner = profile.githubOwner || 'me';
       return '<div class="assistant-builder-list">' +
         (profile.projects.length === 0
-          ? '<div class="assistant-builder-note">No projects yet. Add current work and future work you want the coach to track.</div>'
+          ? '<div class="assistant-builder-note">No items yet. Add projects, commitments, or goals your assistant should coach you on.</div>'
           : profile.projects.map(function(project, index) {
               return '<div class="assistant-builder-item">' +
                 '<div class="assistant-builder-item-header">' +
@@ -331,18 +368,29 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
                   '<button type="button" class="danger" data-assistant-action="remove-item" data-assistant-section="projects" data-assistant-index="' + String(index) + '">Remove</button>' +
                 '</div>' +
                 '<div class="assistant-builder-grid">' +
-                  assistantItemField('projects', index, 'Project Id', 'id', project.id) +
-                  assistantItemField('projects', index, 'Name', 'name', project.name) +
-                  assistantItemSelect('projects', index, 'Status', 'status', project.status, ['idea', 'on-track', 'at-risk', 'blocked', 'done']) +
-                  assistantItemSelect('projects', index, 'Priority', 'priority', project.priority, ['critical', 'high', 'medium', 'low']) +
-                  assistantItemField('projects', index, 'Deadline', 'deadline', project.deadline || '') +
+                  assistantItemField('projects', index, 'Item Id', 'id', project.id) +
+                  assistantItemField('projects', index, 'Title', 'name', project.name) +
+                  assistantItemSelect('projects', index, 'Priority', 'priority', project.priority, ['urgent', 'high', 'med', 'low']) +
+                  assistantItemField('projects', index, 'Event Date (optional)', 'deadline', project.deadline || '') +
+                  assistantItemSelect('projects', index, 'Reminder', 'reminder', project.reminder || 'none', [
+                    { value: 'none', label: 'none' },
+                    { value: 'at-time', label: 'at time' },
+                    { value: '1-hour-before', label: '1 hour before' },
+                    { value: '1-day-before', label: '1 day before' },
+                    { value: '1-week-before', label: '1 week before' }
+                  ]) +
+                  assistantItemField('projects', index, 'Repo Slug (optional)', 'repoSlug', project.repoSlug || '') +
+                  '<label class="wizard-field full"><span class="wizard-label">Repo Preview</span><small>' +
+                    escapeHtml((project.repoSlug || '').trim() ? (githubOwner + '/' + project.repoSlug.trim().replace(/^\\/+|\\/+$/g, '')) : (githubOwner + '/<repo-slug>')) +
+                  '</small></label>' +
+                  assistantItemField('projects', index, 'Project Plan Path (optional)', 'planFilePath', project.planFilePath || '', { full: true }) +
                   assistantItemField('projects', index, 'Next Action', 'nextAction', project.nextAction) +
                   assistantItemTextarea('projects', index, 'Summary', 'summary', project.summary, { full: true, rows: 3 }) +
                   assistantItemTextarea('projects', index, 'Notes', 'notes', project.notes || '', { full: true, rows: 3 }) +
                 '</div>' +
               '</div>';
             }).join('')) +
-        '<div class="toolbar"><button type="button" data-assistant-action="add-item" data-assistant-section="projects">Add Project</button></div>' +
+        '<div class="toolbar"><button type="button" data-assistant-action="add-item" data-assistant-section="projects">Add Item</button></div>' +
       '</div>';
     }
 
@@ -446,12 +494,13 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
           '<div class="assistant-builder-meta">' +
             '<div><strong>Plan file:</strong> ' + escapeHtml(profile.planFilePath) + '</div>' +
             '<div><strong>Notes repo:</strong> ' + escapeHtml(profile.notesRepoPath) + '</div>' +
+            '<div><strong>GitHub default owner:</strong> ' + escapeHtml(profile.githubOwner || 'me') + '</div>' +
             '<div><strong>Chat thread:</strong> ' + escapeHtml(profile.chatChannelId + ' / ' + profile.chatThreadId) + '</div>' +
             '<div><strong>Managed agents:</strong> ' + escapeHtml(generatedAgents.join(', ')) + '</div>' +
             '<div><strong>Managed workflows:</strong> ' + escapeHtml(generatedWorkflows.join(', ')) + '</div>' +
             '<div><strong>Last applied:</strong> ' + escapeHtml(profile.lastAppliedAt || 'never') + '</div>' +
           '</div>' +
-          '<p class="assistant-builder-note" style="margin-top:.75rem">You do not need to create this plan file yourself. Apply writes and refreshes it automatically.</p>' +
+          '<p class="assistant-builder-note" style="margin-top:.75rem">You do not need to create this plan file yourself. Apply writes and refreshes it automatically. Notes search uses your notes repo broadly unless a custom directory filter is added in raw JSON.</p>' +
         '</div>' +
         '<div class="assistant-builder-review-card">' +
           '<h3>Generated Plan Preview</h3>' +
@@ -486,17 +535,16 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
         body.innerHTML = '<div class="assistant-builder-review">' +
           '<div class="assistant-builder-review-card">' +
             '<h3>Assistant Basics</h3>' +
-            '<p class="assistant-builder-note">Start with your goals and active work. The builder will generate the coach plan and scheduled workflows for you. Notes and chat paths are auto-filled from the control-plane defaults and only need attention if your setup is unusual.</p>' +
+            '<p class="assistant-builder-note">Set your assistant defaults once, then add items. Notes are searched from your notes repo broadly by default, so you do not need to manage folder filters here.</p>' +
             '<div class="assistant-builder-grid">' +
               '<label class="wizard-field"><span class="wizard-label">Enabled</span><select data-assistant-field="enabled">' + assistantOptionList([{ value: 'true', label: 'yes' }, { value: 'false', label: 'no' }], String(profile.enabled)) + '</select></label>' +
               assistantInput('Owner Name', 'ownerName', profile.ownerName) +
+              assistantInput('GitHub User', 'githubOwner', profile.githubOwner || 'me') +
               assistantInput('Assistant Name', 'assistantName', profile.assistantName) +
               assistantInput('Time Zone', 'timezone', profile.timezone) +
-              assistantTextarea('Notes Search Dirs (one per line)', 'notesSearchDirs', assistantArrayText(profile.notesSearchDirs), { full: true, rows: 3, arrayField: true }) +
+              assistantTextarea('Assistant Personality', 'personality', profile.personality || '', { full: true, rows: 3 }) +
               assistantTextarea('Focus Strategy', 'focusStrategy', profile.focusStrategy, { full: true, rows: 4 }) +
               assistantTextarea('Weekly Outcome', 'weeklyOutcome', profile.weeklyOutcome, { full: true, rows: 4 }) +
-              assistantTextarea('Priority Stack (one per line)', 'priorities', assistantArrayText(profile.priorities), { full: true, rows: 4, arrayField: true }) +
-              assistantTextarea('Weekly Themes (one per line)', 'weeklyThemes', assistantArrayText(profile.weeklyThemes), { full: true, rows: 4, arrayField: true }) +
             '</div>' +
             '<div class="assistant-builder-meta" style="margin-top:1rem">' +
               '<div><strong>Default notes repo:</strong> ' + escapeHtml(profile.notesRepoPath) + '</div>' +
@@ -546,16 +594,6 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
         return;
       }
 
-      if (assistantBuilderState.step === 2) {
-        body.innerHTML = renderAssistantCommitmentStep(profile);
-        return;
-      }
-
-      if (assistantBuilderState.step === 3) {
-        body.innerHTML = renderAssistantHealthStep(profile);
-        return;
-      }
-
       body.innerHTML = renderAssistantReviewStep(profile);
     }
 
@@ -565,23 +603,26 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
         return;
       }
       const profile = ensurePersonalAssistantConfig();
-      const priorityChips = profile.priorities.slice(0, 6).map(function(item) {
-        return '<span class="assistant-builder-chip">' + escapeHtml(item) + '</span>';
+      const priorityChips = profile.projects.slice(0, 8).map(function(item) {
+        const label = (item.name || item.id || 'item') + ' · ' + (item.priority || 'med');
+        return '<span class="assistant-builder-chip">' + escapeHtml(label) + '</span>';
       }).join('');
+      const datedItemCount = profile.projects.filter(function(item) { return Boolean(item.deadline); }).length;
       container.innerHTML = '' +
         '<div class="assistant-builder-summary-grid">' +
-          '<div class="assistant-builder-stat"><strong>' + String(profile.projects.length) + '</strong><span>projects</span></div>' +
-          '<div class="assistant-builder-stat"><strong>' + String(profile.obligations.length) + '</strong><span>obligations</span></div>' +
-          '<div class="assistant-builder-stat"><strong>' + String(profile.fitnessGoals.length + profile.nutritionGoals.length) + '</strong><span>health goals</span></div>' +
-          '<div class="assistant-builder-stat"><strong>' + String(profile.events.length) + '</strong><span>events and dates</span></div>' +
+          '<div class="assistant-builder-stat"><strong>' + String(profile.projects.length) + '</strong><span>items</span></div>' +
+          '<div class="assistant-builder-stat"><strong>' + String(datedItemCount) + '</strong><span>dated items</span></div>' +
+          '<div class="assistant-builder-stat"><strong>' + String(profile.projects.filter(function(item) { return item.priority === 'urgent'; }).length) + '</strong><span>urgent</span></div>' +
+          '<div class="assistant-builder-stat"><strong>' + String(profile.projects.filter(function(item) { return item.repoSlug; }).length) + '</strong><span>repos linked</span></div>' +
         '</div>' +
         '<div class="assistant-builder-meta">' +
           '<div><strong>Assistant:</strong> ' + escapeHtml(profile.assistantName) + ' (' + escapeHtml(profile.localAgentId) + ')</div>' +
+          '<div><strong>GitHub owner:</strong> ' + escapeHtml(profile.githubOwner || 'me') + '</div>' +
           '<div><strong>Plan file:</strong> ' + escapeHtml(profile.planFilePath) + '</div>' +
           '<div><strong>Chat delivery:</strong> ' + escapeHtml(profile.chatChannelId + ' / ' + profile.chatThreadId) + '</div>' +
           '<div><strong>Last applied:</strong> ' + escapeHtml(profile.lastAppliedAt || 'never') + '</div>' +
         '</div>' +
-        '<p class="assistant-builder-note" style="margin-top:.85rem">' + escapeHtml(profile.focusStrategy) + '</p>' +
+        '<p class="assistant-builder-note" style="margin-top:.85rem">' + escapeHtml(profile.personality || profile.focusStrategy) + '</p>' +
         (priorityChips ? '<div class="assistant-builder-chip-list">' + priorityChips + '</div>' : '');
     }
 
@@ -660,7 +701,25 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
         if (!Number.isFinite(index) || !Array.isArray(profile[section]) || !profile[section][index]) {
           return;
         }
-        profile[section][index][itemField] = target.value;
+        let nextValue = target.value;
+        if (itemField === 'priority') {
+          const normalized = String(nextValue || '').toLowerCase();
+          if (normalized === 'critical') {
+            nextValue = 'urgent';
+          } else if (normalized === 'medium') {
+            nextValue = 'med';
+          }
+        }
+        if (itemField === 'repoSlug') {
+          const ownerPrefix = String((profile.githubOwner || '') + '/').toLowerCase();
+          const trimmed = String(nextValue || '').trim()
+            .replace('https://github.com/', '')
+            .replace('http://github.com/', '');
+          nextValue = trimmed.toLowerCase().startsWith(ownerPrefix)
+            ? trimmed.slice(ownerPrefix.length)
+            : trimmed;
+        }
+        profile[section][index][itemField] = nextValue;
         syncRawJson();
         renderAssistantBuilderSummary();
         return;

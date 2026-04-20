@@ -28,7 +28,10 @@ function summarizeProject(project: PersonalAssistantProjectConfig): string {
     `- ${project.name} [${project.status}, ${project.priority}]`,
     `  Summary: ${project.summary}`,
     `  Next: ${project.nextAction}`,
+    formatOptionalLine('Repo', project.repoSlug),
+    formatOptionalLine('Project plan', project.planFilePath),
     formatOptionalLine('Deadline', project.deadline),
+    formatOptionalLine('Reminder', project.reminder),
     formatOptionalLine('Notes', project.notes),
   ].filter(Boolean);
   return lines.join('\n');
@@ -76,6 +79,9 @@ export function buildPersonalAssistantPlanMarkdown(profile: PersonalAssistantCon
     '',
     '## Coaching Intent',
     profile.focusStrategy,
+    '',
+    '## Coach Personality',
+    profile.personality,
     '',
     '## Weekly Outcome',
     profile.weeklyOutcome,
@@ -127,6 +133,7 @@ function buildLocalAssistantPrompt(profile: PersonalAssistantConfig): string {
     `You are ${profile.assistantName}, the user's direct personal assistant and execution coach.`,
     `You help ${profile.ownerName} keep projects, obligations, health goals, and upcoming events aligned.`,
     'Operate as a practical daily coach: concise, honest, and specific.',
+    `Coach personality: ${profile.personality}`,
     `Primary coaching intent: ${profile.focusStrategy}`,
     `Weekly success definition: ${profile.weeklyOutcome}`,
     'When multiple items compete, favor the highest-priority work with the nearest real-world consequence.',
@@ -231,6 +238,9 @@ export function upsertManagedAssistantAgents(config: GatewayConfig, profile: Per
 }
 
 function buildWorkflowInput(profile: PersonalAssistantConfig, phase: 'morning' | 'midday' | 'evening', title: string): Record<string, unknown> {
+  const notesSearchDirs = Array.isArray(profile.notesSearchDirs) && profile.notesSearchDirs.length > 0
+    ? profile.notesSearchDirs
+    : undefined;
   return {
     mode: 'check-in',
     phase,
@@ -238,7 +248,7 @@ function buildWorkflowInput(profile: PersonalAssistantConfig, phase: 'morning' |
     agentId: profile.localAgentId,
     planFilePath: profile.planFilePath,
     notesRepoPath: profile.notesRepoPath,
-    notesSearchDirs: profile.notesSearchDirs,
+    notesSearchDirs,
     recentNotesLimit: profile.recentNotesLimit,
     inbox: {
       userId: profile.chatUserId,
@@ -257,6 +267,9 @@ function buildWorkflowInput(profile: PersonalAssistantConfig, phase: 'morning' |
 
 export function buildPersonalAssistantWorkflowSeeds(profile: PersonalAssistantConfig): WorkflowSeedRecord[] {
   const prefix = profile.localAgentId;
+  const notesSearchDirs = Array.isArray(profile.notesSearchDirs) && profile.notesSearchDirs.length > 0
+    ? profile.notesSearchDirs
+    : undefined;
   return [
     {
       name: `${prefix}-morning`,
@@ -309,7 +322,7 @@ export function buildPersonalAssistantWorkflowSeeds(profile: PersonalAssistantCo
         agentId: profile.localAgentId,
         planFilePath: profile.planFilePath,
         notesRepoPath: profile.notesRepoPath,
-        notesSearchDirs: profile.notesSearchDirs,
+        notesSearchDirs,
         recentNotesLimit: profile.recentNotesLimit,
         progressSource: 'manual-workflow-run',
         progressEntry: 'Replace this text before clicking Run.',
@@ -344,6 +357,9 @@ export function buildProjectTrackingUpserts(profile: PersonalAssistantConfig): P
     planFilePath: profile.planFilePath,
     metadata: {
       notes: project.notes || null,
+      repoSlug: project.repoSlug || null,
+      planFilePath: project.planFilePath || null,
+      reminder: project.reminder || null,
       managedBy: 'personal-assistant-builder',
     },
     milestones: project.deadline

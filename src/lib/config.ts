@@ -319,10 +319,13 @@ export interface PersonalAssistantProjectConfig {
   id: string;
   name: string;
   status: 'idea' | 'on-track' | 'at-risk' | 'blocked' | 'done';
-  priority: 'critical' | 'high' | 'medium' | 'low';
+  priority: 'urgent' | 'high' | 'med' | 'low';
   summary: string;
   nextAction: string;
+  repoSlug?: string;
+  planFilePath?: string;
   deadline?: string;
+  reminder?: 'none' | 'at-time' | '1-hour-before' | '1-day-before' | '1-week-before';
   notes?: string;
 }
 
@@ -331,7 +334,7 @@ export interface PersonalAssistantObligationConfig {
   title: string;
   category: string;
   status: 'active' | 'upcoming' | 'paused' | 'done';
-  priority: 'critical' | 'high' | 'medium' | 'low';
+  priority: 'urgent' | 'high' | 'med' | 'low';
   deadline?: string;
   schedule?: string;
   notes?: string;
@@ -343,7 +346,7 @@ export interface PersonalAssistantGoalConfig {
   target: string;
   cadence?: string;
   status: 'active' | 'building' | 'maintain' | 'paused' | 'done';
-  priority: 'high' | 'medium' | 'low';
+  priority: 'urgent' | 'high' | 'med' | 'low';
   notes?: string;
 }
 
@@ -353,7 +356,8 @@ export interface PersonalAssistantEventConfig {
   startDate: string;
   endDate?: string;
   location?: string;
-  priority: 'high' | 'medium' | 'low';
+  priority: 'urgent' | 'high' | 'med' | 'low';
+  reminder?: 'none' | 'at-time' | '1-hour-before' | '1-day-before' | '1-week-before';
   notes?: string;
 }
 
@@ -368,7 +372,9 @@ export interface PersonalAssistantScheduleConfig {
 export interface PersonalAssistantConfig {
   enabled: boolean;
   ownerName: string;
+  githubOwner: string;
   assistantName: string;
+  personality: string;
   timezone: string;
   notesRepoPath: string;
   planFilePath: string;
@@ -1153,6 +1159,40 @@ function parseTextToSpeechServiceConfig(value: unknown, field: string): TextToSp
   };
 }
 
+function parseAssistantPriority(value: unknown, field: string): 'urgent' | 'high' | 'med' | 'low' {
+  const priority = String(value || '').toLowerCase();
+  if (priority === 'urgent' || priority === 'critical') {
+    return 'urgent';
+  }
+  if (priority === 'high') {
+    return 'high';
+  }
+  if (priority === 'med' || priority === 'medium') {
+    return 'med';
+  }
+  if (priority === 'low') {
+    return 'low';
+  }
+  throw new Error(`Invalid priority for ${field}`);
+}
+
+function parseAssistantReminder(value: unknown, field: string): 'none' | 'at-time' | '1-hour-before' | '1-day-before' | '1-week-before' | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  const reminder = String(value);
+  if (
+    reminder === 'none' ||
+    reminder === 'at-time' ||
+    reminder === '1-hour-before' ||
+    reminder === '1-day-before' ||
+    reminder === '1-week-before'
+  ) {
+    return reminder;
+  }
+  throw new Error(`Invalid reminder for ${field}`);
+}
+
 function parsePersonalAssistantProjectConfig(value: unknown, field: string): PersonalAssistantProjectConfig {
   if (!isRecord(value)) {
     throw new Error(`Expected object for ${field}`);
@@ -1163,19 +1203,17 @@ function parsePersonalAssistantProjectConfig(value: unknown, field: string): Per
     throw new Error(`Invalid status for ${field}.status`);
   }
 
-  const priority = value.priority;
-  if (priority !== 'critical' && priority !== 'high' && priority !== 'medium' && priority !== 'low') {
-    throw new Error(`Invalid priority for ${field}.priority`);
-  }
-
   return {
     id: assertString(value.id, `${field}.id`),
     name: assertString(value.name, `${field}.name`),
     status,
-    priority,
+    priority: parseAssistantPriority(value.priority, `${field}.priority`),
     summary: assertString(value.summary, `${field}.summary`),
     nextAction: assertString(value.nextAction, `${field}.nextAction`),
+    repoSlug: typeof value.repoSlug === 'string' ? value.repoSlug : undefined,
+    planFilePath: typeof value.planFilePath === 'string' ? value.planFilePath : undefined,
     deadline: typeof value.deadline === 'string' ? value.deadline : undefined,
+    reminder: parseAssistantReminder(value.reminder, `${field}.reminder`),
     notes: typeof value.notes === 'string' ? value.notes : undefined
   };
 }
@@ -1190,17 +1228,12 @@ function parsePersonalAssistantObligationConfig(value: unknown, field: string): 
     throw new Error(`Invalid status for ${field}.status`);
   }
 
-  const priority = value.priority;
-  if (priority !== 'critical' && priority !== 'high' && priority !== 'medium' && priority !== 'low') {
-    throw new Error(`Invalid priority for ${field}.priority`);
-  }
-
   return {
     id: assertString(value.id, `${field}.id`),
     title: assertString(value.title, `${field}.title`),
     category: assertString(value.category, `${field}.category`),
     status,
-    priority,
+    priority: parseAssistantPriority(value.priority, `${field}.priority`),
     deadline: typeof value.deadline === 'string' ? value.deadline : undefined,
     schedule: typeof value.schedule === 'string' ? value.schedule : undefined,
     notes: typeof value.notes === 'string' ? value.notes : undefined
@@ -1217,18 +1250,13 @@ function parsePersonalAssistantGoalConfig(value: unknown, field: string): Person
     throw new Error(`Invalid status for ${field}.status`);
   }
 
-  const priority = value.priority;
-  if (priority !== 'high' && priority !== 'medium' && priority !== 'low') {
-    throw new Error(`Invalid priority for ${field}.priority`);
-  }
-
   return {
     id: assertString(value.id, `${field}.id`),
     title: assertString(value.title, `${field}.title`),
     target: assertString(value.target, `${field}.target`),
     cadence: typeof value.cadence === 'string' ? value.cadence : undefined,
     status,
-    priority,
+    priority: parseAssistantPriority(value.priority, `${field}.priority`),
     notes: typeof value.notes === 'string' ? value.notes : undefined
   };
 }
@@ -1238,18 +1266,14 @@ function parsePersonalAssistantEventConfig(value: unknown, field: string): Perso
     throw new Error(`Expected object for ${field}`);
   }
 
-  const priority = value.priority;
-  if (priority !== 'high' && priority !== 'medium' && priority !== 'low') {
-    throw new Error(`Invalid priority for ${field}.priority`);
-  }
-
   return {
     id: assertString(value.id, `${field}.id`),
     title: assertString(value.title, `${field}.title`),
     startDate: assertString(value.startDate, `${field}.startDate`),
     endDate: typeof value.endDate === 'string' ? value.endDate : undefined,
     location: typeof value.location === 'string' ? value.location : undefined,
-    priority,
+    priority: parseAssistantPriority(value.priority, `${field}.priority`),
+    reminder: parseAssistantReminder(value.reminder, `${field}.reminder`),
     notes: typeof value.notes === 'string' ? value.notes : undefined
   };
 }
@@ -1283,11 +1307,13 @@ function parsePersonalAssistantConfig(value: unknown): PersonalAssistantConfig {
     return {
       enabled: false,
       ownerName: 'Jim',
+      githubOwner: 'me',
       assistantName: 'Personal Assistant',
+      personality: 'You are a life coach who motivates me to succeed with clear, practical, high-accountability guidance.',
       timezone: 'America/New_York',
       notesRepoPath: '/srv/notes',
       planFilePath: '/srv/notes/projects/personal-assistant-plan.md',
-      notesSearchDirs: ['daily', 'projects', 'inbox'],
+      notesSearchDirs: [],
       recentNotesLimit: 10,
       chatUserId: 'me',
       chatChannelId: 'coach',
@@ -1322,13 +1348,17 @@ function parsePersonalAssistantConfig(value: unknown): PersonalAssistantConfig {
   return {
     enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
     ownerName: assertString(value.ownerName, 'personalAssistant.ownerName'),
+    githubOwner: typeof value.githubOwner === 'string' ? value.githubOwner : 'me',
     assistantName: assertString(value.assistantName, 'personalAssistant.assistantName'),
+    personality: typeof value.personality === 'string'
+      ? value.personality
+      : 'You are a life coach who motivates me to succeed with clear, practical, high-accountability guidance.',
     timezone: assertString(value.timezone, 'personalAssistant.timezone'),
     notesRepoPath: assertString(value.notesRepoPath, 'personalAssistant.notesRepoPath'),
     planFilePath: assertString(value.planFilePath, 'personalAssistant.planFilePath'),
     notesSearchDirs: Array.isArray(value.notesSearchDirs)
       ? value.notesSearchDirs.map((entry, index) => assertString(entry, `personalAssistant.notesSearchDirs[${index}]`))
-      : ['daily', 'projects', 'inbox'],
+      : [],
     recentNotesLimit: value.recentNotesLimit === undefined ? 10 : assertPositiveInteger(value.recentNotesLimit, 'personalAssistant.recentNotesLimit'),
     chatUserId: assertString(value.chatUserId, 'personalAssistant.chatUserId'),
     chatChannelId: assertString(value.chatChannelId, 'personalAssistant.chatChannelId'),
