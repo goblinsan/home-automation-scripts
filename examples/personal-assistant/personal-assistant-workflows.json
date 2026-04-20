@@ -1,0 +1,132 @@
+[
+  {
+    "name": "personal-assistant-morning",
+    "schedule": "0 8 * * *",
+    "enabled": true,
+    "target": {
+      "type": "gateway-jobs.run",
+      "ref": "plan_progress_coach"
+    },
+    "input": {
+      "mode": "check-in",
+      "phase": "morning",
+      "timeZone": "America/New_York",
+      "agentId": "personal-assistant",
+      "planFilePath": "/opt/gateway-control-plane/plans/replace-me.md",
+      "notesRepoPath": "/srv/notes",
+      "notesSearchDirs": ["daily", "projects", "inbox"],
+      "recentNotesLimit": 10,
+      "inbox": {
+        "userId": "me",
+        "channelId": "coach",
+        "threadId": "personal-assistant-me",
+        "threadTitle": "Personal Assistant",
+        "title": "Morning Check-In",
+        "kind": "coach_prompt"
+      },
+      "noteLog": {
+        "enabled": true,
+        "commit": true
+      }
+    },
+    "timeoutSeconds": 120
+  },
+  {
+    "name": "personal-assistant-midday",
+    "schedule": "30 12 * * *",
+    "enabled": true,
+    "target": {
+      "type": "gateway-jobs.run",
+      "ref": "plan_progress_coach"
+    },
+    "input": {
+      "mode": "check-in",
+      "phase": "midday",
+      "timeZone": "America/New_York",
+      "agentId": "personal-assistant",
+      "planFilePath": "/opt/gateway-control-plane/plans/replace-me.md",
+      "notesRepoPath": "/srv/notes",
+      "notesSearchDirs": ["daily", "projects", "inbox"],
+      "recentNotesLimit": 10,
+      "inbox": {
+        "userId": "me",
+        "channelId": "coach",
+        "threadId": "personal-assistant-me",
+        "threadTitle": "Personal Assistant",
+        "title": "Midday Check-In",
+        "kind": "coach_prompt"
+      },
+      "noteLog": {
+        "enabled": true,
+        "commit": true
+      }
+    },
+    "timeoutSeconds": 120
+  },
+  {
+    "name": "personal-assistant-evening",
+    "schedule": "30 18 * * *",
+    "enabled": true,
+    "target": {
+      "type": "gateway-jobs.run",
+      "ref": "plan_progress_coach"
+    },
+    "input": {
+      "mode": "check-in",
+      "phase": "evening",
+      "timeZone": "America/New_York",
+      "agentId": "personal-assistant",
+      "planFilePath": "/opt/gateway-control-plane/plans/replace-me.md",
+      "notesRepoPath": "/srv/notes",
+      "notesSearchDirs": ["daily", "projects", "inbox"],
+      "recentNotesLimit": 10,
+      "inbox": {
+        "userId": "me",
+        "channelId": "coach",
+        "threadId": "personal-assistant-me",
+        "threadTitle": "Personal Assistant",
+        "title": "Evening Check-In",
+        "kind": "coach_prompt"
+      },
+      "noteLog": {
+        "enabled": true,
+        "commit": true
+      }
+    },
+    "timeoutSeconds": 120
+  },
+  {
+    "name": "personal-assistant-log-progress",
+    "schedule": "59 23 * * *",
+    "enabled": false,
+    "target": {
+      "type": "gateway-jobs.run",
+      "ref": "plan_progress_coach"
+    },
+    "input": {
+      "mode": "log-progress",
+      "timeZone": "America/New_York",
+      "agentId": "personal-assistant",
+      "planFilePath": "/opt/gateway-control-plane/plans/replace-me.md",
+      "notesRepoPath": "/srv/notes",
+      "notesSearchDirs": ["daily", "projects", "inbox"],
+      "recentNotesLimit": 10,
+      "progressSource": "manual-workflow-run",
+      "progressEntry": "Replace this text before clicking Run.",
+      "includeReflection": true,
+      "inbox": {
+        "userId": "me",
+        "channelId": "coach",
+        "threadId": "personal-assistant-me",
+        "threadTitle": "Personal Assistant",
+        "title": "Progress Reflection",
+        "kind": "coach_reflection"
+      },
+      "noteLog": {
+        "enabled": true,
+        "commit": true
+      }
+    },
+    "timeoutSeconds": 120
+  }
+]

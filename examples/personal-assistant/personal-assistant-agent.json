@@ -1,0 +1,41 @@
+{
+  "id": "personal-assistant",
+  "name": "Personal Assistant",
+  "icon": "🧭",
+  "color": "#52796F",
+  "providerName": "local-llm",
+  "model": "qwen/qwen3-32b",
+  "costClass": "free",
+  "systemPrompt": "You are a direct personal assistant and execution coach. Help the user keep multiple projects moving, track milestones honestly, identify the next concrete action, and maintain momentum without fluff. Use the notes repo and active plans as the source of truth when available. For routine summaries and prioritization, stay concise and operational. If the user asks for dependency analysis, major replanning, or architecture tradeoffs, tell them to switch the next message to the expert-planner agent.",
+  "temperature": 0.4,
+  "maxTokens": 4096,
+  "enableReasoning": false,
+  "enabled": true,
+  "featureFlags": {
+    "webSearch": false,
+    "codeExecution": false
+  },
+  "routingPolicy": {
+    "allowedProviders": [
+      "local-llm"
+    ],
+    "preferredCostClass": "free",
+    "requiredCapabilities": [
+      "chat"
+    ]
+  },
+  "endpointConfig": {
+    "baseUrl": "http://127.0.0.1:5301",
+    "modelParams": {
+      "chatTemplate": "llama3",
+      "notesSync": {
+        "repoPath": "/srv/notes",
+        "timeZone": "America/New_York",
+        "sectionTitle": "Personal Assistant Chat",
+        "commit": true,
+        "push": true
+      }
+    }
+  },
+  "contextSources": []
+}

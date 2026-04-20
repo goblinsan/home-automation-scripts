@@ -24,6 +24,7 @@ import {
   type NodeSetupRequest
 } from './deploy.ts';
 import {
+  createEmptyProjectTrackingOverview,
   initMetrics,
   shutdownMetrics,
   startHealthCollector,
@@ -39,7 +40,9 @@ import {
   addBenchmarkResult,
   finishBenchmarkRun,
   deleteBenchmarkRun,
+  getProjectTrackingOverview,
   purgeOldHealthChecks,
+  upsertProjectTrackingProject,
   type HealthProbeFunction,
 } from './metrics.ts';
 import { DEFAULT_WORKFLOW_SEED_PATH, importWorkflowSeed } from './workflows.ts';
@@ -756,6 +759,19 @@ function getGitHubDeployToken(config: GatewayConfig): string {
   throw new Error('GitHub deploy token is not configured. Set serviceProfiles.gatewayApi.environment GITHUB_TOKEN.');
 }
 
+async function ensureMonitoringReady(config: GatewayConfig): Promise<void> {
+  if (!config.monitoring?.enabled) {
+    throw new Error('Monitoring is not enabled. Enable it in Monitoring Settings, Save, then Restart.');
+  }
+
+  try {
+    getPool();
+    await runMigrations();
+  } catch {
+    await initMetrics(config.monitoring);
+  }
+}
+
 async function triggerManagedAppDeployWorkflow(
   config: GatewayConfig,
   appId: string,
@@ -1398,6 +1414,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
       const remoteServiceActionMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/service\/(start|stop|restart)$/);
       const remoteMinecraftActionMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/(start|stop|restart|broadcast|kick|ban|update-if-empty|force-update)$/);
       const remoteMinecraftUpdateRequestMatch = path.match(/^\/api\/remote-workloads\/([^/]+)\/minecraft\/update-request$/);
+      const projectTrackingUpdatesMatch = path.match(/^\/api\/project-tracking\/projects\/([^/]+)\/updates$/);
 
 
       if (request.method === 'GET' && path === '/api/config') {
@@ -1905,6 +1922,149 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
 
       // ── Monitoring API endpoints ──
 
+      if (request.method === 'GET' && path === '/api/project-tracking/overview') {
+        try {
+          const config = await loadGatewayConfig(options.configPath);
+          if (!config.monitoring?.enabled) {
+            sendJson(response, 200, createEmptyProjectTrackingOverview());
+            return;
+          }
+          await ensureMonitoringReady(config);
+          sendJson(response, 200, await getProjectTrackingOverview());
+        } catch (error) {
+          console.warn('[project-tracking] overview unavailable:', error instanceof Error ? error.message : error);
+          sendJson(response, 200, createEmptyProjectTrackingOverview());
+        }
+        return;
+      }
+
+      if (request.method === 'POST' && path === '/api/project-tracking/projects') {
+        const config = await loadGatewayConfig(options.configPath);
+        if (!config.monitoring?.enabled) {
+          sendJson(response, 400, { error: 'Monitoring is not enabled. Enable it in Monitoring Settings, Save, then Restart.' });
+          return;
+        }
+
+        const body = JSON.parse(await readBody(request) || '{}') as {
+          projectId?: string;
+          name?: string;
+          status?: string;
+          priority?: string;
+          summary?: string;
+          nextAction?: string;
+          notesRepoPath?: string;
+          planFilePath?: string;
+          metadata?: Record<string, unknown> | null;
+          lastCheckInAt?: string | null;
+          milestones?: Array<{
+            id?: string;
+            title?: string;
+            status?: string;
+            targetDate?: string | null;
+            sortOrder?: number;
+            notes?: string;
+          }>;
+          update?: {
+            source?: string;
+            kind?: string;
+            summary?: string;
+            details?: Record<string, unknown> | null;
+            createdAt?: string | null;
+          };
+        };
+
+        if (!body.projectId || !body.name) {
+          sendJson(response, 400, { error: 'projectId and name are required' });
+          return;
+        }
+
+        await ensureMonitoringReady(config);
+        await upsertProjectTrackingProject({
+          projectId: body.projectId,
+          name: body.name,
+          status: body.status,
+          priority: body.priority,
+          summary: body.summary,
+          nextAction: body.nextAction,
+          notesRepoPath: body.notesRepoPath,
+          planFilePath: body.planFilePath,
+          metadata: body.metadata,
+          lastCheckInAt: body.lastCheckInAt,
+          milestones: Array.isArray(body.milestones)
+            ? body.milestones
+                .filter((milestone) => milestone && typeof milestone.title === 'string' && milestone.title.trim().length > 0)
+                .map((milestone, index) => ({
+                  id: milestone.id,
+                  title: milestone.title!,
+                  status: milestone.status,
+                  targetDate: milestone.targetDate ?? null,
+                  sortOrder: typeof milestone.sortOrder === 'number' ? milestone.sortOrder : index,
+                  notes: milestone.notes,
+                }))
+            : undefined,
+          update: body.update?.summary
+            ? {
+                source: body.update.source,
+                kind: body.update.kind,
+                summary: body.update.summary,
+                details: body.update.details,
+                createdAt: body.update.createdAt ?? null,
+              }
+            : undefined,
+        });
+        sendJson(response, 200, { message: `Tracked project ${body.projectId} updated` });
+        return;
+      }
+
+      if (projectTrackingUpdatesMatch && request.method === 'POST') {
+        const config = await loadGatewayConfig(options.configPath);
+        if (!config.monitoring?.enabled) {
+          sendJson(response, 400, { error: 'Monitoring is not enabled. Enable it in Monitoring Settings, Save, then Restart.' });
+          return;
+        }
+
+        const projectId = decodeURIComponent(projectTrackingUpdatesMatch[1]);
+        const body = JSON.parse(await readBody(request) || '{}') as {
+          name?: string;
+          status?: string;
+          priority?: string;
+          summary?: string;
+          nextAction?: string;
+          source?: string;
+          kind?: string;
+          details?: Record<string, unknown> | null;
+          createdAt?: string | null;
+          lastCheckInAt?: string | null;
+        };
+
+        if (!body.name) {
+          sendJson(response, 400, { error: 'name is required' });
+          return;
+        }
+
+        await ensureMonitoringReady(config);
+        await upsertProjectTrackingProject({
+          projectId,
+          name: body.name,
+          status: body.status,
+          priority: body.priority,
+          summary: body.summary,
+          nextAction: body.nextAction,
+          lastCheckInAt: body.lastCheckInAt,
+          update: body.summary
+            ? {
+                source: body.source,
+                kind: body.kind,
+                summary: body.summary,
+                details: body.details,
+                createdAt: body.createdAt ?? null,
+              }
+            : undefined,
+        });
+        sendJson(response, 200, { message: `Tracked project ${projectId} check-in recorded` });
+        return;
+      }
+
       if (request.method === 'GET' && path === '/api/monitoring/health') {
         const cached = await getCachedHealthSnapshot();
         if (cached) {
@@ -1937,18 +2097,11 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           sendJson(response, 400, { error: 'Monitoring is not enabled. Enable it in Monitoring Settings, Save, then Restart.' });
           return;
         }
-        // Ensure metrics are initialized (handles first-run or restart race)
         try {
-          getPool();
-          // Pool exists but tables might not — ensure migrations ran
-          await runMigrations();
-        } catch {
-          try {
-            await initMetrics(config.monitoring);
-          } catch (initErr) {
-            sendJson(response, 500, { error: `Failed to connect to monitoring backend: ${initErr instanceof Error ? initErr.message : initErr}` });
-            return;
-          }
+          await ensureMonitoringReady(config);
+        } catch (initErr) {
+          sendJson(response, 500, { error: `Failed to connect to monitoring backend: ${initErr instanceof Error ? initErr.message : initErr}` });
+          return;
         }
         const targets = buildMonitoringTargets(config);
         const probe = createHealthProbe(config);
