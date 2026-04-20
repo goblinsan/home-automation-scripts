@@ -67,27 +67,6 @@ export const ADMIN_MARKUP: string = `<body>
           </div>
         </div>
 
-        <div class="overview-grid" id="overviewSummaryCards">
-          <div class="overview-card is-healthy">
-            <div class="overview-count" data-overview-count="healthy">—</div>
-            <div class="overview-label">Healthy</div>
-            <div class="overview-detail" data-overview-detail="healthy">Loading health snapshot…</div>
-          </div>
-          <div class="overview-card is-degraded">
-            <div class="overview-count" data-overview-count="degraded">—</div>
-            <div class="overview-label">Degraded</div>
-            <div class="overview-detail" data-overview-detail="degraded">Loading health snapshot…</div>
-          </div>
-          <div class="overview-card is-action">
-            <div class="overview-count" data-overview-count="action">—</div>
-            <div class="overview-label">Needs Action</div>
-            <div class="overview-detail" data-overview-detail="action">Loading health snapshot…</div>
-          </div>
-        </div>
-
-        <div class="overview-section-title">Runtime Snapshot</div>
-        <div class="overview-runtime" id="overviewRuntimeMetrics"></div>
-
         <div class="overview-section-title">Project Tracking</div>
         <div class="overview-grid" id="overviewProjectSummaryCards">
           <div class="overview-card is-healthy">
@@ -123,6 +102,28 @@ export const ADMIN_MARKUP: string = `<body>
           </div>
           <pre id="overviewProjectSummaryText" class="overview-project-summary-text">No tracked projects yet.</pre>
         </div>
+
+        <div class="overview-section-title">System Health</div>
+        <div class="overview-grid" id="overviewSummaryCards">
+          <div class="overview-card is-healthy">
+            <div class="overview-count" data-overview-count="healthy">—</div>
+            <div class="overview-label">Healthy</div>
+            <div class="overview-detail" data-overview-detail="healthy">Loading health snapshot…</div>
+          </div>
+          <div class="overview-card is-degraded">
+            <div class="overview-count" data-overview-count="degraded">—</div>
+            <div class="overview-label">Degraded</div>
+            <div class="overview-detail" data-overview-detail="degraded">Loading health snapshot…</div>
+          </div>
+          <div class="overview-card is-action">
+            <div class="overview-count" data-overview-count="action">—</div>
+            <div class="overview-label">Needs Action</div>
+            <div class="overview-detail" data-overview-detail="action">Loading health snapshot…</div>
+          </div>
+        </div>
+
+        <div class="overview-section-title">Runtime Snapshot</div>
+        <div class="overview-runtime" id="overviewRuntimeMetrics"></div>
 
         <div class="overview-section-title">Needs Action</div>
         <div class="overview-target-list" id="overviewActionList">
