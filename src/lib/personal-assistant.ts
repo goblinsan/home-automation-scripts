@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import type {
   GatewayChatAgentConfig,
@@ -23,7 +23,18 @@ function formatOptionalLine(label: string, value?: string): string {
   return value && value.trim() ? `  ${label}: ${value.trim()}` : '';
 }
 
-function summarizeProject(project: PersonalAssistantProjectConfig): string {
+function indentBlock(text: string, prefix = '  > '): string {
+  return text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => `${prefix}${line}`)
+    .join('\n');
+}
+
+function summarizeProject(
+  project: PersonalAssistantProjectConfig,
+  planContent?: string,
+): string {
   const lines = [
     `- ${project.name} [${project.status}, ${project.priority}]`,
     `  Summary: ${project.summary}`,
@@ -34,7 +45,40 @@ function summarizeProject(project: PersonalAssistantProjectConfig): string {
     formatOptionalLine('Reminder', project.reminder),
     formatOptionalLine('Notes', project.notes),
   ].filter(Boolean);
+  if (planContent && planContent.trim()) {
+    lines.push('  Project plan content:');
+    lines.push(indentBlock(planContent.trim()));
+  } else if (project.planFilePath && project.planFilePath.trim()) {
+    lines.push(`  Project plan content: (could not read ${project.planFilePath.trim()})`);
+  }
   return lines.join('\n');
+}
+
+const MAX_PROJECT_PLAN_BYTES = 64 * 1024;
+
+async function loadProjectPlanContents(
+  projects: PersonalAssistantProjectConfig[],
+): Promise<Map<string, string>> {
+  const results = new Map<string, string>();
+  await Promise.all(
+    projects.map(async (project) => {
+      const path = project.planFilePath?.trim();
+      if (!path) {
+        return;
+      }
+      try {
+        const absolutePath = resolve(path);
+        const content = await readFile(absolutePath, 'utf8');
+        const truncated = content.length > MAX_PROJECT_PLAN_BYTES
+          ? `${content.slice(0, MAX_PROJECT_PLAN_BYTES)}\n…(truncated)…`
+          : content;
+        results.set(project.id, truncated);
+      } catch {
+        // Leave entry unset; summarizeProject will note that the file could not be read.
+      }
+    }),
+  );
+  return results;
 }
 
 function summarizeObligation(obligation: PersonalAssistantObligationConfig): string {
@@ -68,7 +112,10 @@ function summarizeEvent(event: PersonalAssistantEventConfig): string {
   return lines.join('\n');
 }
 
-export function buildPersonalAssistantPlanMarkdown(profile: PersonalAssistantConfig): string {
+export function buildPersonalAssistantPlanMarkdown(
+  profile: PersonalAssistantConfig,
+  projectPlanContents?: Map<string, string>,
+): string {
   const generatedAt = new Date().toISOString();
   return [
     `# ${profile.assistantName} Operating Plan`,
@@ -93,7 +140,11 @@ export function buildPersonalAssistantPlanMarkdown(profile: PersonalAssistantCon
     formatList(profile.weeklyThemes),
     '',
     '## Active Projects',
-    profile.projects.length > 0 ? profile.projects.map(summarizeProject).join('\n\n') : '- none yet',
+    profile.projects.length > 0
+      ? profile.projects
+          .map((project) => summarizeProject(project, projectPlanContents?.get(project.id)))
+          .join('\n\n')
+      : '- none yet',
     '',
     '## Obligations And Responsibilities',
     profile.obligations.length > 0 ? profile.obligations.map(summarizeObligation).join('\n\n') : '- none yet',
@@ -119,7 +170,8 @@ export function buildPersonalAssistantPlanMarkdown(profile: PersonalAssistantCon
 
 export async function writePersonalAssistantPlanFile(profile: PersonalAssistantConfig): Promise<{ path: string; bytes: number }> {
   const absolutePath = resolve(profile.planFilePath);
-  const content = buildPersonalAssistantPlanMarkdown(profile);
+  const projectPlanContents = await loadProjectPlanContents(profile.projects);
+  const content = buildPersonalAssistantPlanMarkdown(profile, projectPlanContents);
   await mkdir(dirname(absolutePath), { recursive: true });
   await writeFile(absolutePath, `${content.trim()}\n`, 'utf8');
   return {

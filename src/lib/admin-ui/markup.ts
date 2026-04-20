@@ -345,16 +345,16 @@ export const ADMIN_MARKUP: string = `<body>
           <div class="section-summary-copy">
             <span class="pill">Coach</span>
             <h3>Assistant Builder</h3>
-            <p>Define your projects, obligations, goals, important dates, and coaching cadence without editing workflow files.</p>
+            <p>Define and edit your projects, obligations, goals, important dates, and coaching cadence without editing workflow files.</p>
           </div>
         </summary>
         <div class="section-body">
           <div class="split-actions">
             <div>
-              <p class="section-note">This manages the plan file, the <code>personal-assistant</code> and <code>expert-planner</code> agents, and the recurring check-in workflows.</p>
+              <p class="section-note">This manages the plan file, the <code>personal-assistant</code> and <code>expert-planner</code> agents, and the recurring check-in workflows. Open the builder any time to edit the coach, projects, or goals — your existing setup loads automatically.</p>
             </div>
             <div class="toolbar">
-              <button id="openAssistantBuilderButton" class="primary-action">Open Builder</button>
+              <button id="openAssistantBuilderButton" class="primary-action">Open / Edit Builder</button>
               <button id="applyAssistantBuilderButton">Apply Coach Setup</button>
             </div>
           </div>

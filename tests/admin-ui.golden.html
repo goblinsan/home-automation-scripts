@@ -1769,16 +1769,16 @@
           <div class="section-summary-copy">
             <span class="pill">Coach</span>
             <h3>Assistant Builder</h3>
-            <p>Define your projects, obligations, goals, important dates, and coaching cadence without editing workflow files.</p>
+            <p>Define and edit your projects, obligations, goals, important dates, and coaching cadence without editing workflow files.</p>
           </div>
         </summary>
         <div class="section-body">
           <div class="split-actions">
             <div>
-              <p class="section-note">This manages the plan file, the <code>personal-assistant</code> and <code>expert-planner</code> agents, and the recurring check-in workflows.</p>
+              <p class="section-note">This manages the plan file, the <code>personal-assistant</code> and <code>expert-planner</code> agents, and the recurring check-in workflows. Open the builder any time to edit the coach, projects, or goals — your existing setup loads automatically.</p>
             </div>
             <div class="toolbar">
-              <button id="openAssistantBuilderButton" class="primary-action">Open Builder</button>
+              <button id="openAssistantBuilderButton" class="primary-action">Open / Edit Builder</button>
               <button id="applyAssistantBuilderButton">Apply Coach Setup</button>
             </div>
           </div>
@@ -3611,7 +3611,7 @@
     const assistantBuilderState = { step: 0 };
     const assistantBuilderSteps = [
       { title: 'Basics', description: 'Set your assistant defaults, personality, and delivery settings.' },
-      { title: 'Items', description: 'Add the work and commitments your assistant should coach you through.' },
+      { title: 'Items', description: 'Add projects, obligations, events, workout goals, and nutrition goals your assistant should coach you through.' },
       { title: 'Review', description: 'Preview the generated plan, managed agents, and recurring workflows before applying.' }
     ];
 
@@ -3772,7 +3772,7 @@
         title: 'New Obligation ' + index,
         category: 'personal',
         status: 'active',
-        priority: 'medium',
+        priority: 'med',
         deadline: '',
         schedule: '',
         notes: ''
@@ -3789,7 +3789,7 @@
         target: 'Describe the target clearly.',
         cadence: '',
         status: 'active',
-        priority: 'medium',
+        priority: 'med',
         notes: ''
       };
     }
@@ -3803,7 +3803,7 @@
         startDate: '',
         endDate: '',
         location: '',
-        priority: 'medium',
+        priority: 'med',
         notes: ''
       };
     }
@@ -3964,9 +3964,12 @@
 
     function renderAssistantProjectStep(profile) {
       const githubOwner = profile.githubOwner || 'me';
-      return '<div class="assistant-builder-list">' +
+      const projectsHtml = '<div class="assistant-builder-review-card">' +
+        '<h3>Projects</h3>' +
+        '<p class="assistant-builder-note">Linked work the coach should track. Optional plan file path is read from disk on Apply and embedded into the master plan so the coach can see milestones, timelines, and goals.</p>' +
+        '<div class="assistant-builder-list">' +
         (profile.projects.length === 0
-          ? '<div class="assistant-builder-note">No items yet. Add projects, commitments, or goals your assistant should coach you on.</div>'
+          ? '<div class="assistant-builder-note">No projects yet.</div>'
           : profile.projects.map(function(project, index) {
               return '<div class="assistant-builder-item">' +
                 '<div class="assistant-builder-item-header">' +
@@ -3989,71 +3992,84 @@
                   '<label class="wizard-field full"><span class="wizard-label">Repo Preview</span><small>' +
                     escapeHtml((project.repoSlug || '').trim() ? (githubOwner + '/' + project.repoSlug.trim().replace(/^\/+|\/+$/g, '')) : (githubOwner + '/<repo-slug>')) +
                   '</small></label>' +
-                  assistantItemField('projects', index, 'Project Plan Path (optional)', 'planFilePath', project.planFilePath || '', { full: true }) +
+                  assistantItemField('projects', index, 'Project Plan File Path (optional, read on Apply)', 'planFilePath', project.planFilePath || '', { full: true }) +
                   assistantItemField('projects', index, 'Next Action', 'nextAction', project.nextAction) +
                   assistantItemTextarea('projects', index, 'Summary', 'summary', project.summary, { full: true, rows: 3 }) +
                   assistantItemTextarea('projects', index, 'Notes', 'notes', project.notes || '', { full: true, rows: 3 }) +
                 '</div>' +
               '</div>';
             }).join('')) +
-        '<div class="toolbar"><button type="button" data-assistant-action="add-item" data-assistant-section="projects">Add Item</button></div>' +
+        '<div class="toolbar"><button type="button" data-assistant-action="add-item" data-assistant-section="projects">Add Project</button></div>' +
+        '</div>' +
+      '</div>';
+
+      const obligationsHtml = '<div class="assistant-builder-review-card">' +
+        '<h3>Obligations</h3>' +
+        '<p class="assistant-builder-note">Recurring responsibilities like coaching soccer, family commitments, bills, or deadlines.</p>' +
+        '<div class="assistant-builder-list">' +
+          (profile.obligations.length === 0
+            ? '<div class="assistant-builder-note">No obligations yet.</div>'
+            : profile.obligations.map(function(item, index) {
+                return '<div class="assistant-builder-item">' +
+                  '<div class="assistant-builder-item-header">' +
+                    '<strong>' + escapeHtml(item.title || item.id) + '</strong>' +
+                    '<button type="button" class="danger" data-assistant-action="remove-item" data-assistant-section="obligations" data-assistant-index="' + String(index) + '">Remove</button>' +
+                  '</div>' +
+                  '<div class="assistant-builder-grid">' +
+                    assistantItemField('obligations', index, 'Obligation Id', 'id', item.id) +
+                    assistantItemField('obligations', index, 'Title', 'title', item.title) +
+                    assistantItemField('obligations', index, 'Category', 'category', item.category) +
+                    assistantItemSelect('obligations', index, 'Status', 'status', item.status, ['active', 'upcoming', 'paused', 'done']) +
+                    assistantItemSelect('obligations', index, 'Priority', 'priority', item.priority, ['urgent', 'high', 'med', 'low']) +
+                    assistantItemField('obligations', index, 'Deadline', 'deadline', item.deadline || '') +
+                    assistantItemField('obligations', index, 'Schedule', 'schedule', item.schedule || '') +
+                    assistantItemTextarea('obligations', index, 'Notes', 'notes', item.notes || '', { full: true, rows: 3 }) +
+                  '</div>' +
+                '</div>';
+              }).join('')) +
+          '<div class="toolbar"><button type="button" data-assistant-action="add-item" data-assistant-section="obligations">Add Obligation</button></div>' +
+        '</div>' +
+      '</div>';
+
+      const eventsHtml = '<div class="assistant-builder-review-card">' +
+        '<h3>Trips, Events, And Important Dates</h3>' +
+        '<p class="assistant-builder-note">Travel, appointments, launches, games, or any date that should shape the week.</p>' +
+        '<div class="assistant-builder-list">' +
+          (profile.events.length === 0
+            ? '<div class="assistant-builder-note">No events yet.</div>'
+            : profile.events.map(function(item, index) {
+                return '<div class="assistant-builder-item">' +
+                  '<div class="assistant-builder-item-header">' +
+                    '<strong>' + escapeHtml(item.title || item.id) + '</strong>' +
+                    '<button type="button" class="danger" data-assistant-action="remove-item" data-assistant-section="events" data-assistant-index="' + String(index) + '">Remove</button>' +
+                  '</div>' +
+                  '<div class="assistant-builder-grid">' +
+                    assistantItemField('events', index, 'Event Id', 'id', item.id) +
+                    assistantItemField('events', index, 'Title', 'title', item.title) +
+                    assistantItemField('events', index, 'Start', 'startDate', item.startDate || '') +
+                    assistantItemField('events', index, 'End', 'endDate', item.endDate || '') +
+                    assistantItemField('events', index, 'Location', 'location', item.location || '') +
+                    assistantItemSelect('events', index, 'Priority', 'priority', item.priority, ['urgent', 'high', 'med', 'low']) +
+                    assistantItemTextarea('events', index, 'Notes', 'notes', item.notes || '', { full: true, rows: 3 }) +
+                  '</div>' +
+                '</div>';
+              }).join('')) +
+          '<div class="toolbar"><button type="button" data-assistant-action="add-item" data-assistant-section="events">Add Event</button></div>' +
+        '</div>' +
+      '</div>';
+
+      return '<div class="assistant-builder-review">' +
+        projectsHtml +
+        obligationsHtml +
+        eventsHtml +
+        renderAssistantGoalCollection('fitnessGoals', 'Workout Goals', profile.fitnessGoals, 'Add workout goals, training blocks, recovery goals, or movement routines.') +
+        renderAssistantGoalCollection('nutritionGoals', 'Nutrition Goals', profile.nutritionGoals, 'Add nutrition goals, meal structure, weight targets, or guardrails.') +
       '</div>';
     }
 
     function renderAssistantCommitmentStep(profile) {
-      return '<div class="assistant-builder-review">' +
-        '<div class="assistant-builder-review-card">' +
-          '<h3>Obligations</h3>' +
-          '<div class="assistant-builder-list">' +
-            (profile.obligations.length === 0
-              ? '<div class="assistant-builder-note">Add recurring responsibilities like coaching soccer, family commitments, bills, or deadlines.</div>'
-              : profile.obligations.map(function(item, index) {
-                  return '<div class="assistant-builder-item">' +
-                    '<div class="assistant-builder-item-header">' +
-                      '<strong>' + escapeHtml(item.title || item.id) + '</strong>' +
-                      '<button type="button" class="danger" data-assistant-action="remove-item" data-assistant-section="obligations" data-assistant-index="' + String(index) + '">Remove</button>' +
-                    '</div>' +
-                    '<div class="assistant-builder-grid">' +
-                      assistantItemField('obligations', index, 'Obligation Id', 'id', item.id) +
-                      assistantItemField('obligations', index, 'Title', 'title', item.title) +
-                      assistantItemField('obligations', index, 'Category', 'category', item.category) +
-                      assistantItemSelect('obligations', index, 'Status', 'status', item.status, ['active', 'upcoming', 'paused', 'done']) +
-                      assistantItemSelect('obligations', index, 'Priority', 'priority', item.priority, ['critical', 'high', 'medium', 'low']) +
-                      assistantItemField('obligations', index, 'Deadline', 'deadline', item.deadline || '') +
-                      assistantItemField('obligations', index, 'Schedule', 'schedule', item.schedule || '') +
-                      assistantItemTextarea('obligations', index, 'Notes', 'notes', item.notes || '', { full: true, rows: 3 }) +
-                    '</div>' +
-                  '</div>';
-                }).join('')) +
-            '<div class="toolbar"><button type="button" data-assistant-action="add-item" data-assistant-section="obligations">Add Obligation</button></div>' +
-          '</div>' +
-        '</div>' +
-        '<div class="assistant-builder-review-card">' +
-          '<h3>Trips, Events, And Important Dates</h3>' +
-          '<div class="assistant-builder-list">' +
-            (profile.events.length === 0
-              ? '<div class="assistant-builder-note">Add travel, appointments, launches, games, or any date that should shape the week.</div>'
-              : profile.events.map(function(item, index) {
-                  return '<div class="assistant-builder-item">' +
-                    '<div class="assistant-builder-item-header">' +
-                      '<strong>' + escapeHtml(item.title || item.id) + '</strong>' +
-                      '<button type="button" class="danger" data-assistant-action="remove-item" data-assistant-section="events" data-assistant-index="' + String(index) + '">Remove</button>' +
-                    '</div>' +
-                    '<div class="assistant-builder-grid">' +
-                      assistantItemField('events', index, 'Event Id', 'id', item.id) +
-                      assistantItemField('events', index, 'Title', 'title', item.title) +
-                      assistantItemField('events', index, 'Start', 'startDate', item.startDate || '') +
-                      assistantItemField('events', index, 'End', 'endDate', item.endDate || '') +
-                      assistantItemField('events', index, 'Location', 'location', item.location || '') +
-                      assistantItemSelect('events', index, 'Priority', 'priority', item.priority, ['high', 'medium', 'low']) +
-                      assistantItemTextarea('events', index, 'Notes', 'notes', item.notes || '', { full: true, rows: 3 }) +
-                    '</div>' +
-                  '</div>';
-                }).join('')) +
-            '<div class="toolbar"><button type="button" data-assistant-action="add-item" data-assistant-section="events">Add Event Or Date</button></div>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
+      // Deprecated: obligations + events are now rendered inside renderAssistantProjectStep.
+      return renderAssistantProjectStep(profile);
     }
 
     function renderAssistantGoalCollection(section, title, items, emptyMessage) {
@@ -4074,7 +4090,7 @@
                     assistantItemField(section, index, 'Target', 'target', item.target) +
                     assistantItemField(section, index, 'Cadence', 'cadence', item.cadence || '') +
                     assistantItemSelect(section, index, 'Status', 'status', item.status, ['active', 'building', 'maintain', 'paused', 'done']) +
-                    assistantItemSelect(section, index, 'Priority', 'priority', item.priority, ['high', 'medium', 'low']) +
+                    assistantItemSelect(section, index, 'Priority', 'priority', item.priority, ['urgent', 'high', 'med', 'low']) +
                     assistantItemTextarea(section, index, 'Notes', 'notes', item.notes || '', { full: true, rows: 3 }) +
                   '</div>' +
                 '</div>';
@@ -4209,17 +4225,28 @@
         return;
       }
       const profile = ensurePersonalAssistantConfig();
-      const priorityChips = profile.projects.slice(0, 8).map(function(item) {
-        const label = (item.name || item.id || 'item') + ' · ' + (item.priority || 'med');
+      const projects = profile.projects || [];
+      const obligations = profile.obligations || [];
+      const events = profile.events || [];
+      const fitness = profile.fitnessGoals || [];
+      const nutrition = profile.nutritionGoals || [];
+      const allItems = projects.concat(obligations, events, fitness, nutrition);
+      const priorityChips = allItems.slice(0, 8).map(function(item) {
+        const label = (item.name || item.title || item.id || 'item') + ' · ' + (item.priority || 'med');
         return '<span class="assistant-builder-chip">' + escapeHtml(label) + '</span>';
       }).join('');
-      const datedItemCount = profile.projects.filter(function(item) { return Boolean(item.deadline); }).length;
+      const datedItemCount = projects.filter(function(item) { return Boolean(item.deadline); }).length
+        + obligations.filter(function(item) { return Boolean(item.deadline); }).length
+        + events.filter(function(item) { return Boolean(item.startDate); }).length;
+      const urgentCount = allItems.filter(function(item) { return item.priority === 'urgent'; }).length;
       container.innerHTML = '' +
         '<div class="assistant-builder-summary-grid">' +
-          '<div class="assistant-builder-stat"><strong>' + String(profile.projects.length) + '</strong><span>items</span></div>' +
-          '<div class="assistant-builder-stat"><strong>' + String(datedItemCount) + '</strong><span>dated items</span></div>' +
-          '<div class="assistant-builder-stat"><strong>' + String(profile.projects.filter(function(item) { return item.priority === 'urgent'; }).length) + '</strong><span>urgent</span></div>' +
-          '<div class="assistant-builder-stat"><strong>' + String(profile.projects.filter(function(item) { return item.repoSlug; }).length) + '</strong><span>repos linked</span></div>' +
+          '<div class="assistant-builder-stat"><strong>' + String(projects.length) + '</strong><span>projects</span></div>' +
+          '<div class="assistant-builder-stat"><strong>' + String(obligations.length) + '</strong><span>obligations</span></div>' +
+          '<div class="assistant-builder-stat"><strong>' + String(events.length) + '</strong><span>events</span></div>' +
+          '<div class="assistant-builder-stat"><strong>' + String(fitness.length + nutrition.length) + '</strong><span>health goals</span></div>' +
+          '<div class="assistant-builder-stat"><strong>' + String(datedItemCount) + '</strong><span>dated</span></div>' +
+          '<div class="assistant-builder-stat"><strong>' + String(urgentCount) + '</strong><span>urgent</span></div>' +
         '</div>' +
         '<div class="assistant-builder-meta">' +
           '<div><strong>Assistant:</strong> ' + escapeHtml(profile.assistantName) + ' (' + escapeHtml(profile.localAgentId) + ')</div>' +
@@ -4373,18 +4400,56 @@
       }
     }
 
+    let applyAssistantInFlight = false;
+
+    function setAssistantApplyButtonsBusy(busy) {
+      const buttonIds = ['applyAssistantBuilderButton', 'assistantBuilderApplyButton'];
+      buttonIds.forEach(function(id) {
+        const button = document.getElementById(id);
+        if (!button) {
+          return;
+        }
+        if (busy) {
+          if (!button.dataset.originalLabel) {
+            button.dataset.originalLabel = button.textContent || '';
+          }
+          button.disabled = true;
+          button.setAttribute('aria-busy', 'true');
+          button.textContent = 'Applying…';
+        } else {
+          if (button.dataset.originalLabel) {
+            button.textContent = button.dataset.originalLabel;
+            delete button.dataset.originalLabel;
+          }
+          button.disabled = false;
+          button.removeAttribute('aria-busy');
+        }
+      });
+    }
+
     async function applyAssistantBuilderSetup() {
-      await persistConfigState({ renderAfterSave: false });
-      const result = await requestJson('POST', '/api/personal-assistant/apply');
-      state.config = result.config;
-      await Promise.all([
-        fetchWorkflows().catch(function() { return null; }),
-        fetchProjectTrackingOverview().catch(function() { return null; }),
-        fetchChatProviders().catch(function() { return null; })
-      ]);
-      render();
-      setStatus(result.message || 'Applied assistant builder setup');
-      closeAssistantBuilderWizard();
+      if (applyAssistantInFlight) {
+        return;
+      }
+      applyAssistantInFlight = true;
+      setAssistantApplyButtonsBusy(true);
+      setStatus('Applying coach setup…');
+      try {
+        await persistConfigState({ renderAfterSave: false });
+        const result = await requestJson('POST', '/api/personal-assistant/apply');
+        state.config = result.config;
+        await Promise.all([
+          fetchWorkflows().catch(function() { return null; }),
+          fetchProjectTrackingOverview().catch(function() { return null; }),
+          fetchChatProviders().catch(function() { return null; })
+        ]);
+        render();
+        setStatus(result.message || 'Applied assistant builder setup');
+        closeAssistantBuilderWizard();
+      } finally {
+        applyAssistantInFlight = false;
+        setAssistantApplyButtonsBusy(false);
+      }
     }
 
     function renderGatewayApiProfile() {
