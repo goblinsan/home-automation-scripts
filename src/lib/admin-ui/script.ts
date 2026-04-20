@@ -27,6 +27,7 @@ import { renderScriptState } from './script/state.ts';
 import { HELPERS_SCRIPT } from './script/helpers.ts';
 import { SHELL_SCRIPT } from './script/shell.ts';
 import { CONFIG_FORM_SCRIPT } from './script/config-form.ts';
+import { PERSONAL_ASSISTANT_SCRIPT } from './script/personal-assistant.ts';
 import { SERVICES_SCRIPT } from './script/services.ts';
 import { MONITORING_SCRIPT } from './script/monitoring.ts';
 import { OVERVIEW_SCRIPT } from './script/overview.ts';
@@ -47,6 +48,7 @@ export function renderAdminScript(options: AdminScriptOptions): string {
     HELPERS_SCRIPT +
     SHELL_SCRIPT +
     CONFIG_FORM_SCRIPT +
+    PERSONAL_ASSISTANT_SCRIPT +
     SERVICES_SCRIPT +
     MONITORING_SCRIPT +
     OVERVIEW_SCRIPT +

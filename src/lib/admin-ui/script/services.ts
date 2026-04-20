@@ -194,6 +194,7 @@ export const SERVICES_SCRIPT = `    function renderGatewayApiProfile() {
 
     function renderGatewayChatPlatformProfile() {
       const profile = state.config.serviceProfiles.gatewayChatPlatform;
+      renderAssistantBuilderSummary();
       document.getElementById('gatewayChatProfileEnabled').checked = profile.enabled;
       document.getElementById('gatewayChatProfileAppId').innerHTML = appOptions(profile.appId);
       document.getElementById('gatewayChatProfileApiBaseUrl').value = profile.apiBaseUrl;

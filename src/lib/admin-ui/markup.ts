@@ -343,6 +343,27 @@ export const ADMIN_MARKUP: string = `<body>
       <details class="card section-card" open>
         <summary>
           <div class="section-summary-copy">
+            <span class="pill">Coach</span>
+            <h3>Assistant Builder</h3>
+            <p>Define your projects, obligations, goals, important dates, and coaching cadence without editing workflow files.</p>
+          </div>
+        </summary>
+        <div class="section-body">
+          <div class="split-actions">
+            <div>
+              <p class="section-note">This manages the plan file, the <code>personal-assistant</code> and <code>expert-planner</code> agents, and the recurring check-in workflows.</p>
+            </div>
+            <div class="toolbar">
+              <button id="openAssistantBuilderButton" class="primary-action">Open Builder</button>
+              <button id="applyAssistantBuilderButton">Apply Coach Setup</button>
+            </div>
+          </div>
+          <div id="assistantBuilderSummary" class="section-list"></div>
+        </div>
+      </details>
+      <details class="card section-card" open>
+        <summary>
+          <div class="section-summary-copy">
             <span class="pill">Agents</span>
             <h3>Configured Chat Agents</h3>
             <p>Only these agents are synced into <code>gateway-chat-platform</code>.</p>
@@ -1276,6 +1297,24 @@ export const ADMIN_MARKUP: string = `<body>
           <button id="managedAppConfigBackBtn" class="wizard-btn-secondary">Back</button>
           <button id="managedAppConfigAddBtn" class="wizard-btn-primary">Add App</button>
         </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="assistantBuilderWizard" class="wizard-dialog">
+    <div class="wizard-content" style="max-width:72rem">
+      <div class="wizard-header">
+        <div>
+          <h2>Assistant Builder</h2>
+          <p class="wizard-desc" id="assistantBuilderStepLabel">Build and update your personal coach setup.</p>
+        </div>
+        <button id="closeAssistantBuilderButton" class="wizard-close">&times;</button>
+      </div>
+      <div id="assistantBuilderBody" class="wizard-step"></div>
+      <div class="wizard-actions">
+        <button id="assistantBuilderBackButton" class="wizard-btn-secondary">Back</button>
+        <button id="assistantBuilderNextButton" class="wizard-btn-primary">Next</button>
+        <button id="assistantBuilderApplyButton" class="wizard-btn-primary" hidden>Apply Coach Setup</button>
       </div>
     </div>
   </dialog>

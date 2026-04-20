@@ -1957,6 +1957,47 @@ export const INIT_SCRIPT = `    // Keyboard nav across top-tab and sub-tab butto
       renderActiveTab();
       syncRawJson();
     });
+    document.getElementById('openAssistantBuilderButton').addEventListener('click', () => {
+      openAssistantBuilderWizard();
+    });
+    document.getElementById('applyAssistantBuilderButton').addEventListener('click', async () => {
+      try {
+        await applyAssistantBuilderSetup();
+      } catch (error) {
+        setStatus(describeClientError(error), 'error');
+      }
+    });
+    document.getElementById('closeAssistantBuilderButton').addEventListener('click', () => {
+      closeAssistantBuilderWizard();
+    });
+    document.getElementById('assistantBuilderBackButton').addEventListener('click', () => {
+      assistantBuilderState.step = Math.max(0, assistantBuilderState.step - 1);
+      renderAssistantBuilderStep();
+    });
+    document.getElementById('assistantBuilderNextButton').addEventListener('click', () => {
+      assistantBuilderState.step = Math.min(assistantBuilderSteps.length - 1, assistantBuilderState.step + 1);
+      renderAssistantBuilderStep();
+    });
+    document.getElementById('assistantBuilderApplyButton').addEventListener('click', async () => {
+      try {
+        await applyAssistantBuilderSetup();
+      } catch (error) {
+        setStatus(describeClientError(error), 'error');
+      }
+    });
+    document.getElementById('assistantBuilderBody').addEventListener('input', (event) => {
+      updateAssistantInput(event.target);
+    });
+    document.getElementById('assistantBuilderBody').addEventListener('change', (event) => {
+      updateAssistantInput(event.target);
+    });
+    document.getElementById('assistantBuilderBody').addEventListener('click', (event) => {
+      const button = event.target instanceof Element ? event.target.closest('button[data-assistant-action]') : null;
+      if (!button) {
+        return;
+      }
+      handleAssistantBuilderAction(button);
+    });
     document.getElementById('addWorkflowButton').addEventListener('click', () => {
       state.workflows.unshift(createWorkflowDraft());
       renderWorkflows();

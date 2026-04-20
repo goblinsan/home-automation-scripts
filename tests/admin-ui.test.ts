@@ -46,6 +46,8 @@ test('ADMIN_MARKUP exposes the tab shell and shared action surface', () => {
   assert.ok(ADMIN_MARKUP.includes('id="currentAction"'), 'current action surface present');
   assert.ok(ADMIN_MARKUP.includes('id="overviewProjectList"'), 'overview project tracking list present');
   assert.ok(ADMIN_MARKUP.includes('id="overviewProjectSummaryText"'), 'overview project summary surface present');
+  assert.ok(ADMIN_MARKUP.includes('id="assistantBuilderSummary"'), 'assistant builder summary surface present');
+  assert.ok(ADMIN_MARKUP.includes('id="assistantBuilderWizard"'), 'assistant builder wizard present');
 });
 
 test('ADMIN_MARKUP exposes accessibility hooks for keyboard + screen reader operators', () => {
@@ -96,6 +98,7 @@ test('renderAdminScript preserves critical state invariants', () => {
   assert.ok(script.includes('dataLoaded'), 'dataLoaded key present');
   assert.ok(script.includes('subTabLoading'), 'subTabLoading key present');
   assert.ok(script.includes('projectTrackingOverview'), 'project tracking overview state key present');
+  assert.ok(script.includes('assistantBuilderState'), 'assistant builder wizard state present');
 
   // Server-side seed path is injected rather than hard-coded.
   assert.ok(

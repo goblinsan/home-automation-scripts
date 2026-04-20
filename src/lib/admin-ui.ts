@@ -45,7 +45,8 @@ import {
   upsertProjectTrackingProject,
   type HealthProbeFunction,
 } from './metrics.ts';
-import { DEFAULT_WORKFLOW_SEED_PATH, importWorkflowSeed } from './workflows.ts';
+import { DEFAULT_WORKFLOW_SEED_PATH, importWorkflowSeed, planWorkflowSeedImport, type WorkflowRecord } from './workflows.ts';
+import { buildPersonalAssistantWorkflowSeeds, buildProjectTrackingUpserts, upsertManagedAssistantAgents, writePersonalAssistantPlanFile } from './personal-assistant.ts';
 import { renderAdminPage } from './admin-ui/index.ts';
 
 export interface AdminServerOptions {
@@ -1906,6 +1907,69 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         const config = await loadRequestConfig(request);
         await saveGatewayConfig(options.configPath, config);
         sendJson(response, 200, { message: `Saved ${options.configPath}`, config });
+        return;
+      }
+
+      if (request.method === 'POST' && path === '/api/personal-assistant/apply') {
+        const config = await loadGatewayConfig(options.configPath);
+        const profile = config.personalAssistant;
+        if (!profile.enabled) {
+          throw new Error('personalAssistant.enabled must be true before applying the coach setup');
+        }
+        if (!config.serviceProfiles.gatewayChatPlatform.enabled) {
+          throw new Error('gatewayChatPlatform service profile must be enabled before applying the coach setup');
+        }
+        if (!config.serviceProfiles.gatewayApi.enabled) {
+          throw new Error('gatewayApi service profile must be enabled before applying the coach setup');
+        }
+
+        const appliedAt = new Date().toISOString();
+        profile.lastAppliedAt = appliedAt;
+        const managedAgentIds = upsertManagedAssistantAgents(config, profile);
+        await saveGatewayConfig(options.configPath, config);
+
+        const planFile = await writePersonalAssistantPlanFile(profile);
+        const workflowSeeds = buildPersonalAssistantWorkflowSeeds(profile);
+        const existingWorkflowsResponse = await proxyWorkflowRequest(config, '/api/workflows', 'GET');
+        if (existingWorkflowsResponse.status !== 200 || !Array.isArray(existingWorkflowsResponse.payload)) {
+          throw new Error('Failed to load existing workflows before applying the coach setup');
+        }
+        const workflowOperations = planWorkflowSeedImport(existingWorkflowsResponse.payload as WorkflowRecord[], workflowSeeds);
+        for (const operation of workflowOperations) {
+          const result = operation.type === 'create'
+            ? await proxyWorkflowRequest(config, '/api/workflows', 'POST', operation.body)
+            : await proxyWorkflowRequest(config, `/api/workflows/${operation.id}`, 'PUT', operation.body);
+          if (result.status < 200 || result.status >= 300) {
+            throw new Error(`Failed to ${operation.type} workflow ${operation.name}`);
+          }
+        }
+
+        let syncedProjectCount = 0;
+        if (config.monitoring?.enabled) {
+          const projectUpserts = buildProjectTrackingUpserts(profile);
+          for (const input of projectUpserts) {
+            await upsertProjectTrackingProject(input);
+          }
+          syncedProjectCount = projectUpserts.length;
+        }
+
+        await syncServiceProfileRuntime(
+          config,
+          config.serviceProfiles.gatewayChatPlatform.appId,
+          { dryRun: false, log: () => undefined },
+          config.serviceProfiles.gatewayChatPlatform.apiBaseUrl
+        );
+
+        sendJson(response, 200, {
+          message: `Applied ${profile.assistantName} setup`,
+          appliedAt,
+          managedAgentIds,
+          workflowOperations,
+          syncedProjectCount,
+          monitoringEnabled: Boolean(config.monitoring?.enabled),
+          planFile,
+          config
+        });
         return;
       }
 

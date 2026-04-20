@@ -315,6 +315,91 @@ export interface GatewayChatPlatformServiceProfile {
   agents: GatewayChatAgentConfig[];
 }
 
+export interface PersonalAssistantProjectConfig {
+  id: string;
+  name: string;
+  status: 'idea' | 'on-track' | 'at-risk' | 'blocked' | 'done';
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  summary: string;
+  nextAction: string;
+  deadline?: string;
+  notes?: string;
+}
+
+export interface PersonalAssistantObligationConfig {
+  id: string;
+  title: string;
+  category: string;
+  status: 'active' | 'upcoming' | 'paused' | 'done';
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  deadline?: string;
+  schedule?: string;
+  notes?: string;
+}
+
+export interface PersonalAssistantGoalConfig {
+  id: string;
+  title: string;
+  target: string;
+  cadence?: string;
+  status: 'active' | 'building' | 'maintain' | 'paused' | 'done';
+  priority: 'high' | 'medium' | 'low';
+  notes?: string;
+}
+
+export interface PersonalAssistantEventConfig {
+  id: string;
+  title: string;
+  startDate: string;
+  endDate?: string;
+  location?: string;
+  priority: 'high' | 'medium' | 'low';
+  notes?: string;
+}
+
+export interface PersonalAssistantScheduleConfig {
+  morningCheckInCron: string;
+  middayCheckInCron: string;
+  eveningCheckInCron: string;
+  weeklyPlanningCron: string;
+  weeklyReviewCron: string;
+}
+
+export interface PersonalAssistantConfig {
+  enabled: boolean;
+  ownerName: string;
+  assistantName: string;
+  timezone: string;
+  notesRepoPath: string;
+  planFilePath: string;
+  notesSearchDirs: string[];
+  recentNotesLimit: number;
+  chatUserId: string;
+  chatChannelId: string;
+  chatThreadId: string;
+  chatThreadTitle: string;
+  localAgentId: string;
+  localProviderName: string;
+  localModel: string;
+  localBaseUrl: string;
+  expertAgentId: string;
+  expertProviderName: string;
+  expertModel: string;
+  expertBaseUrl: string;
+  expertApiKey: string;
+  focusStrategy: string;
+  weeklyOutcome: string;
+  priorities: string[];
+  weeklyThemes: string[];
+  projects: PersonalAssistantProjectConfig[];
+  obligations: PersonalAssistantObligationConfig[];
+  fitnessGoals: PersonalAssistantGoalConfig[];
+  nutritionGoals: PersonalAssistantGoalConfig[];
+  events: PersonalAssistantEventConfig[];
+  schedules: PersonalAssistantScheduleConfig;
+  lastAppliedAt?: string;
+}
+
 export interface PiProxyServiceProfile {
   enabled: boolean;
   description: string;
@@ -351,6 +436,7 @@ export interface GatewayConfig {
   remoteWorkloads: RemoteWorkloadConfig[];
   features: FeatureFlagConfig[];
   serviceProfiles: ServiceProfiles;
+  personalAssistant: PersonalAssistantConfig;
   monitoring?: MonitoringConfig;
 }
 
@@ -1067,6 +1153,224 @@ function parseTextToSpeechServiceConfig(value: unknown, field: string): TextToSp
   };
 }
 
+function parsePersonalAssistantProjectConfig(value: unknown, field: string): PersonalAssistantProjectConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  const status = value.status;
+  if (status !== 'idea' && status !== 'on-track' && status !== 'at-risk' && status !== 'blocked' && status !== 'done') {
+    throw new Error(`Invalid status for ${field}.status`);
+  }
+
+  const priority = value.priority;
+  if (priority !== 'critical' && priority !== 'high' && priority !== 'medium' && priority !== 'low') {
+    throw new Error(`Invalid priority for ${field}.priority`);
+  }
+
+  return {
+    id: assertString(value.id, `${field}.id`),
+    name: assertString(value.name, `${field}.name`),
+    status,
+    priority,
+    summary: assertString(value.summary, `${field}.summary`),
+    nextAction: assertString(value.nextAction, `${field}.nextAction`),
+    deadline: typeof value.deadline === 'string' ? value.deadline : undefined,
+    notes: typeof value.notes === 'string' ? value.notes : undefined
+  };
+}
+
+function parsePersonalAssistantObligationConfig(value: unknown, field: string): PersonalAssistantObligationConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  const status = value.status;
+  if (status !== 'active' && status !== 'upcoming' && status !== 'paused' && status !== 'done') {
+    throw new Error(`Invalid status for ${field}.status`);
+  }
+
+  const priority = value.priority;
+  if (priority !== 'critical' && priority !== 'high' && priority !== 'medium' && priority !== 'low') {
+    throw new Error(`Invalid priority for ${field}.priority`);
+  }
+
+  return {
+    id: assertString(value.id, `${field}.id`),
+    title: assertString(value.title, `${field}.title`),
+    category: assertString(value.category, `${field}.category`),
+    status,
+    priority,
+    deadline: typeof value.deadline === 'string' ? value.deadline : undefined,
+    schedule: typeof value.schedule === 'string' ? value.schedule : undefined,
+    notes: typeof value.notes === 'string' ? value.notes : undefined
+  };
+}
+
+function parsePersonalAssistantGoalConfig(value: unknown, field: string): PersonalAssistantGoalConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  const status = value.status;
+  if (status !== 'active' && status !== 'building' && status !== 'maintain' && status !== 'paused' && status !== 'done') {
+    throw new Error(`Invalid status for ${field}.status`);
+  }
+
+  const priority = value.priority;
+  if (priority !== 'high' && priority !== 'medium' && priority !== 'low') {
+    throw new Error(`Invalid priority for ${field}.priority`);
+  }
+
+  return {
+    id: assertString(value.id, `${field}.id`),
+    title: assertString(value.title, `${field}.title`),
+    target: assertString(value.target, `${field}.target`),
+    cadence: typeof value.cadence === 'string' ? value.cadence : undefined,
+    status,
+    priority,
+    notes: typeof value.notes === 'string' ? value.notes : undefined
+  };
+}
+
+function parsePersonalAssistantEventConfig(value: unknown, field: string): PersonalAssistantEventConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  const priority = value.priority;
+  if (priority !== 'high' && priority !== 'medium' && priority !== 'low') {
+    throw new Error(`Invalid priority for ${field}.priority`);
+  }
+
+  return {
+    id: assertString(value.id, `${field}.id`),
+    title: assertString(value.title, `${field}.title`),
+    startDate: assertString(value.startDate, `${field}.startDate`),
+    endDate: typeof value.endDate === 'string' ? value.endDate : undefined,
+    location: typeof value.location === 'string' ? value.location : undefined,
+    priority,
+    notes: typeof value.notes === 'string' ? value.notes : undefined
+  };
+}
+
+function parsePersonalAssistantScheduleConfig(value: unknown, field: string): PersonalAssistantScheduleConfig {
+  if (value === undefined) {
+    return {
+      morningCheckInCron: '0 8 * * *',
+      middayCheckInCron: '30 12 * * *',
+      eveningCheckInCron: '30 18 * * *',
+      weeklyPlanningCron: '0 7 * * 1',
+      weeklyReviewCron: '0 18 * * 0'
+    };
+  }
+
+  if (!isRecord(value)) {
+    throw new Error(`Expected object for ${field}`);
+  }
+
+  return {
+    morningCheckInCron: assertString(value.morningCheckInCron, `${field}.morningCheckInCron`),
+    middayCheckInCron: assertString(value.middayCheckInCron, `${field}.middayCheckInCron`),
+    eveningCheckInCron: assertString(value.eveningCheckInCron, `${field}.eveningCheckInCron`),
+    weeklyPlanningCron: assertString(value.weeklyPlanningCron, `${field}.weeklyPlanningCron`),
+    weeklyReviewCron: assertString(value.weeklyReviewCron, `${field}.weeklyReviewCron`)
+  };
+}
+
+function parsePersonalAssistantConfig(value: unknown): PersonalAssistantConfig {
+  if (value === undefined) {
+    return {
+      enabled: false,
+      ownerName: 'Jim',
+      assistantName: 'Personal Assistant',
+      timezone: 'America/New_York',
+      notesRepoPath: '/srv/notes',
+      planFilePath: '/srv/notes/projects/personal-assistant-plan.md',
+      notesSearchDirs: ['daily', 'projects', 'inbox'],
+      recentNotesLimit: 10,
+      chatUserId: 'me',
+      chatChannelId: 'coach',
+      chatThreadId: 'personal-assistant-me',
+      chatThreadTitle: 'Personal Assistant',
+      localAgentId: 'personal-assistant',
+      localProviderName: 'local-llm',
+      localModel: 'qwen/qwen3-32b',
+      localBaseUrl: 'http://127.0.0.1:5301',
+      expertAgentId: 'expert-planner',
+      expertProviderName: 'openai-main',
+      expertModel: 'gpt-5.4',
+      expertBaseUrl: 'https://api.openai.com/v1',
+      expertApiKey: '__SET_OPENAI_API_KEY__',
+      focusStrategy: 'Prioritize the few items that move important projects and personal commitments forward without overloading the day.',
+      weeklyOutcome: 'End each week with the highest-leverage work advanced, obligations covered, and the next week already staged.',
+      priorities: [],
+      weeklyThemes: [],
+      projects: [],
+      obligations: [],
+      fitnessGoals: [],
+      nutritionGoals: [],
+      events: [],
+      schedules: parsePersonalAssistantScheduleConfig(undefined, 'personalAssistant.schedules')
+    };
+  }
+
+  if (!isRecord(value)) {
+    throw new Error('Expected object for personalAssistant');
+  }
+
+  return {
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
+    ownerName: assertString(value.ownerName, 'personalAssistant.ownerName'),
+    assistantName: assertString(value.assistantName, 'personalAssistant.assistantName'),
+    timezone: assertString(value.timezone, 'personalAssistant.timezone'),
+    notesRepoPath: assertString(value.notesRepoPath, 'personalAssistant.notesRepoPath'),
+    planFilePath: assertString(value.planFilePath, 'personalAssistant.planFilePath'),
+    notesSearchDirs: Array.isArray(value.notesSearchDirs)
+      ? value.notesSearchDirs.map((entry, index) => assertString(entry, `personalAssistant.notesSearchDirs[${index}]`))
+      : ['daily', 'projects', 'inbox'],
+    recentNotesLimit: value.recentNotesLimit === undefined ? 10 : assertPositiveInteger(value.recentNotesLimit, 'personalAssistant.recentNotesLimit'),
+    chatUserId: assertString(value.chatUserId, 'personalAssistant.chatUserId'),
+    chatChannelId: assertString(value.chatChannelId, 'personalAssistant.chatChannelId'),
+    chatThreadId: assertString(value.chatThreadId, 'personalAssistant.chatThreadId'),
+    chatThreadTitle: assertString(value.chatThreadTitle, 'personalAssistant.chatThreadTitle'),
+    localAgentId: assertString(value.localAgentId, 'personalAssistant.localAgentId'),
+    localProviderName: assertString(value.localProviderName, 'personalAssistant.localProviderName'),
+    localModel: assertString(value.localModel, 'personalAssistant.localModel'),
+    localBaseUrl: assertString(value.localBaseUrl, 'personalAssistant.localBaseUrl'),
+    expertAgentId: assertString(value.expertAgentId, 'personalAssistant.expertAgentId'),
+    expertProviderName: assertString(value.expertProviderName, 'personalAssistant.expertProviderName'),
+    expertModel: assertString(value.expertModel, 'personalAssistant.expertModel'),
+    expertBaseUrl: assertString(value.expertBaseUrl, 'personalAssistant.expertBaseUrl'),
+    expertApiKey: assertString(value.expertApiKey, 'personalAssistant.expertApiKey'),
+    focusStrategy: assertString(value.focusStrategy, 'personalAssistant.focusStrategy'),
+    weeklyOutcome: assertString(value.weeklyOutcome, 'personalAssistant.weeklyOutcome'),
+    priorities: Array.isArray(value.priorities)
+      ? value.priorities.map((entry, index) => assertString(entry, `personalAssistant.priorities[${index}]`))
+      : [],
+    weeklyThemes: Array.isArray(value.weeklyThemes)
+      ? value.weeklyThemes.map((entry, index) => assertString(entry, `personalAssistant.weeklyThemes[${index}]`))
+      : [],
+    projects: Array.isArray(value.projects)
+      ? value.projects.map((entry, index) => parsePersonalAssistantProjectConfig(entry, `personalAssistant.projects[${index}]`))
+      : [],
+    obligations: Array.isArray(value.obligations)
+      ? value.obligations.map((entry, index) => parsePersonalAssistantObligationConfig(entry, `personalAssistant.obligations[${index}]`))
+      : [],
+    fitnessGoals: Array.isArray(value.fitnessGoals)
+      ? value.fitnessGoals.map((entry, index) => parsePersonalAssistantGoalConfig(entry, `personalAssistant.fitnessGoals[${index}]`))
+      : [],
+    nutritionGoals: Array.isArray(value.nutritionGoals)
+      ? value.nutritionGoals.map((entry, index) => parsePersonalAssistantGoalConfig(entry, `personalAssistant.nutritionGoals[${index}]`))
+      : [],
+    events: Array.isArray(value.events)
+      ? value.events.map((entry, index) => parsePersonalAssistantEventConfig(entry, `personalAssistant.events[${index}]`))
+      : [],
+    schedules: parsePersonalAssistantScheduleConfig(value.schedules, 'personalAssistant.schedules'),
+    lastAppliedAt: typeof value.lastAppliedAt === 'string' ? value.lastAppliedAt : undefined
+  };
+}
+
 function parseGatewayChatPlatformServiceProfile(value: unknown): GatewayChatPlatformServiceProfile {
   if (value === undefined) {
     return {
@@ -1231,6 +1535,9 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
   if (raw.serviceProfiles !== undefined && !isRecord(raw.serviceProfiles)) {
     throw new Error('serviceProfiles must be an object');
   }
+  if (raw.personalAssistant !== undefined && !isRecord(raw.personalAssistant)) {
+    throw new Error('personalAssistant must be an object');
+  }
 
   const gateway: GatewaySettings = {
     serverNames: assertStringArray(raw.gateway.serverNames, 'gateway.serverNames'),
@@ -1254,6 +1561,7 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
     gatewayChatPlatform: parseGatewayChatPlatformServiceProfile(serviceProfilesRaw.gatewayChatPlatform),
     piProxy: parsePiProxyServiceProfile(serviceProfilesRaw.piProxy)
   };
+  const personalAssistant = parsePersonalAssistantConfig(raw.personalAssistant);
 
   for (const job of scheduledJobs) {
     if (!apps.find((app) => app.id === job.appId)) {
@@ -1286,7 +1594,7 @@ export function parseGatewayConfig(raw: unknown): GatewayConfig {
 
   const monitoring = parseMonitoringConfig(raw.monitoring);
 
-  return { gateway, apps, scheduledJobs, workerNodes, remoteWorkloads, features, serviceProfiles, monitoring };
+  return { gateway, apps, scheduledJobs, workerNodes, remoteWorkloads, features, serviceProfiles, personalAssistant, monitoring };
 }
 
 export async function loadGatewayConfig(configPath: string): Promise<GatewayConfig> {
