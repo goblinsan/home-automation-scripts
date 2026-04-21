@@ -187,7 +187,7 @@ export const DATA_SCRIPT = `    async function loadTabData(tab, options = {}) {
         renderGatewayChatPlatformProfile();
         return;
       }
-      const data = await requestJson('GET', '/api/tts/voices');
+      const data = await requestJson('GET', '/api/tts/voices', undefined, 5000);
       state.ttsVoices = Array.isArray(data?.voices) ? data.voices : [];
       renderGatewayChatPlatformProfile();
     }
@@ -196,7 +196,7 @@ export const DATA_SCRIPT = `    async function loadTabData(tab, options = {}) {
       if (!providerName || !state.config || !state.config.serviceProfiles.gatewayChatPlatform.enabled) {
         return;
       }
-      const data = await requestJson('GET', \`/api/chat-platform/providers/\${encodeURIComponent(providerName)}/models\`);
+      const data = await requestJson('GET', \`/api/chat-platform/providers/\${encodeURIComponent(providerName)}/models\`, undefined, 8000);
       state.providerModels[providerName] = Array.isArray(data?.models) ? data.models : [];
     }
 

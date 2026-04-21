@@ -1062,6 +1062,10 @@ async function listChatProviders(config: GatewayConfig): Promise<ChatProviderSta
 
 async function listChatProviderModels(config: GatewayConfig, providerName: string): Promise<ChatProviderModelRecord[]> {
   const result = await proxyChatPlatformRequest(config, `/api/providers/${encodeURIComponent(providerName)}/models`, 'GET');
+  // A 400/404/503 from the chat platform means the provider is unconfigured or unavailable — return empty rather than throw.
+  if (typeof result.status === 'number' && result.status >= 400) {
+    return [];
+  }
   const rawModels =
     result.payload && typeof result.payload === 'object' && Array.isArray((result.payload as { models?: unknown[] }).models)
       ? (result.payload as { models: unknown[] }).models
