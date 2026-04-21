@@ -1030,14 +1030,15 @@ async function proxyChatPlatformRequest(
   config: GatewayConfig,
   path: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
-  body?: unknown
+  body?: unknown,
+  timeoutMs?: number
 ): Promise<{ status: number; payload: unknown }> {
   if (!config.serviceProfiles.gatewayChatPlatform.enabled) {
     throw new Error('gatewayChatPlatform service profile is disabled');
   }
 
   const chatPlatformBaseUrl = normalizeBaseUrl(config.serviceProfiles.gatewayChatPlatform.apiBaseUrl);
-  return requestJsonUrl(`${chatPlatformBaseUrl}${path}`, method, body);
+  return requestJsonUrl(`${chatPlatformBaseUrl}${path}`, method, body, undefined, timeoutMs);
 }
 
 async function runLocalCapture(command: string, timeoutMs = 5000): Promise<{ stdout: string; stderr: string; code: number }> {
@@ -1072,10 +1073,45 @@ async function buildCoachDiagnostics(config: GatewayConfig): Promise<Record<stri
   const providerName = profile.localProviderName;
   const llmBaseUrl = getServiceProfileEnvironmentValue(config, 'LM_STUDIO_A_BASE_URL');
 
-  const providerStatus = await proxyChatPlatformRequest(config, '/api/providers/status', 'GET').catch((error) => ({
+  // Per-call timeout kept short so the overall diagnostic returns well within
+  // the gateway nginx / Cloudflare proxy_read_timeout. All upstream calls run
+  // in parallel — total wall time is roughly max(call) + docker inspect.
+  const PER_CALL_TIMEOUT_MS = 6_000;
+
+  const failurePayload = (error: unknown) => ({
     status: 0,
     payload: { error: error instanceof Error ? error.message : String(error) },
-  }));
+  });
+
+  const [
+    providerStatus,
+    providerModelsResult,
+    llmHealth,
+    llmModels,
+    containerConnectivityTest,
+  ] = await Promise.all([
+    proxyChatPlatformRequest(config, '/api/providers/status', 'GET', undefined, PER_CALL_TIMEOUT_MS).catch(failurePayload),
+    proxyChatPlatformRequest(
+      config,
+      `/api/providers/${encodeURIComponent(providerName)}/models`,
+      'GET',
+      undefined,
+      PER_CALL_TIMEOUT_MS
+    ).catch(failurePayload),
+    llmBaseUrl
+      ? requestJsonUrl(`${normalizeBaseUrl(llmBaseUrl)}/health`, 'GET', undefined, undefined, PER_CALL_TIMEOUT_MS).catch(failurePayload)
+      : Promise.resolve({ status: 0, payload: { error: 'LM_STUDIO_A_BASE_URL is not configured in gateway-chat-platform environment' } }),
+    llmBaseUrl
+      ? requestJsonUrl(`${normalizeBaseUrl(llmBaseUrl)}/api/models`, 'GET', undefined, undefined, PER_CALL_TIMEOUT_MS).catch(failurePayload)
+      : Promise.resolve({ status: 0, payload: { error: 'LM_STUDIO_A_BASE_URL is not configured in gateway-chat-platform environment' } }),
+    proxyChatPlatformRequest(
+      config,
+      '/internal/diagnostics/lm-studio-connectivity',
+      'GET',
+      undefined,
+      PER_CALL_TIMEOUT_MS
+    ).catch(failurePayload),
+  ]);
 
   const providerStatusRecord =
     providerStatus.payload && typeof providerStatus.payload === 'object' && Array.isArray((providerStatus.payload as { providers?: unknown[] }).providers)
@@ -1083,39 +1119,6 @@ async function buildCoachDiagnostics(config: GatewayConfig): Promise<Record<stri
           return candidate && typeof candidate === 'object' && (candidate as { name?: unknown }).name === providerName;
         }) as Record<string, unknown> | undefined
       : undefined;
-
-  const providerModelsResult = await proxyChatPlatformRequest(
-    config,
-    `/api/providers/${encodeURIComponent(providerName)}/models`,
-    'GET'
-  ).catch((error) => ({
-    status: 0,
-    payload: { error: error instanceof Error ? error.message : String(error) },
-  }));
-
-  const llmHealth = llmBaseUrl
-    ? await requestJsonUrl(`${normalizeBaseUrl(llmBaseUrl)}/health`, 'GET').catch((error) => ({
-        status: 0,
-        payload: { error: error instanceof Error ? error.message : String(error) },
-      }))
-    : { status: 0, payload: { error: 'LM_STUDIO_A_BASE_URL is not configured in gateway-chat-platform environment' } };
-
-  const llmModels = llmBaseUrl
-    ? await requestJsonUrl(`${normalizeBaseUrl(llmBaseUrl)}/api/models`, 'GET').catch((error) => ({
-        status: 0,
-        payload: { error: error instanceof Error ? error.message : String(error) },
-      }))
-    : { status: 0, payload: { error: 'LM_STUDIO_A_BASE_URL is not configured in gateway-chat-platform environment' } };
-
-  // Test connectivity from inside the chat-api container
-  const containerConnectivityTest = await proxyChatPlatformRequest(
-    config,
-    '/internal/diagnostics/lm-studio-connectivity',
-    'GET'
-  ).catch((error) => ({
-    status: 0,
-    payload: { error: error instanceof Error ? error.message : String(error) },
-  }));
 
   // Inspect the live running container to compare config-stored URL vs what the container actually has
   const chatAppId = config.serviceProfiles.gatewayChatPlatform.appId;
@@ -1235,7 +1238,8 @@ async function requestJsonUrl(
   requestUrl: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   body?: unknown,
-  extraHeaders?: Record<string, string>
+  extraHeaders?: Record<string, string>,
+  timeoutMs: number = 10_000
 ): Promise<{ status: number; payload: unknown }> {
   const requestBody = body === undefined ? undefined : JSON.stringify(body);
   const requestImpl = requestUrl.startsWith('https://') ? (await import('node:https')).request : (await import('node:http')).request;
@@ -1253,7 +1257,7 @@ async function requestJsonUrl(
       requestUrl,
       {
         method,
-        timeout: 10_000,
+        timeout: timeoutMs,
         headers: Object.keys(headers).length > 0 ? headers : undefined
       },
       (apiResponse) => {
@@ -1263,7 +1267,22 @@ async function requestJsonUrl(
         });
         apiResponse.on('end', () => {
           const responseText = Buffer.concat(chunks).toString('utf8');
-          const payload = responseText.length > 0 ? JSON.parse(responseText) as unknown : null;
+          let payload: unknown = null;
+          if (responseText.length > 0) {
+            try {
+              payload = JSON.parse(responseText);
+            } catch {
+              // Downstream returned non-JSON (e.g. HTML 5xx from gateway nginx).
+              // Surface the raw text + status as a payload instead of throwing
+              // inside the event handler, which would otherwise become an
+              // uncaught exception and crash the request handler.
+              payload = {
+                error: 'non-JSON response',
+                status: apiResponse.statusCode ?? 0,
+                bodySnippet: responseText.slice(0, 500),
+              };
+            }
+          }
           resolve({
             status: apiResponse.statusCode ?? 0,
             payload
