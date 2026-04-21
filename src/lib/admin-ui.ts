@@ -1107,6 +1107,16 @@ async function buildCoachDiagnostics(config: GatewayConfig): Promise<Record<stri
       }))
     : { status: 0, payload: { error: 'LM_STUDIO_A_BASE_URL is not configured in gateway-chat-platform environment' } };
 
+  // Test connectivity from inside the chat-api container
+  const containerConnectivityTest = await proxyChatPlatformRequest(
+    config,
+    '/internal/diagnostics/lm-studio-connectivity',
+    'GET'
+  ).catch((error) => ({
+    status: 0,
+    payload: { error: error instanceof Error ? error.message : String(error) },
+  }));
+
   // Inspect the live running container to compare config-stored URL vs what the container actually has
   const chatAppId = config.serviceProfiles.gatewayChatPlatform.appId;
   const chatApp = config.apps.find((a) => a.id === chatAppId);
@@ -1160,6 +1170,10 @@ async function buildCoachDiagnostics(config: GatewayConfig): Promise<Record<stri
       healthPayload: llmHealth.payload,
       modelsHttp: llmModels.status,
       modelsPayload: llmModels.payload,
+    },
+    containerConnectivity: {
+      httpStatus: containerConnectivityTest.status,
+      payload: containerConnectivityTest.payload,
     },
     liveContainer,
   };
