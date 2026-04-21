@@ -2286,6 +2286,24 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
 
   function buildMonitoringTargets(config: GatewayConfig): Array<{ kind: string; id: string; label: string }> {
     const targets: Array<{ kind: string; id: string; label: string }> = [];
+    if (config.monitoring?.enabled) {
+      const postgresHost = config.monitoring.postgres.host.trim();
+      const redisHost = config.monitoring.redis.host.trim();
+      if (postgresHost) {
+        targets.push({
+          kind: 'monitoring-datastore',
+          id: 'postgres',
+          label: `Monitoring Postgres (${postgresHost}:${config.monitoring.postgres.port})`
+        });
+      }
+      if (redisHost) {
+        targets.push({
+          kind: 'monitoring-datastore',
+          id: 'redis',
+          label: `Monitoring Redis (${redisHost}:${config.monitoring.redis.port})`
+        });
+      }
+    }
     for (const node of config.workerNodes) {
       if (!node.enabled) continue;
       targets.push({ kind: 'node', id: node.id, label: `${node.id} (${node.host})` });
