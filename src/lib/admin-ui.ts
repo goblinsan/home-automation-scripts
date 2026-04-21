@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { buildArtifacts } from './build.ts';
-import { getAllScheduledJobs, getWorkerNode, loadGatewayConfig, parseGatewayConfig, saveGatewayConfig, type GatewayConfig } from './config.ts';
+import { getAllScheduledJobs, getWorkerNode, loadGatewayConfig, parseGatewayConfig, saveGatewayConfig, type GatewayConfig, type PersonalAssistantConfig } from './config.ts';
 import {
   bootstrapWorkerNode,
   controlContainerServiceWorkload,
@@ -1080,6 +1080,18 @@ async function listChatProviderModels(config: GatewayConfig, providerName: strin
     }));
 }
 
+function buildCoachActivationFallbackMessage(profile: PersonalAssistantConfig): string {
+  const activeProjects = profile.projects.filter((project) => project.status !== 'done' && project.status !== 'paused').length;
+  const obligations = profile.obligations.length;
+  const goals = profile.fitnessGoals.length + profile.nutritionGoals.length;
+  return [
+    `${profile.assistantName} is loaded and ready to help.`,
+    `I have your current plan context: ${activeProjects} active project(s), ${obligations} obligation(s), ${goals} health/nutrition goal(s).`,
+    `Automations are configured for ${profile.timezone}: morning (${profile.schedules.morningCheckInCron}), midday (${profile.schedules.middayCheckInCron}), evening (${profile.schedules.eveningCheckInCron}), weekly kickoff (${profile.schedules.weeklyPlanningCron}), and weekly review (${profile.schedules.weeklyReviewCron}).`,
+    'I will reach out on the next scheduled check-in.',
+  ].join('\n\n');
+}
+
 async function requestJsonUrl(
   requestUrl: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
@@ -1965,6 +1977,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         );
 
         let activationMessageSent = false;
+        let activationFallbackUsed = false;
         let activationError: string | undefined;
         try {
           const activationPrompt = buildCoachActivationPrompt(profile);
@@ -1989,7 +2002,32 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           );
           activationMessageSent = true;
         } catch (err) {
-          activationError = err instanceof Error ? err.message : String(err);
+          const primaryError = err instanceof Error ? err.message : String(err);
+          try {
+            const fallbackResult = await proxyChatPlatformRequest(config, '/api/inbox/messages', 'POST', {
+              userId: profile.chatUserId,
+              channelId: profile.chatChannelId,
+              agentId: profile.localAgentId,
+              kind: 'coach_activation',
+              threadId: profile.chatThreadId,
+              threadTitle: profile.chatThreadTitle,
+              title: 'Coach Activated',
+              content: buildCoachActivationFallbackMessage(profile),
+              metadata: {
+                source: 'control-plane-fallback',
+                primaryError,
+              },
+            });
+            if (fallbackResult.status >= 200 && fallbackResult.status < 300) {
+              activationMessageSent = true;
+              activationFallbackUsed = true;
+            } else {
+              activationError = `Agent activation failed: ${primaryError}; fallback inbox publish failed (${fallbackResult.status})`;
+            }
+          } catch (fallbackErr) {
+            const fallbackMessage = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+            activationError = `Agent activation failed: ${primaryError}; fallback inbox publish failed: ${fallbackMessage}`;
+          }
         }
 
         sendJson(response, 200, {
@@ -2001,6 +2039,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           monitoringEnabled: Boolean(config.monitoring?.enabled),
           planFile,
           activationMessageSent,
+          activationFallbackUsed,
           ...(activationError ? { activationError } : {}),
           config
         });
