@@ -956,6 +956,7 @@ export const ADMIN_MARKUP: string = `<body>
         <div id="monitoringDisabledBanner" class="card" style="border-left:3px solid var(--color-warning);display:none">
           <p><strong>Monitoring is not enabled.</strong> Configure Postgres and Redis in the Monitoring Settings sub-tab, then enable monitoring to start collecting health data.</p>
         </div>
+        <div id="monitoringBackendsContainer" class="section-list"></div>
         <div id="healthTargetsContainer" class="section-list"></div>
         <details class="card section-card" id="healthHistorySection" style="display:none">
           <summary>

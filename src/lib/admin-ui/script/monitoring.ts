@@ -5,6 +5,78 @@
 
 export const MONITORING_SCRIPT = `    // ── Monitoring: fetch + render ──
 
+    function summarizeFailingTargets(targets) {
+      const failing = (Array.isArray(targets) ? targets : []).filter(function(t) {
+        return t && t.status !== 'healthy';
+      });
+      if (failing.length === 0) {
+        return 'All clear.';
+      }
+      const ordered = failing.sort(function(a, b) {
+        const weight = function(status) {
+          return status === 'down' ? 0 : status === 'degraded' ? 1 : 2;
+        };
+        return weight(a.status) - weight(b.status);
+      });
+      const names = ordered.slice(0, 3).map(function(t) {
+        return t.label || t.id || 'unknown';
+      });
+      const extra = ordered.length > 3 ? ' +' + (ordered.length - 3) + ' more' : '';
+      return names.join(', ') + extra;
+    }
+
+    function renderMonitoringBackends() {
+      const container = document.getElementById('monitoringBackendsContainer');
+      if (!container) return;
+      const mon = state.config && state.config.monitoring;
+      if (!mon || !mon.enabled) {
+        container.innerHTML = '';
+        return;
+      }
+
+      const targets = (state.healthSnapshot && Array.isArray(state.healthSnapshot.targets)) ? state.healthSnapshot.targets : [];
+      const postgresTarget = targets.find(function(t) { return t.kind === 'monitoring-datastore' && t.id === 'postgres'; });
+      const redisTarget = targets.find(function(t) { return t.kind === 'monitoring-datastore' && t.id === 'redis'; });
+
+      function backendCard(name, endpoint, target) {
+        const status = target ? target.status : 'unknown';
+        const latency = target && target.responseTimeMs !== null ? target.responseTimeMs + 'ms' : '—';
+        const checked = target && target.lastChecked ? new Date(target.lastChecked).toLocaleString() : 'not checked yet';
+        const border = status === 'healthy'
+          ? 'var(--color-success)'
+          : status === 'degraded'
+            ? 'var(--color-warning)'
+            : status === 'down'
+              ? 'var(--color-error)'
+              : 'var(--color-muted)';
+        return '<div class="card" style="border-left:3px solid ' + border + '">' +
+          '<div class="split-actions">' +
+            '<div>' +
+              statusBadge(status) +
+              '<strong>' + escapeHtml(name) + '</strong> ' +
+              '<span class="pill">monitoring-datastore</span>' +
+            '</div>' +
+            '<div style="font-size:.85rem;color:var(--color-muted)">⏱ ' + escapeHtml(String(latency)) + ' · 🕐 ' + escapeHtml(checked) + '</div>' +
+          '</div>' +
+          '<div class="meta-list" style="margin-top:.5rem">' +
+            '<div><strong>Endpoint:</strong> ' + escapeHtml(endpoint) + '</div>' +
+            (target && target.details
+              ? '<div><strong>Details:</strong> ' + escapeHtml(JSON.stringify(target.details)) + '</div>'
+              : '<div><strong>Details:</strong> waiting for snapshot</div>') +
+          '</div>' +
+        '</div>';
+      }
+
+      container.innerHTML =
+        '<div class="card card-quiet">' +
+          '<span class="pill">Infrastructure Services</span>' +
+          '<h3>Monitoring Backends</h3>' +
+          '<p>Postgres and Redis endpoints used by the control-plane monitoring stack.</p>' +
+        '</div>' +
+        backendCard('Postgres', mon.postgres.host + ':' + mon.postgres.port + ' / ' + mon.postgres.database, postgresTarget) +
+        backendCard('Redis', mon.redis.host + ':' + mon.redis.port, redisTarget);
+    }
+
     async function fetchHealthSnapshot() {
       try {
         const data = await requestJson('GET', '/api/monitoring/health', null, 15000);
@@ -132,7 +204,7 @@ export const MONITORING_SCRIPT = `    // ── Monitoring: fetch + render ─�
       set('degraded', counts.degraded, counts.degraded === 0 ? 'Nothing degraded.' : counts.degraded + ' running degraded.');
       set('action', actionCount, actionCount === 0
         ? 'All clear.'
-        : counts.down + ' down, ' + counts.degraded + ' degraded, ' + counts.unknown + ' unknown.');
+        : counts.down + ' down, ' + counts.degraded + ' degraded, ' + counts.unknown + ' unknown · ' + summarizeFailingTargets(targets));
       if (latestChecked) {
         const date = new Date(latestChecked);
         const ageMs = Date.now() - latestChecked;
@@ -146,6 +218,7 @@ export const MONITORING_SCRIPT = `    // ── Monitoring: fetch + render ─�
 
     function renderHealthTargets() {
       renderMonitorDashboard();
+      renderMonitoringBackends();
       const container = document.getElementById('healthTargetsContainer');
       const banner = document.getElementById('monitoringDisabledBanner');
       if (!container) return;
