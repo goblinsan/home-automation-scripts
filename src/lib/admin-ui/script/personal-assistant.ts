@@ -2,7 +2,7 @@
  * Admin UI — personal assistant builder browser-runtime module.
  */
 
-export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { step: 0 };
+export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { step: 0, importText: '' };
     const MAX_UPLOADED_PROJECT_PLAN_CHARS = 128 * 1024;
     const assistantBuilderSteps = [
       { title: 'Basics', description: 'Set your assistant defaults, personality, and delivery settings.' },
@@ -265,6 +265,347 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
         '<span class="wizard-label">Upload Project Plan (from your local machine)</span>' +
         '<input type="file" accept=".md,.markdown,.txt,.yaml,.yml,.json" data-assistant-upload="project-plan" data-assistant-section="' + escapeHtml(section) + '" data-assistant-index="' + String(index) + '" />' +
       '</label>';
+    }
+
+    function assistantImportTextarea(value) {
+      return '<label class="wizard-field full">' +
+        '<span class="wizard-label">Structured Coach Import JSON</span>' +
+        '<textarea class="assistant-builder-textarea" rows="18" data-assistant-import-text="true">' + escapeHtml(value || '') + '</textarea>' +
+      '</label>';
+    }
+
+    function defaultAssistantImportTemplate() {
+      return JSON.stringify({
+        ownerName: 'Your Name',
+        assistantName: 'Personal Assistant',
+        timezone: 'America/New_York',
+        focusStrategy: 'Prioritize the few items that most directly improve income, family stability, health, and delivery confidence.',
+        weeklyOutcome: 'End the week with the highest-leverage work advanced, obligations covered, and the next week already staged.',
+        priorities: [
+          'Reach a repeatable path to $1k/day outside the corp gig',
+          'Protect family commitments and important dates',
+          'Stay competitive in triathlon while getting slimmer and stronger',
+          'Keep renovation and life admin moving without chaos'
+        ],
+        weeklyThemes: [
+          'Revenue transition',
+          'Automation and resiliency',
+          'Health and family',
+          'House progress'
+        ],
+        projects: [
+          {
+            id: 'primary-initiative',
+            name: 'Primary Initiative',
+            priority: 'urgent',
+            status: 'on-track',
+            summary: 'Describe the project outcome.',
+            nextAction: 'Write the next concrete step.',
+            repoSlug: '',
+            planFilePath: '',
+            notes: ''
+          }
+        ],
+        obligations: [
+          {
+            id: 'standing-obligation',
+            title: 'Standing Obligation',
+            category: 'personal',
+            priority: 'high',
+            status: 'active',
+            schedule: 'Tuesdays and Thursdays',
+            notes: ''
+          }
+        ],
+        events: [
+          {
+            id: 'important-date',
+            title: 'Important Date',
+            startDate: '2026-05-01',
+            priority: 'high',
+            notes: ''
+          }
+        ],
+        fitnessGoals: [
+          {
+            id: 'fitness-goal',
+            title: 'Fitness Goal',
+            target: 'Describe the performance target clearly.',
+            priority: 'high',
+            status: 'active',
+            notes: ''
+          }
+        ],
+        nutritionGoals: []
+      }, null, 2);
+    }
+
+    function flattenImportedPriorityItems(value, prefix) {
+      const items = [];
+      if (Array.isArray(value)) {
+        value.forEach(function(entry) {
+          items.push.apply(items, flattenImportedPriorityItems(entry, prefix));
+        });
+        return items;
+      }
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed) {
+          items.push(prefix ? prefix + ': ' + trimmed : trimmed);
+        }
+        return items;
+      }
+      if (!value || typeof value !== 'object') {
+        return items;
+      }
+      Object.keys(value).forEach(function(key) {
+        const nextPrefix = prefix ? prefix + ' / ' + key : key;
+        items.push.apply(items, flattenImportedPriorityItems(value[key], nextPrefix));
+      });
+      return items;
+    }
+
+    function importedString(value, fallback) {
+      return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+    }
+
+    function importedOptionalString(value) {
+      return typeof value === 'string' && value.trim() ? value.trim() : '';
+    }
+
+    function importedPriority(value, fallback) {
+      const normalized = String(value || '').trim().toLowerCase();
+      if (normalized === 'urgent' || normalized === 'high' || normalized === 'med' || normalized === 'low') {
+        return normalized;
+      }
+      if (normalized === 'critical') {
+        return 'urgent';
+      }
+      if (normalized === 'medium') {
+        return 'med';
+      }
+      return fallback;
+    }
+
+    function importedReminder(value) {
+      const normalized = String(value || '').trim();
+      if (normalized === 'none' || normalized === 'at-time' || normalized === '1-hour-before' || normalized === '1-day-before' || normalized === '1-week-before') {
+        return normalized;
+      }
+      return 'none';
+    }
+
+    function importedStringArray(values) {
+      if (!Array.isArray(values)) {
+        return [];
+      }
+      return values.map(function(value) {
+        return typeof value === 'string' ? value.trim() : '';
+      }).filter(Boolean);
+    }
+
+    function dedupeImportedStrings(values) {
+      const seen = new Set();
+      return values.filter(function(value) {
+        if (seen.has(value)) {
+          return false;
+        }
+        seen.add(value);
+        return true;
+      });
+    }
+
+    function buildImportedProject(item, index) {
+      const source = item && typeof item === 'object' ? item : {};
+      const title = importedString(source.name || source.title, 'Imported Project ' + String(index + 1));
+      return {
+        id: importedString(source.id, assistantSlugify(title, 'project-' + String(index + 1))),
+        name: title,
+        status: ['idea', 'on-track', 'at-risk', 'blocked', 'done'].indexOf(source.status) >= 0 ? source.status : 'on-track',
+        priority: importedPriority(source.priority, 'high'),
+        summary: importedString(source.summary || source.description || source.goal, 'Clarify the project outcome.'),
+        nextAction: importedString(source.nextAction || source.next_action, 'Write the next concrete step.'),
+        repoSlug: importedOptionalString(source.repoSlug || source.repo || source.repository),
+        planFilePath: importedOptionalString(source.planFilePath),
+        planContent: importedOptionalString(source.planContent),
+        deadline: importedOptionalString(source.deadline || source.date),
+        reminder: importedReminder(source.reminder),
+        notes: importedOptionalString(source.notes)
+      };
+    }
+
+    function buildImportedObligation(item, index) {
+      const source = item && typeof item === 'object' ? item : {};
+      const title = importedString(source.title || source.name, 'Imported Obligation ' + String(index + 1));
+      return {
+        id: importedString(source.id, assistantSlugify(title, 'obligation-' + String(index + 1))),
+        title: title,
+        category: importedString(source.category, 'personal'),
+        status: ['active', 'upcoming', 'paused', 'done'].indexOf(source.status) >= 0 ? source.status : 'active',
+        priority: importedPriority(source.priority, 'high'),
+        deadline: importedOptionalString(source.deadline || source.date),
+        schedule: importedOptionalString(source.schedule || source.cadence),
+        notes: importedOptionalString(source.notes)
+      };
+    }
+
+    function buildImportedEvent(item, index) {
+      const source = item && typeof item === 'object' ? item : {};
+      const title = importedString(source.title || source.name, 'Imported Event ' + String(index + 1));
+      return {
+        id: importedString(source.id, assistantSlugify(title, 'event-' + String(index + 1))),
+        title: title,
+        startDate: importedString(source.startDate || source.date, ''),
+        endDate: importedOptionalString(source.endDate),
+        location: importedOptionalString(source.location),
+        priority: importedPriority(source.priority, 'high'),
+        reminder: importedReminder(source.reminder),
+        notes: importedOptionalString(source.notes)
+      };
+    }
+
+    function buildImportedGoal(item, index, fallbackPrefix) {
+      const source = item && typeof item === 'object' ? item : {};
+      const title = importedString(source.title || source.name, 'Imported Goal ' + String(index + 1));
+      return {
+        id: importedString(source.id, assistantSlugify(title, fallbackPrefix + '-' + String(index + 1))),
+        title: title,
+        target: importedString(source.target || source.summary || source.goal, 'Describe the target clearly.'),
+        cadence: importedOptionalString(source.cadence || source.schedule),
+        status: ['active', 'building', 'maintain', 'paused', 'done'].indexOf(source.status) >= 0 ? source.status : 'active',
+        priority: importedPriority(source.priority, 'high'),
+        notes: importedOptionalString(source.notes)
+      };
+    }
+
+    function importedEngagements(raw) {
+      const values = [];
+      if (Array.isArray(raw.engagements)) {
+        values.push.apply(values, raw.engagements);
+      }
+      if (Array.isArray(raw.activeEngagements)) {
+        values.push.apply(values, raw.activeEngagements);
+      }
+      return values;
+    }
+
+    function buildProfileFromAssistantImport(raw) {
+      const source = raw && typeof raw === 'object' ? raw : {};
+      const current = ensurePersonalAssistantConfig();
+      const highPriorityItems = flattenImportedPriorityItems(source.highPriorities, '');
+      const weeklyThemes = dedupeImportedStrings(
+        importedStringArray(source.weeklyThemes).concat(
+          source.highPriorities && typeof source.highPriorities === 'object' && !Array.isArray(source.highPriorities)
+            ? Object.keys(source.highPriorities)
+            : []
+        )
+      );
+      const engagements = importedEngagements(source);
+      const projects = Array.isArray(source.projects) ? source.projects.slice() : [];
+      const obligations = Array.isArray(source.obligations) ? source.obligations.slice() : [];
+      const events = Array.isArray(source.events) ? source.events.slice() : [];
+
+      engagements.forEach(function(item) {
+        const sourceItem = item && typeof item === 'object' ? item : {};
+        const type = String(sourceItem.type || '').trim().toLowerCase();
+        if (type === 'event' || type === 'date') {
+          events.push(sourceItem);
+        } else if (type === 'obligation' || type === 'commitment') {
+          obligations.push(sourceItem);
+        } else if (type === 'project') {
+          projects.push(sourceItem);
+        } else if (sourceItem.startDate || sourceItem.date) {
+          events.push(sourceItem);
+        } else if (sourceItem.schedule) {
+          obligations.push(sourceItem);
+        } else {
+          projects.push(sourceItem);
+        }
+      });
+
+      const profile = {
+        enabled: source.enabled === undefined ? current.enabled : (source.enabled === true || source.enabled === 'true'),
+        ownerName: importedString(source.ownerName, current.ownerName),
+        githubOwner: importedString(source.githubOwner, current.githubOwner),
+        assistantName: importedString(source.assistantName, current.assistantName),
+        personality: importedString(source.personality, current.personality),
+        timezone: importedString(source.timezone, current.timezone),
+        notesRepoPath: importedString(source.notesRepoPath, current.notesRepoPath),
+        planFilePath: importedString(source.planFilePath, current.planFilePath),
+        notesSearchDirs: importedStringArray(source.notesSearchDirs),
+        recentNotesLimit: Number(source.recentNotesLimit) > 0 ? Number(source.recentNotesLimit) : current.recentNotesLimit,
+        chatUserId: importedString(source.chatUserId, current.chatUserId),
+        chatChannelId: importedString(source.chatChannelId, current.chatChannelId),
+        chatThreadId: importedString(source.chatThreadId, current.chatThreadId),
+        chatThreadTitle: importedString(source.chatThreadTitle, current.chatThreadTitle),
+        localAgentId: importedString(source.localAgentId, current.localAgentId),
+        localProviderName: importedString(source.localProviderName, current.localProviderName),
+        localModel: importedString(source.localModel, current.localModel),
+        localBaseUrl: importedString(source.localBaseUrl, current.localBaseUrl),
+        expertAgentId: importedString(source.expertAgentId, current.expertAgentId),
+        expertProviderName: importedString(source.expertProviderName, current.expertProviderName),
+        expertModel: importedString(source.expertModel, current.expertModel),
+        expertBaseUrl: importedString(source.expertBaseUrl, current.expertBaseUrl),
+        expertApiKey: importedString(source.expertApiKey, current.expertApiKey),
+        focusStrategy: importedString(source.focusStrategy, current.focusStrategy),
+        weeklyOutcome: importedString(source.weeklyOutcome, current.weeklyOutcome),
+        priorities: dedupeImportedStrings(importedStringArray(source.priorities).concat(highPriorityItems)),
+        weeklyThemes: weeklyThemes,
+        projects: projects.map(buildImportedProject),
+        obligations: obligations.map(buildImportedObligation),
+        fitnessGoals: Array.isArray(source.fitnessGoals) ? source.fitnessGoals.map(function(item, index) { return buildImportedGoal(item, index, 'fitness-goal'); }) : [],
+        nutritionGoals: Array.isArray(source.nutritionGoals) ? source.nutritionGoals.map(function(item, index) { return buildImportedGoal(item, index, 'nutrition-goal'); }) : [],
+        events: events.map(buildImportedEvent),
+        schedules: {
+          morningCheckInCron: importedString(source.schedules && source.schedules.morningCheckInCron, current.schedules.morningCheckInCron),
+          middayCheckInCron: importedString(source.schedules && source.schedules.middayCheckInCron, current.schedules.middayCheckInCron),
+          eveningCheckInCron: importedString(source.schedules && source.schedules.eveningCheckInCron, current.schedules.eveningCheckInCron),
+          weeklyPlanningCron: importedString(source.schedules && source.schedules.weeklyPlanningCron, current.schedules.weeklyPlanningCron),
+          weeklyReviewCron: importedString(source.schedules && source.schedules.weeklyReviewCron, current.schedules.weeklyReviewCron)
+        },
+        lastAppliedAt: current.lastAppliedAt
+      };
+      applyAssistantProfileDefaults(profile);
+      return profile;
+    }
+
+    function applyAssistantImportText() {
+      if (!assistantBuilderState.importText || !assistantBuilderState.importText.trim()) {
+        setStatus('Paste import JSON or load a file before applying the coach import.', 'error');
+        return;
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(assistantBuilderState.importText);
+      } catch (error) {
+        setStatus('Coach import JSON is invalid: ' + describeClientError(error), 'error');
+        return;
+      }
+      try {
+        state.config.personalAssistant = buildProfileFromAssistantImport(parsed);
+        syncRawJson();
+        renderAssistantBuilderSummary();
+        renderAssistantBuilderStep();
+        setStatus('Applied structured coach import. Review the items, then tweak anything that changed.');
+      } catch (error) {
+        setStatus('Coach import failed: ' + describeClientError(error), 'error');
+      }
+    }
+
+    async function handleAssistantImportUpload(input) {
+      const file = input.files && input.files[0];
+      if (!file) {
+        return;
+      }
+      try {
+        assistantBuilderState.importText = await file.text();
+        renderAssistantBuilderStep();
+        setStatus('Loaded coach import file ' + file.name + '. Review it, then click Apply Import.');
+      } catch (error) {
+        setStatus('Failed to read coach import file: ' + describeClientError(error), 'error');
+      } finally {
+        input.value = '';
+      }
     }
 
     function generatedAssistantWorkflowNames(profile) {
@@ -586,6 +927,20 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
               '<div><strong>Default chat delivery:</strong> user ' + escapeHtml(profile.chatUserId || defaultUserId) + ', channel ' + escapeHtml(profile.chatChannelId || defaultChannelId) + '</div>' +
             '</div>' +
           '</div>' +
+          '<div class="assistant-builder-review-card">' +
+            '<h3>Bulk Import</h3>' +
+            '<p class="assistant-builder-note">Paste structured JSON or upload a local JSON file to bootstrap the coach in one shot. Applying the import replaces the current builder contents for projects, obligations, events, goals, priorities, and weekly themes.</p>' +
+            '<div class="toolbar" style="margin-bottom:.85rem">' +
+              '<button type="button" data-assistant-action="load-import-template">Load Example Template</button>' +
+              '<button type="button" data-assistant-action="apply-import-template">Apply Import</button>' +
+              '<button type="button" data-assistant-action="clear-import-template">Clear</button>' +
+            '</div>' +
+            '<label class="wizard-field full">' +
+              '<span class="wizard-label">Upload Import File</span>' +
+              '<input type="file" accept=".json" data-assistant-upload="assistant-import" />' +
+            '</label>' +
+            assistantImportTextarea(assistantBuilderState.importText) +
+          '</div>' +
           '<details class="assistant-builder-review-card">' +
             '<summary><strong>Advanced Settings</strong></summary>' +
             '<p class="assistant-builder-note" style="margin-top:.75rem">Only change these if your gateway paths, chat defaults, or model providers are not the normal setup.</p>' +
@@ -726,8 +1081,18 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
         return;
       }
 
+      if (target instanceof HTMLInputElement && target.dataset.assistantUpload === 'assistant-import') {
+        void handleAssistantImportUpload(target);
+        return;
+      }
+
       if (target instanceof HTMLInputElement && target.dataset.assistantUpload === 'project-plan') {
         void handleAssistantProjectPlanUpload(target);
+        return;
+      }
+
+      if (target instanceof HTMLTextAreaElement && target.dataset.assistantImportText === 'true') {
+        assistantBuilderState.importText = target.value;
         return;
       }
 
@@ -830,6 +1195,22 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
         return;
       }
       const profile = ensurePersonalAssistantConfig();
+      if (action === 'load-import-template') {
+        assistantBuilderState.importText = defaultAssistantImportTemplate();
+        renderAssistantBuilderStep();
+        setStatus('Loaded example coach import template.');
+        return;
+      }
+      if (action === 'apply-import-template') {
+        applyAssistantImportText();
+        return;
+      }
+      if (action === 'clear-import-template') {
+        assistantBuilderState.importText = '';
+        renderAssistantBuilderStep();
+        setStatus('Cleared coach import text.');
+        return;
+      }
       if (action === 'add-item') {
         if (button.dataset.assistantSection === 'projects') {
           profile.projects.push(createAssistantProject());
