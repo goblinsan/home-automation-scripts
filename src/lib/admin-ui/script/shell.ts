@@ -7,21 +7,18 @@ export const SHELL_SCRIPT = `    // Nav ownership map.  Each top-nav button owns
     // so the top-nav stays correctly highlighted when the operator drills into a
     // sub-tab that this nav item logically contains.
     //
-    // The Workloads and Secrets top-nav items can own their own composed
+    // The Workloads and Secrets top-nav items now own their own composed
     // tab-panels (data-tab-panel workloads / data-tab-panel secrets) rather
-    // than relying on legacy infra/services grouping. When a dedicated Services
-    // top-nav is present, we preserve the original services sub-panels in-place.
+    // than being transitional remaps onto legacy infra/services sub-tabs.  The
+    // composition pulls together remote workloads, bedrock, managed apps,
+    // workflows/jobs, agents, runtime profiles, and feature flags for Workloads;
+    // and isolates credential/secret-bearing surfaces under Secrets.  The legacy
+    // services tab-panel is no longer reachable from the top nav; its former
+    // sub-panels are reparented into the Workloads page at init.
     const NAV_OWNERSHIP = {
       overview:  [['overview',   null]],
       bootstrap: [['infra',      'infra-gateway']],
       nodes:     [['infra',      'infra-nodes']],
-      services:  [
-        ['services', 'svc-agents'],
-        ['services', 'svc-workflows'],
-        ['services', 'svc-deploys'],
-        ['services', 'svc-profiles'],
-        ['services', 'svc-features']
-      ],
       workloads: [['workloads',  null]],
       monitor:   [
         ['monitoring', 'mon-health'],
@@ -37,11 +34,6 @@ export const SHELL_SCRIPT = `    // Nav ownership map.  Each top-nav button owns
     // the sub-panels into the composed parent tab-panels so that top-nav
     // activation no longer depends on the legacy infra/services grouping.
     (function composeWorkloadsAndSecretsPages() {
-      const hasServicesTopNav = Boolean(document.querySelector('.top-tab-nav [data-nav-id="services"]'));
-      if (hasServicesTopNav) {
-        return;
-      }
-
       const workloadsTab = document.querySelector('[data-tab-panel="workloads"]');
       const secretsTab   = document.querySelector('[data-tab-panel="secrets"]');
       if (!workloadsTab || !secretsTab) {
