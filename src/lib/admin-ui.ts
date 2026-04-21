@@ -1040,6 +1040,23 @@ async function proxyChatPlatformRequest(
   return requestJsonUrl(`${chatPlatformBaseUrl}${path}`, method, body);
 }
 
+async function runLocalCapture(command: string, timeoutMs = 5000): Promise<{ stdout: string; stderr: string; code: number }> {
+  const { spawn } = await import('node:child_process');
+  return new Promise((resolve) => {
+    const child = spawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, timeoutMs);
+    child.stdout?.on('data', (chunk: Buffer | string) => { stdout += String(chunk); });
+    child.stderr?.on('data', (chunk: Buffer | string) => { stderr += String(chunk); });
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code: timedOut ? 124 : (code ?? 1) });
+    });
+  });
+}
+
 function getServiceProfileEnvironmentValue(config: GatewayConfig, key: string): string | undefined {
   const value = config.serviceProfiles.gatewayChatPlatform.environment
     .find((entry) => entry.key === key)
@@ -1090,6 +1107,35 @@ async function buildCoachDiagnostics(config: GatewayConfig): Promise<Record<stri
       }))
     : { status: 0, payload: { error: 'LM_STUDIO_A_BASE_URL is not configured in gateway-chat-platform environment' } };
 
+  // Inspect the live running container to compare config-stored URL vs what the container actually has
+  const chatAppId = config.serviceProfiles.gatewayChatPlatform.appId;
+  const chatApp = config.apps.find((a) => a.id === chatAppId);
+  let liveContainer: Record<string, unknown>;
+  if (!chatApp) {
+    liveContainer = { error: `App '${chatAppId}' not found in config.apps` };
+  } else {
+    try {
+      const slot = await readCurrentSlot(chatApp);
+      const containerName = `${slot}-chat-api-1`;
+      const result = await runLocalCapture(`docker inspect ${containerName} --format '{{range .Config.Env}}{{println .}}{{end}}'`);
+      if (result.code === 0) {
+        const envLines = result.stdout.split('\n');
+        const lmUrl = envLines.find((l) => l.startsWith('LM_STUDIO_A_BASE_URL='))?.slice('LM_STUDIO_A_BASE_URL='.length) ?? null;
+        liveContainer = {
+          slot,
+          containerName,
+          LM_STUDIO_A_BASE_URL: lmUrl,
+          configStoredValue: llmBaseUrl ?? null,
+          mismatch: lmUrl !== (llmBaseUrl ?? null),
+        };
+      } else {
+        liveContainer = { slot, containerName: `${slot}-chat-api-1`, error: result.stderr || `docker inspect exited with code ${result.code}` };
+      }
+    } catch (e) {
+      liveContainer = { error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
   return {
     generatedAt,
     coach: {
@@ -1115,6 +1161,7 @@ async function buildCoachDiagnostics(config: GatewayConfig): Promise<Record<stri
       modelsHttp: llmModels.status,
       modelsPayload: llmModels.payload,
     },
+    liveContainer,
   };
 }
 
