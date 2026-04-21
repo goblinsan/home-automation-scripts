@@ -465,6 +465,19 @@ export const INIT_SCRIPT = `    // Keyboard nav across top-tab and sub-tab butto
         } catch (err) { setStatus(err.message, 'error'); }
       });
     });
+    document.getElementById('runCoachDiagnosticsButton').addEventListener('click', async () => {
+      const btn = document.getElementById('runCoachDiagnosticsButton');
+      await withBusyButton(btn, 'Running…', async () => {
+        try {
+          const diagnostics = await requestJson('GET', '/api/diagnostics/coach', undefined, 30000);
+          state.coachDiagnostics = diagnostics;
+          renderCoachDiagnostics();
+          setStatus('Coach diagnostics updated');
+        } catch (err) {
+          setStatus(err.message, 'error');
+        }
+      });
+    });
     document.getElementById('refreshBenchmarksButton').addEventListener('click', async () => {
       const btn = document.getElementById('refreshBenchmarksButton');
       await withBusyButton(btn, 'Refreshing…', async () => {

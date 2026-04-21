@@ -5,6 +5,16 @@
 
 export const MONITORING_SCRIPT = `    // ── Monitoring: fetch + render ──
 
+    function renderCoachDiagnostics() {
+      const output = document.getElementById('coachDiagnosticsOutput');
+      if (!output) return;
+      if (!state.coachDiagnostics) {
+        output.textContent = 'No diagnostics run yet.';
+        return;
+      }
+      output.textContent = JSON.stringify(state.coachDiagnostics, null, 2);
+    }
+
     function summarizeFailingTargets(targets) {
       const failing = (Array.isArray(targets) ? targets : []).filter(function(t) {
         return t && t.status !== 'healthy';
@@ -219,6 +229,7 @@ export const MONITORING_SCRIPT = `    // ── Monitoring: fetch + render ─�
     function renderHealthTargets() {
       renderMonitorDashboard();
       renderMonitoringBackends();
+      renderCoachDiagnostics();
       const container = document.getElementById('healthTargetsContainer');
       const banner = document.getElementById('monitoringDisabledBanner');
       if (!container) return;

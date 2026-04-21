@@ -20,6 +20,7 @@ export function renderScriptState(defaultWorkflowSeedPath: string): string {
       piProxyRegistry: null,
       piProxyStatus: null,
       kulrsActivityStatus: null,
+      coachDiagnostics: null,
       healthSnapshot: null,
       projectTrackingOverview: null,
       benchmarkRuns: [],

@@ -956,6 +956,26 @@ export const ADMIN_MARKUP: string = `<body>
           <p><strong>Monitoring is not enabled.</strong> Configure Postgres and Redis in the Monitoring Settings sub-tab, then enable monitoring to start collecting health data.</p>
         </div>
         <div id="monitoringBackendsContainer" class="section-list"></div>
+        <details class="card section-card" open>
+          <summary>
+            <div class="section-summary-copy">
+              <span class="pill">Diagnostics</span>
+              <h3>Coach Local LLM Diagnostics</h3>
+              <p>Run a one-click check across gateway-chat-platform provider routing and the underlying llm-service endpoints.</p>
+            </div>
+          </summary>
+          <div class="section-body">
+            <div class="split-actions">
+              <div>
+                <p class="section-note">Use this when coach replies fail with errors like <code>fetch failed</code> or provider timeout.</p>
+              </div>
+              <div>
+                <button id="runCoachDiagnosticsButton" class="primary">Run Coach Diagnostics</button>
+              </div>
+            </div>
+            <pre id="coachDiagnosticsOutput" style="margin-top:.75rem;font-size:.78rem;max-height:20rem;overflow:auto;background:var(--color-card);padding:.6rem;border-radius:6px">No diagnostics run yet.</pre>
+          </div>
+        </details>
         <div id="healthTargetsContainer" class="section-list"></div>
         <details class="card section-card" id="healthHistorySection" style="display:none">
           <summary>

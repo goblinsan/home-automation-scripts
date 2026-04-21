@@ -1040,6 +1040,84 @@ async function proxyChatPlatformRequest(
   return requestJsonUrl(`${chatPlatformBaseUrl}${path}`, method, body);
 }
 
+function getServiceProfileEnvironmentValue(config: GatewayConfig, key: string): string | undefined {
+  const value = config.serviceProfiles.gatewayChatPlatform.environment
+    .find((entry) => entry.key === key)
+    ?.value
+    ?.trim();
+  return value && value.length > 0 ? value : undefined;
+}
+
+async function buildCoachDiagnostics(config: GatewayConfig): Promise<Record<string, unknown>> {
+  const profile = config.personalAssistant;
+  const generatedAt = new Date().toISOString();
+  const chatPlatformBaseUrl = normalizeBaseUrl(config.serviceProfiles.gatewayChatPlatform.apiBaseUrl);
+  const providerName = profile.localProviderName;
+  const llmBaseUrl = getServiceProfileEnvironmentValue(config, 'LM_STUDIO_A_BASE_URL');
+
+  const providerStatus = await proxyChatPlatformRequest(config, '/api/providers/status', 'GET').catch((error) => ({
+    status: 0,
+    payload: { error: error instanceof Error ? error.message : String(error) },
+  }));
+
+  const providerStatusRecord =
+    providerStatus.payload && typeof providerStatus.payload === 'object' && Array.isArray((providerStatus.payload as { providers?: unknown[] }).providers)
+      ? (providerStatus.payload as { providers: unknown[] }).providers.find((candidate) => {
+          return candidate && typeof candidate === 'object' && (candidate as { name?: unknown }).name === providerName;
+        }) as Record<string, unknown> | undefined
+      : undefined;
+
+  const providerModelsResult = await proxyChatPlatformRequest(
+    config,
+    `/api/providers/${encodeURIComponent(providerName)}/models`,
+    'GET'
+  ).catch((error) => ({
+    status: 0,
+    payload: { error: error instanceof Error ? error.message : String(error) },
+  }));
+
+  const llmHealth = llmBaseUrl
+    ? await requestJsonUrl(`${normalizeBaseUrl(llmBaseUrl)}/health`, 'GET').catch((error) => ({
+        status: 0,
+        payload: { error: error instanceof Error ? error.message : String(error) },
+      }))
+    : { status: 0, payload: { error: 'LM_STUDIO_A_BASE_URL is not configured in gateway-chat-platform environment' } };
+
+  const llmModels = llmBaseUrl
+    ? await requestJsonUrl(`${normalizeBaseUrl(llmBaseUrl)}/api/models`, 'GET').catch((error) => ({
+        status: 0,
+        payload: { error: error instanceof Error ? error.message : String(error) },
+      }))
+    : { status: 0, payload: { error: 'LM_STUDIO_A_BASE_URL is not configured in gateway-chat-platform environment' } };
+
+  return {
+    generatedAt,
+    coach: {
+      assistantName: profile.assistantName,
+      agentId: profile.localAgentId,
+      providerName,
+      model: profile.localModel,
+      chatUserId: profile.chatUserId,
+      chatChannelId: profile.chatChannelId,
+      chatThreadId: profile.chatThreadId,
+    },
+    chatPlatform: {
+      baseUrl: chatPlatformBaseUrl,
+      providerStatusHttp: providerStatus.status,
+      providerStatus: providerStatusRecord ?? null,
+      providerModelsHttp: providerModelsResult.status,
+      providerModelsPayload: providerModelsResult.payload,
+    },
+    llmService: {
+      baseUrl: llmBaseUrl ?? null,
+      healthHttp: llmHealth.status,
+      healthPayload: llmHealth.payload,
+      modelsHttp: llmModels.status,
+      modelsPayload: llmModels.payload,
+    },
+  };
+}
+
 async function listChatProviders(config: GatewayConfig): Promise<ChatProviderStatusRecord[]> {
   const result = await proxyChatPlatformRequest(config, '/api/providers/status', 'GET');
   const rawProviders =
@@ -1507,6 +1585,13 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
         const config = await loadGatewayConfig(options.configPath);
         const providers = await listChatProviders(config);
         sendJson(response, 200, { providers });
+        return;
+      }
+
+      if (request.method === 'GET' && path === '/api/diagnostics/coach') {
+        const config = await loadGatewayConfig(options.configPath);
+        const diagnostics = await buildCoachDiagnostics(config);
+        sendJson(response, 200, diagnostics);
         return;
       }
 
