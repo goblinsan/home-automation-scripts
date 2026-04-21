@@ -351,7 +351,12 @@ function httpGet(url: string): Promise<number> {
   });
 }
 
-function httpJsonRequest(url: string, method: 'POST', body: unknown): Promise<{ status: number; body: string }> {
+function httpJsonRequest(
+  url: string,
+  method: 'POST',
+  body: unknown,
+  timeoutMs = 10_000
+): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const requestBody = JSON.stringify(body);
     const requestImpl = url.startsWith('https://') ? httpsRequest : httpRequest;
@@ -360,7 +365,7 @@ function httpJsonRequest(url: string, method: 'POST', body: unknown): Promise<{ 
       url,
       {
         method,
-        timeout: 10_000,
+        timeout: timeoutMs,
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(requestBody)
@@ -385,7 +390,12 @@ function httpJsonRequest(url: string, method: 'POST', body: unknown): Promise<{ 
   });
 }
 
-type JsonPostRequest = typeof httpJsonRequest;
+type JsonPostRequest = (
+  url: string,
+  method: 'POST',
+  body: unknown,
+  timeoutMs?: number
+) => Promise<{ status: number; body: string }>;
 
 export async function smokeTest(url: string, expectedStatus = 200): Promise<void> {
   await smokeTestWithRetry(url, expectedStatus);
@@ -559,7 +569,8 @@ export async function runServiceProfileAgent(
     };
   }
 
-  const response = await requestFn(runUrl, 'POST', payload);
+  // Agent runs can require extra time when local models are cold-starting.
+  const response = await requestFn(runUrl, 'POST', payload, 120_000);
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`Agent run failed for ${runUrl}: ${response.status} ${response.body}`);
   }
