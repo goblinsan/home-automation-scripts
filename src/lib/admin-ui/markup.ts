@@ -1300,6 +1300,10 @@ export const ADMIN_MARKUP: string = `<body>
             <strong>Gateway Tools Platform</strong>
             <small>Blue/green public tools UI behind Cloudflare Access. Preconfigures ports <code>3000/3001</code>, <code>/api/health</code>, and the dedicated upstream slot wiring.</small>
           </button>
+          <button class="svc-catalog-card" data-managed-app="gateway-chat-platform">
+            <strong>Gateway Chat Platform</strong>
+            <small>Blue/green chat API + UI + nginx behind the gateway. Preconfigures ports <code>3301/3302</code>, <code>/api/health</code>, and the chat-api env file wiring.</small>
+          </button>
           <button class="svc-catalog-card" data-managed-app="blank">
             <strong>Blank Managed App</strong>
             <small>Start from an empty blue/green app definition and fill in repo, ports, routing, and start/stop commands yourself.</small>

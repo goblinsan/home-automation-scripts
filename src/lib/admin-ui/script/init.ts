@@ -913,12 +913,39 @@ export const INIT_SCRIPT = `    // Keyboard nav across top-tab and sub-tab butto
             slots: {
               blue: {
                 port: 3000,
-                startCommand: 'HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env DATA_ROOT_HOST=__SHARED__/data docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans',
-                stopCommand: 'docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
+                startCommand: 'HOST_PORT=__SLOT_PORT__ APP_ENV_FILE=__SHARED__/.env.local DATA_ROOT_HOST=__SHARED__/data docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans __SLOT__',
+                stopCommand: 'docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
               },
               green: {
                 port: 3001,
-                startCommand: 'HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env DATA_ROOT_HOST=__SHARED__/data docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans',
+                startCommand: 'HOST_PORT=__SLOT_PORT__ APP_ENV_FILE=__SHARED__/.env.local DATA_ROOT_HOST=__SHARED__/data docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans __SLOT__',
+                stopCommand: 'docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
+              }
+            }
+          };
+        }
+        if (presetId === 'gateway-chat-platform') {
+          return {
+            id: 'gateway-chat-platform',
+            enabled: true,
+            repoUrl: 'git@github.com:goblinsan/gateway-chat-platform.git',
+            defaultRevision: 'main',
+            deployRoot: '/srv/apps/gateway-chat-platform',
+            hostnames: ['chat.gateway.example.test'],
+            routePath: '/',
+            stripRoutePrefix: false,
+            healthPath: '/api/health',
+            upstreamConfPath: '/etc/nginx/conf.d/upstreams/gateway-chat-platform-active.conf',
+            buildCommands: [],
+            slots: {
+              blue: {
+                port: 3301,
+                startCommand: 'HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env CHAT_API_DATA_DIR=__SHARED__/chat-api-data docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans',
+                stopCommand: 'docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
+              },
+              green: {
+                port: 3302,
+                startCommand: 'HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env CHAT_API_DATA_DIR=__SHARED__/chat-api-data docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans',
                 stopCommand: 'docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
               }
             }

@@ -2724,6 +2724,10 @@
             <strong>Gateway Tools Platform</strong>
             <small>Blue/green public tools UI behind Cloudflare Access. Preconfigures ports <code>3000/3001</code>, <code>/api/health</code>, and the dedicated upstream slot wiring.</small>
           </button>
+          <button class="svc-catalog-card" data-managed-app="gateway-chat-platform">
+            <strong>Gateway Chat Platform</strong>
+            <small>Blue/green chat API + UI + nginx behind the gateway. Preconfigures ports <code>3301/3302</code>, <code>/api/health</code>, and the chat-api env file wiring.</small>
+          </button>
           <button class="svc-catalog-card" data-managed-app="blank">
             <strong>Blank Managed App</strong>
             <small>Start from an empty blue/green app definition and fill in repo, ports, routing, and start/stop commands yourself.</small>
@@ -9964,12 +9968,39 @@
             slots: {
               blue: {
                 port: 3000,
-                startCommand: 'HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env DATA_ROOT_HOST=__SHARED__/data docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans',
-                stopCommand: 'docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
+                startCommand: 'HOST_PORT=__SLOT_PORT__ APP_ENV_FILE=__SHARED__/.env.local DATA_ROOT_HOST=__SHARED__/data docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans __SLOT__',
+                stopCommand: 'docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
               },
               green: {
                 port: 3001,
-                startCommand: 'HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env DATA_ROOT_HOST=__SHARED__/data docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans',
+                startCommand: 'HOST_PORT=__SLOT_PORT__ APP_ENV_FILE=__SHARED__/.env.local DATA_ROOT_HOST=__SHARED__/data docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans __SLOT__',
+                stopCommand: 'docker compose --profile __SLOT__ --project-name gateway-tools-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
+              }
+            }
+          };
+        }
+        if (presetId === 'gateway-chat-platform') {
+          return {
+            id: 'gateway-chat-platform',
+            enabled: true,
+            repoUrl: 'git@github.com:goblinsan/gateway-chat-platform.git',
+            defaultRevision: 'main',
+            deployRoot: '/srv/apps/gateway-chat-platform',
+            hostnames: ['chat.gateway.example.test'],
+            routePath: '/',
+            stripRoutePrefix: false,
+            healthPath: '/api/health',
+            upstreamConfPath: '/etc/nginx/conf.d/upstreams/gateway-chat-platform-active.conf',
+            buildCommands: [],
+            slots: {
+              blue: {
+                port: 3301,
+                startCommand: 'HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env CHAT_API_DATA_DIR=__SHARED__/chat-api-data docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans',
+                stopCommand: 'docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
+              },
+              green: {
+                port: 3302,
+                startCommand: 'HOST_PORT=__SLOT_PORT__ CHAT_API_ENV_FILE=__SHARED__/chat-api.env CHAT_API_DATA_DIR=__SHARED__/chat-api-data docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml up -d --build --remove-orphans',
                 stopCommand: 'docker compose --project-name gateway-chat-platform-__SLOT__ -f docker-compose.yml down --remove-orphans'
               }
             }
