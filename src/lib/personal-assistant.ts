@@ -447,3 +447,72 @@ export function buildProjectTrackingUpserts(profile: PersonalAssistantConfig): P
     },
   }));
 }
+
+function parseCronHourMinute(cron: string): string {
+  // Handles simple patterns: "M H * * *" and "M H * * DOW"
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length < 2) return cron;
+  const minute = parseInt(parts[0], 10);
+  const hour = parseInt(parts[1], 10);
+  if (Number.isNaN(minute) || Number.isNaN(hour)) return cron;
+  const period = hour < 12 ? 'AM' : 'PM';
+  const h12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  const mm = String(minute).padStart(2, '0');
+  return `${h12}:${mm} ${period}`;
+}
+
+export function buildCoachActivationPrompt(profile: PersonalAssistantConfig): string {
+  const now = new Date().toISOString();
+
+  const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  const activeProjects = profile.projects
+    .filter((p) => p.status !== 'done' && p.status !== 'paused')
+    .sort((a, b) => (priorityOrder[a.priority] ?? 9) - (priorityOrder[b.priority] ?? 9))
+    .slice(0, 5);
+
+  const projectLines = activeProjects.map((p) => `  - ${p.name} [${p.priority}]: ${p.nextAction}`).join('\n');
+
+  const cutoff = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const upcomingEvents = profile.events
+    .filter((e) => e.startDate >= now.slice(0, 10) && e.startDate <= cutoff)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))
+    .slice(0, 5);
+  const eventLines = upcomingEvents.length > 0
+    ? upcomingEvents.map((e) => `  - ${e.title} on ${e.startDate}`).join('\n')
+    : '  - none in the next 30 days';
+
+  const schedules = profile.schedules;
+  const tz = profile.timezone;
+  const morningTime = parseCronHourMinute(schedules.morningCheckInCron);
+  const middayTime = parseCronHourMinute(schedules.middayCheckInCron);
+  const eveningTime = parseCronHourMinute(schedules.eveningCheckInCron);
+  const weeklyDay = schedules.weeklyPlanningCron.trim().split(/\s+/)[4] ?? '1';
+  const dayNames: Record<string, string> = { '0': 'Sunday', '1': 'Monday', '2': 'Tuesday', '3': 'Wednesday', '4': 'Thursday', '5': 'Friday', '6': 'Saturday' };
+  const weeklyDayName = dayNames[weeklyDay] ?? `day ${weeklyDay}`;
+  const weeklyTime = parseCronHourMinute(schedules.weeklyPlanningCron);
+  const weeklyReviewDay = schedules.weeklyReviewCron.trim().split(/\s+/)[4] ?? '0';
+  const weeklyReviewDayName = dayNames[weeklyReviewDay] ?? `day ${weeklyReviewDay}`;
+  const weeklyReviewTime = parseCronHourMinute(schedules.weeklyReviewCron);
+
+  const totalProjects = profile.projects.filter((p) => p.status !== 'done').length;
+  const totalObligations = profile.obligations?.length ?? 0;
+  const totalGoals = (profile.fitnessGoals?.length ?? 0) + (profile.nutritionGoals?.length ?? 0);
+
+  return [
+    `The user just applied your coach setup. Your operating plan has been written to ${profile.planFilePath}.`,
+    `Today is ${now.slice(0, 10)} (${tz}).`,
+    '',
+    `Send a short, warm activation message directly to ${profile.ownerName} confirming you are online and ready.`,
+    'Your message must include:',
+    '1. A brief warm confirmation that you are loaded and ready to help.',
+    `2. A quick summary of what you know: ${totalProjects} active project(s), ${totalObligations} ongoing obligation(s), ${totalGoals} health/nutrition goal(s).`,
+    '3. The top active priorities:',
+    projectLines || '  - none yet',
+    '4. Upcoming events to flag:',
+    eventLines,
+    `5. Your scheduled check-in times: morning at ${morningTime}, midday at ${middayTime}, evening at ${eveningTime} (${tz}); weekly kickoff on ${weeklyDayName} at ${weeklyTime}; weekly review on ${weeklyReviewDayName} at ${weeklyReviewTime}.`,
+    '6. Which check-in is coming up next based on today and the current time.',
+    '',
+    'Keep the total message under 200 words. Be specific, warm, and direct. No filler.',
+  ].join('\n');
+}

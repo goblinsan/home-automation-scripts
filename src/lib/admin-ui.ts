@@ -46,7 +46,7 @@ import {
   type HealthProbeFunction,
 } from './metrics.ts';
 import { DEFAULT_WORKFLOW_SEED_PATH, importWorkflowSeed, planWorkflowSeedImport, type WorkflowRecord } from './workflows.ts';
-import { buildPersonalAssistantWorkflowSeeds, buildProjectTrackingUpserts, upsertManagedAssistantAgents, writePersonalAssistantPlanFile } from './personal-assistant.ts';
+import { buildCoachActivationPrompt, buildPersonalAssistantWorkflowSeeds, buildProjectTrackingUpserts, upsertManagedAssistantAgents, writePersonalAssistantPlanFile } from './personal-assistant.ts';
 import { renderAdminPage } from './admin-ui/index.ts';
 
 export interface AdminServerOptions {
@@ -1960,6 +1960,34 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           config.serviceProfiles.gatewayChatPlatform.apiBaseUrl
         );
 
+        let activationMessageSent = false;
+        let activationError: string | undefined;
+        try {
+          const activationPrompt = buildCoachActivationPrompt(profile);
+          await runServiceProfileAgent(
+            config,
+            config.serviceProfiles.gatewayChatPlatform.appId,
+            profile.localAgentId,
+            {
+              prompt: activationPrompt,
+              delivery: {
+                mode: 'inbox',
+                userId: profile.chatUserId,
+                channelId: profile.chatChannelId,
+                threadId: profile.chatThreadId,
+                threadTitle: profile.chatThreadTitle,
+                title: 'Coach Activated',
+                kind: 'coach_activation',
+              },
+            },
+            { dryRun: false, log: () => undefined },
+            config.serviceProfiles.gatewayChatPlatform.apiBaseUrl
+          );
+          activationMessageSent = true;
+        } catch (err) {
+          activationError = err instanceof Error ? err.message : String(err);
+        }
+
         sendJson(response, 200, {
           message: `Applied ${profile.assistantName} setup`,
           appliedAt,
@@ -1968,6 +1996,8 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
           syncedProjectCount,
           monitoringEnabled: Boolean(config.monitoring?.enabled),
           planFile,
+          activationMessageSent,
+          ...(activationError ? { activationError } : {}),
           config
         });
         return;

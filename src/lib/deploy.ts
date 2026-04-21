@@ -50,6 +50,14 @@ export interface AgentRunPayload {
     mode?: string;
     channel?: string;
     to?: string;
+    voice?: string;
+    format?: string;
+    userId?: string;
+    channelId?: string;
+    threadId?: string;
+    threadTitle?: string;
+    title?: string;
+    kind?: string;
   };
 }
 
