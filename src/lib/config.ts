@@ -1322,7 +1322,7 @@ function parsePersonalAssistantConfig(value: unknown): PersonalAssistantConfig {
       chatThreadId: 'personal-assistant-me',
       chatThreadTitle: 'Personal Assistant',
       localAgentId: 'personal-assistant',
-      localProviderName: 'local-llm',
+      localProviderName: 'lm-studio-a',
       localModel: 'qwen/qwen3-32b',
       localBaseUrl: 'http://127.0.0.1:5301',
       expertAgentId: 'expert-planner',

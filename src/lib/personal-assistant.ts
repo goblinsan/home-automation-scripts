@@ -213,13 +213,19 @@ function buildExpertPlannerPrompt(profile: PersonalAssistantConfig): string {
   ].join(' ');
 }
 
+function normalizeLocalProviderName(providerName: string): string {
+  const normalized = providerName.trim();
+  return normalized === 'local-llm' ? 'lm-studio-a' : normalized;
+}
+
 export function buildPersonalAssistantAgent(profile: PersonalAssistantConfig): GatewayChatAgentConfig {
+  const localProviderName = normalizeLocalProviderName(profile.localProviderName);
   return {
     id: profile.localAgentId,
     name: profile.assistantName,
     icon: '🧭',
     color: '#52796F',
-    providerName: profile.localProviderName,
+    providerName: localProviderName,
     model: profile.localModel,
     costClass: 'free',
     systemPrompt: buildLocalAssistantPrompt(profile),
@@ -232,7 +238,8 @@ export function buildPersonalAssistantAgent(profile: PersonalAssistantConfig): G
       codeExecution: false,
     },
     routingPolicy: {
-      allowedProviders: [profile.localProviderName],
+      allowedProviders: [localProviderName],
+      preferredProvider: localProviderName,
       preferredCostClass: 'free',
       requiredCapabilities: ['chat'],
     },

@@ -64,7 +64,8 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
       if (!profile.chatThreadId) profile.chatThreadId = defaultAssistantThreadId(profile.assistantName, profile.chatUserId);
       if (!profile.localAgentId) profile.localAgentId = defaultAssistantAgentId(profile.assistantName);
       if (!profile.planFilePath) profile.planFilePath = defaultAssistantPlanFilePath(profile.notesRepoPath, profile.assistantName);
-      if (!profile.localProviderName) profile.localProviderName = firstAvailableProviderName() || 'local-llm';
+      if (!profile.localProviderName) profile.localProviderName = firstAvailableProviderName() || 'lm-studio-a';
+      if (profile.localProviderName === 'local-llm') profile.localProviderName = 'lm-studio-a';
       if (!profile.localModel) profile.localModel = firstAvailableModelId(profile.localProviderName) || 'qwen/qwen3-32b';
       if (!profile.localBaseUrl) profile.localBaseUrl = 'http://127.0.0.1:5301';
       if (!profile.expertAgentId) profile.expertAgentId = 'expert-planner';
@@ -111,7 +112,7 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
           chatThreadId: 'personal-assistant-me',
           chatThreadTitle: 'Personal Assistant',
           localAgentId: 'personal-assistant',
-          localProviderName: 'local-llm',
+          localProviderName: 'lm-studio-a',
           localModel: 'qwen/qwen3-32b',
           localBaseUrl: 'http://127.0.0.1:5301',
           expertAgentId: 'expert-planner',
