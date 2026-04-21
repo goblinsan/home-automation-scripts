@@ -2305,6 +2305,67 @@ export async function startAdminServer(options: AdminServerOptions): Promise<voi
     return async () => {
       const results: Array<{ kind: string; id: string; label: string; status: string; responseTimeMs: number | null; details: Record<string, unknown> | null }> = [];
 
+      const probeTcpEndpoint = async (host: string, port: number, timeoutMs = 5000): Promise<boolean> => {
+        const { Socket } = await import('node:net');
+        return await new Promise<boolean>((resolve) => {
+          const socket = new Socket();
+          let settled = false;
+          const finish = (ok: boolean) => {
+            if (settled) return;
+            settled = true;
+            socket.destroy();
+            resolve(ok);
+          };
+          socket.setTimeout(timeoutMs);
+          socket.once('connect', () => finish(true));
+          socket.once('timeout', () => finish(false));
+          socket.once('error', () => finish(false));
+          socket.connect(port, host);
+        });
+      };
+
+      // Probe monitoring data stores so they are first-class monitored entities.
+      if (config.monitoring?.enabled) {
+        const postgresHost = config.monitoring.postgres.host.trim();
+        const postgresPort = config.monitoring.postgres.port;
+        const redisHost = config.monitoring.redis.host.trim();
+        const redisPort = config.monitoring.redis.port;
+
+        if (postgresHost) {
+          const t0 = Date.now();
+          const ok = await probeTcpEndpoint(postgresHost, postgresPort, 5000);
+          results.push({
+            kind: 'monitoring-datastore',
+            id: 'postgres',
+            label: `Monitoring Postgres (${postgresHost}:${postgresPort})`,
+            status: ok ? 'healthy' : 'down',
+            responseTimeMs: Date.now() - t0,
+            details: {
+              host: postgresHost,
+              port: postgresPort,
+              database: config.monitoring.postgres.database,
+              user: config.monitoring.postgres.user,
+            }
+          });
+        }
+
+        if (redisHost) {
+          const t0 = Date.now();
+          const ok = await probeTcpEndpoint(redisHost, redisPort, 5000);
+          results.push({
+            kind: 'monitoring-datastore',
+            id: 'redis',
+            label: `Monitoring Redis (${redisHost}:${redisPort})`,
+            status: ok ? 'healthy' : 'down',
+            responseTimeMs: Date.now() - t0,
+            details: {
+              host: redisHost,
+              port: redisPort,
+            }
+          });
+        }
+      }
+
       // Probe worker nodes via SSH
       for (const node of config.workerNodes) {
         if (!node.enabled) continue;
