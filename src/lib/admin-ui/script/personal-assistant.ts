@@ -1295,7 +1295,15 @@ export const PERSONAL_ASSISTANT_SCRIPT = `    const assistantBuilderState = { st
           fetchChatProviders().catch(function() { return null; })
         ]);
         render();
-        setStatus(result.message || 'Applied assistant builder setup');
+        var statusMsg = result.message || 'Applied assistant builder setup';
+        if (result.activationMessageSent === true) {
+          statusMsg += ' \u2014 activation message sent to inbox.';
+        } else if (result.activationError) {
+          statusMsg += ' \u2014 activation message failed: ' + result.activationError;
+        } else if (result.activationMessageSent === false) {
+          statusMsg += ' \u2014 activation message could not be sent (check provider/agent config).';
+        }
+        setStatus(statusMsg);
         closeAssistantBuilderWizard();
       } finally {
         applyAssistantInFlight = false;

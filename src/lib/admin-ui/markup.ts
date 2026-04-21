@@ -40,6 +40,7 @@ export const ADMIN_MARKUP: string = `<body>
         <button class="tab-button active" aria-current="page" data-nav-id="overview" data-tab="overview">Overview</button>
         <button class="tab-button" data-nav-id="bootstrap" data-tab="infra" data-sub-tab="infra-gateway">Bootstrap</button>
         <button class="tab-button" data-nav-id="nodes" data-tab="infra" data-sub-tab="infra-nodes">Nodes</button>
+        <button class="tab-button" data-nav-id="services" data-tab="services" data-sub-tab="svc-agents">Services</button>
         <button class="tab-button" data-nav-id="workloads" data-tab="workloads" data-sub-tab="wl-remote">Workloads</button>
         <button class="tab-button" data-nav-id="monitor" data-tab="monitoring" data-sub-tab="mon-health">Monitor</button>
         <button class="tab-button" data-nav-id="secrets" data-tab="secrets">Secrets</button>
