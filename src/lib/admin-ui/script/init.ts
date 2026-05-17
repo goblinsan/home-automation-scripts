@@ -206,6 +206,23 @@ export const INIT_SCRIPT = `    // Keyboard nav across top-tab and sub-tab butto
       });
     });
     [
+      ['gatewayChatMobileSharedToken', 'MOBILE_SHARED_TOKEN', 'Shared bearer token accepted by native mobile clients when Cloudflare Access browser login cannot be used directly', true],
+      ['gatewayChatMobileSharedUserId', 'MOBILE_SHARED_USER_ID', 'Stable user id mapped to the shared mobile bearer token', false],
+    ].forEach(([id, key, description, secret]) => {
+      const element = document.getElementById(id);
+      element.addEventListener('input', (event) => {
+        upsertEnvironmentEntry(
+          state.config.serviceProfiles.gatewayChatPlatform.environment,
+          key,
+          event.target.value.trim(),
+          description,
+          secret
+        );
+        renderSecrets();
+        syncRawJson();
+      });
+    });
+    [
       ['gatewayChatTtsEnabled', 'enabled', 'checkbox'],
       ['gatewayChatTtsBaseUrl', 'baseUrl'],
       ['gatewayChatTtsDefaultVoice', 'defaultVoice'],

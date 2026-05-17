@@ -706,6 +706,18 @@ export const ADMIN_MARKUP: string = `<body>
               </div>
               <p class="section-note">Scheduled prompts use these defaults unless a workflow overrides its own inbox scope.</p>
             </div>
+            <div class="card card-quiet">
+              <p>Mobile Client Auth</p>
+              <div class="row">
+                <label>Mobile Shared Token
+                  <input id="gatewayChatMobileSharedToken" type="password" placeholder="long-random-secret" />
+                </label>
+                <label>Mobile Shared User Id
+                  <input id="gatewayChatMobileSharedUserId" placeholder="jamescoghlan" />
+                </label>
+              </div>
+              <p class="section-note">Writes <code>MOBILE_SHARED_TOKEN</code> and <code>MOBILE_SHARED_USER_ID</code> into the runtime <code>chat-api.env</code> file used by the deployed chat API.</p>
+            </div>
             <details class="card section-card">
               <summary>
                 <div class="section-summary-copy">

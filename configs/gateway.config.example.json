@@ -415,6 +415,18 @@
           "description": "Default inbox channel for scheduled coach prompts"
         },
         {
+          "key": "MOBILE_SHARED_TOKEN",
+          "value": "",
+          "secret": true,
+          "description": "Shared bearer token accepted by the native iOS client"
+        },
+        {
+          "key": "MOBILE_SHARED_USER_ID",
+          "value": "me",
+          "secret": false,
+          "description": "Stable user id mapped to the native mobile bearer token"
+        },
+        {
           "key": "LM_STUDIO_A_BASE_URL",
           "value": "http://198.51.100.172:1234",
           "secret": false,
