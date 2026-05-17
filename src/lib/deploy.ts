@@ -355,7 +355,8 @@ function httpJsonRequest(
   url: string,
   method: 'POST',
   body: unknown,
-  timeoutMs = 10_000
+  timeoutMs = 10_000,
+  extraHeaders?: Record<string, string>
 ): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const requestBody = JSON.stringify(body);
@@ -368,7 +369,8 @@ function httpJsonRequest(
         timeout: timeoutMs,
         headers: {
           'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(requestBody)
+          'Content-Length': Buffer.byteLength(requestBody),
+          ...extraHeaders
         }
       },
       (response) => {
@@ -519,6 +521,12 @@ export async function syncServiceProfileRuntime(
   const payload = {
     agents: config.serviceProfiles.gatewayChatPlatform.agents
   };
+  const mobileSharedToken = config.serviceProfiles.gatewayChatPlatform.environment
+    .find((entry) => entry.key === 'MOBILE_SHARED_TOKEN')
+    ?.value?.trim();
+  const syncHeaders = mobileSharedToken
+    ? { Authorization: `Bearer ${mobileSharedToken}` }
+    : undefined;
 
   context.log(
     `${context.dryRun ? '[dry-run] ' : ''}POST ${syncUrl} (${config.serviceProfiles.gatewayChatPlatform.agents.length} agents)`
@@ -527,7 +535,7 @@ export async function syncServiceProfileRuntime(
     return;
   }
 
-  const response = await httpJsonRequest(syncUrl, 'POST', payload);
+  const response = await httpJsonRequest(syncUrl, 'POST', payload, 10_000, syncHeaders);
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`Agent sync failed for ${syncUrl}: ${response.status} ${response.body}`);
   }
